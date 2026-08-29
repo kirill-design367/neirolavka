@@ -271,7 +271,7 @@ const CATALOG: Catalog = {
       id: 'claude',
       name: 'Claude',
       plan: 'Claude Pro',
-      tagline: 'Длинные тексты, код и разбор документов',
+      tagline: 'Полноценный ИИ-ассистент',
       status: 'available',
       groups: [
         {
