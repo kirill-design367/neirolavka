@@ -37,11 +37,67 @@
   gap: var(--sp-4);
 }
 
+/* Карточки отзывов живут сами по себе, а не едут за прокруткой.
+   У каждой своя амплитуда, свой период и своя фаза: одна почти
+   стоит, другая ходит заметнее, и в такт они не попадают никогда,
+   потому что периоды взаимно не кратны.
+
+   Движение идёт по свойству translate, а не transform: transform
+   занят наведением, и анимация его бы перебила — карточка перестала
+   бы отзываться на курсор. */
 .review {
   position: relative;
   padding: var(--sp-5);
   border-radius: var(--r-lg);
   isolation: isolate;
+  animation: review-drift 19s var(--ease-inout) infinite;
+  --drift-x: 2px;
+  --drift-y: -5px;
+}
+
+@keyframes review-drift {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: var(--drift-x) var(--drift-y);
+  }
+}
+
+.review:nth-child(2) {
+  animation-duration: 26s;
+  animation-delay: -7s;
+  --drift-x: -1px;
+  --drift-y: -2px;
+}
+
+.review:nth-child(3) {
+  animation-duration: 22s;
+  animation-delay: -13s;
+  --drift-x: -3px;
+  --drift-y: -7px;
+}
+
+.review:nth-child(4) {
+  animation-duration: 31s;
+  animation-delay: -4s;
+  --drift-x: 3px;
+  --drift-y: -4px;
+}
+
+.review:nth-child(5) {
+  animation-duration: 17s;
+  animation-delay: -11s;
+  --drift-x: -2px;
+  --drift-y: -6px;
+}
+
+.review:nth-child(6) {
+  animation-duration: 28s;
+  animation-delay: -19s;
+  --drift-x: 1px;
+  --drift-y: -2px;
 }
 
 .review__plate {

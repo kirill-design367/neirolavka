@@ -21,7 +21,7 @@ export function Footer() {
           )}
         </div>
 
-        <ul className="reviews" data-parallax="0.6">
+        <ul className="reviews">
           {reviews.map((review) => (
             <li className="review" key={review.id}>
               <span className="review__plate" data-reveal-plate aria-hidden="true" />
