@@ -26,7 +26,13 @@ const OrderContext = createContext<OrderState | null>(null);
 
 export function OrderProvider({ children }: { children: React.ReactNode }) {
   const catalog = getCatalog();
-  const [openProductId, setOpenProductId] = useState<string | null>(null);
+  // Первая доступная нейросеть раскрыта сразу. Механика разворачивания
+  // никуда не девается — она работает при переключении, — но человек
+  // видит цену, не совершая действий: на этом рынке спрятанная за клик
+  // цена читается как «скажу в личке».
+  const [openProductId, setOpenProductId] = useState<string | null>(
+    () => catalog.products.find((p) => p.status === 'available')?.id ?? null,
+  );
   const [planId, setPlanId] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<PaymentMethod['id'] | null>(null);
 

@@ -49,10 +49,32 @@
   margin-bottom: var(--sp-2);
 }
 
+/* Строка товара: название, отточие, цена. Отточие ведёт взгляд
+   от позиции к цифре и показывает, что в сумму попало именно это. */
+.order__item-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+
 .order__item-name {
   font-size: var(--t-body);
   font-weight: 600;
   line-height: 1.35;
+}
+
+.order__leader {
+  flex: 1 1 auto;
+  min-width: 1.5rem;
+  align-self: flex-end;
+  margin-bottom: 0.3em;
+  border-bottom: 1px dotted var(--c-line-strong);
+}
+
+.order__item-price {
+  font-size: var(--t-body);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .order__item-note {
@@ -190,7 +212,11 @@
   background: var(--c-surface-2);
   color: var(--c-muted);
   cursor: not-allowed;
-  pointer-events: none;
+}
+
+.order__cta--off:hover,
+.bar__cta--off:hover {
+  transform: none;
 }
 
 .order__fineprint {
@@ -198,6 +224,18 @@
   font-size: var(--t-micro);
   color: var(--c-muted);
   line-height: 1.45;
+}
+
+.order__handle {
+  margin-top: var(--sp-2);
+  font-size: var(--t-micro);
+  color: var(--c-muted);
+  line-height: 1.45;
+}
+
+.order__handle b {
+  color: var(--c-text);
+  font-weight: 600;
 }
 
 /* ─── Нижняя полоса: только телефон ─────────────────────────── */

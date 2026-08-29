@@ -29,6 +29,8 @@ export type Plan = {
   priceRub: number;
   /** Отметка на карточке: «выгоднее всего» и подобное. */
   badge?: string;
+  /** Срок подписки в месяцах. У пакетов токенов срока нет. */
+  months?: number;
 };
 
 export type PlanGroup = {
@@ -68,6 +70,8 @@ export type Catalog = {
   subscribers: number;
   /** Ссылка на бота. */
   botUrl: string;
+  /** Тот же бот словами: чтобы найти его поиском в Telegram, не кликая. */
+  botHandle: string;
   reviews: Review[];
   /** true, пока отзывы демонстрационные. Влияет на подпись у блока. */
   reviewsArePlaceholders: boolean;
@@ -82,6 +86,7 @@ const claudeMonths: Plan[] = [
     title: 'Claude Pro, 1 месяц',
     note: 'Полный доступ к Sonnet и Opus, проекты, загрузка файлов',
     priceRub: PRICE,
+    months: 1,
   },
   {
     id: 'claude-pro-3m',
@@ -89,6 +94,7 @@ const claudeMonths: Plan[] = [
     title: 'Claude Pro, 3 месяца',
     note: 'То же самое, но продлевать втрое реже',
     priceRub: PRICE,
+    months: 3,
   },
   {
     id: 'claude-pro-6m',
@@ -96,6 +102,7 @@ const claudeMonths: Plan[] = [
     title: 'Claude Pro, 6 месяцев',
     note: 'Полгода без продлений',
     priceRub: PRICE,
+    months: 6,
     badge: 'берут чаще всего',
   },
   {
@@ -104,6 +111,7 @@ const claudeMonths: Plan[] = [
     title: 'Claude Pro, 12 месяцев',
     note: 'Год доступа, самая низкая цена месяца',
     priceRub: PRICE,
+    months: 12,
     badge: 'выгоднее всего',
   },
 ];
@@ -148,6 +156,7 @@ const chatgptMonths: Plan[] = [
     title: 'ChatGPT Plus, 1 месяц',
     note: 'Доступ к старшим моделям, продвинутый анализ данных',
     priceRub: PRICE,
+    months: 1,
   },
   {
     id: 'chatgpt-plus-3m',
@@ -155,6 +164,7 @@ const chatgptMonths: Plan[] = [
     title: 'ChatGPT Plus, 3 месяца',
     note: 'То же самое, но продлевать втрое реже',
     priceRub: PRICE,
+    months: 3,
   },
   {
     id: 'chatgpt-plus-6m',
@@ -162,6 +172,7 @@ const chatgptMonths: Plan[] = [
     title: 'ChatGPT Plus, 6 месяцев',
     note: 'Полгода без продлений',
     priceRub: PRICE,
+    months: 6,
   },
   {
     id: 'chatgpt-plus-12m',
@@ -169,6 +180,7 @@ const chatgptMonths: Plan[] = [
     title: 'ChatGPT Plus, 12 месяцев',
     note: 'Год доступа, самая низкая цена месяца',
     priceRub: PRICE,
+    months: 12,
     badge: 'выгоднее всего',
   },
 ];
@@ -245,6 +257,7 @@ const REVIEWS: Review[] = [
 
 const CATALOG: Catalog = {
   botUrl: 'https://t.me/neirolavka_bot',
+  botHandle: '@neirolavka_bot',
   subscribers: 2417,
   reviews: REVIEWS,
   reviewsArePlaceholders: true,
@@ -318,6 +331,18 @@ export function findPlan(planId: string): { product: Product; group: PlanGroup; 
     }
   }
   return null;
+}
+
+/**
+ * Дата, до которой будет открыт доступ, если оплатить сегодня.
+ *
+ * Считается только на клиенте: сборка статическая, и вшитая на этапе
+ * сборки дата протухла бы через неделю.
+ */
+export function accessUntil(months: number, from: Date): string {
+  const till = new Date(from);
+  till.setMonth(till.getMonth() + months);
+  return till.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 /** «1 ₽», «1 234 ₽» — с неразрывным пробелом перед знаком. */

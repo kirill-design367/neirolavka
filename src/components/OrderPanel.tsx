@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback } from 'react';
-import { getCatalog } from '@/lib/catalog';
+import { useCallback, useEffect, useState } from 'react';
+import { accessUntil, getCatalog } from '@/lib/catalog';
 import { useOrder } from '@/lib/order';
 import { useCountUp, useExpand } from '@/lib/motion';
 
@@ -23,6 +23,12 @@ export function OrderPanel() {
   const totalRef = useCountUp(total, useCallback(formatRub, []));
   const restRef = useExpand<HTMLDivElement>(Boolean(selection));
 
+  // Дату считаем после монтирования: сборка статическая, и вшитая
+  // на этапе сборки дата протухла бы через неделю.
+  const [today, setToday] = useState<Date | null>(null);
+  useEffect(() => setToday(new Date()), []);
+  const until = selection?.plan.months && today ? accessUntil(selection.plan.months, today) : null;
+
   return (
     <aside className="order" aria-label="Заказ">
       <div className="order__paper">
@@ -32,8 +38,14 @@ export function OrderPanel() {
           <p className="order__label">Товар</p>
           {selection ? (
             <div className="order__item">
-              <p className="order__item-name">{selection.plan.title}</p>
-              <p className="order__item-note">{selection.plan.note}</p>
+              <p className="order__item-row">
+                <span className="order__item-name">{selection.plan.title}</span>
+                <span className="order__leader" aria-hidden="true" />
+                <span className="order__item-price tnum">{formatRub(selection.plan.priceRub)}</span>
+              </p>
+              <p className="order__item-note">
+                {until ? `Доступ до ${until}` : selection.plan.note}
+              </p>
             </div>
           ) : (
             <p className="order__empty">
@@ -81,19 +93,22 @@ export function OrderPanel() {
           </div>
         </div>
 
-        <a
-          className={`order__cta${ready ? '' : ' order__cta--off'}`}
-          href={ready ? botHref : undefined}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-disabled={!ready}
-          tabIndex={ready ? undefined : -1}
-        >
-          {!selection ? 'Выберите тариф' : ready ? 'Перейти в бот' : 'Выберите способ оплаты'}
-        </a>
+        {ready ? (
+          <a className="order__cta" href={botHref} target="_blank" rel="noopener noreferrer">
+            Перейти в бот
+          </a>
+        ) : (
+          <button type="button" className="order__cta order__cta--off" disabled>
+            {selection ? 'Выберите способ оплаты' : 'Выберите тариф'}
+          </button>
+        )}
 
         <p className="order__fineprint">
           Регистрация, оплата и выдача доступа — в боте. На сайте ничего вводить не нужно.
+        </p>
+        <p className="order__handle">
+          Бот называется <b>{catalog.botHandle}</b> — можно найти поиском в Telegram,
+          не переходя по ссылке отсюда.
         </p>
       </div>
     </aside>
@@ -138,16 +153,15 @@ export function OrderBar() {
           )}
         </div>
 
-        <a
-          className={`bar__cta${ready ? '' : ' bar__cta--off'}`}
-          href={ready ? botHref : undefined}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-disabled={!ready}
-          tabIndex={ready ? undefined : -1}
-        >
-          В бот
-        </a>
+        {ready ? (
+          <a className="bar__cta" href={botHref} target="_blank" rel="noopener noreferrer">
+            В бот
+          </a>
+        ) : (
+          <button type="button" className="bar__cta bar__cta--off" disabled>
+            В бот
+          </button>
+        )}
       </div>
     </div>
   );
