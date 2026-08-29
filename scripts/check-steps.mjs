@@ -55,27 +55,29 @@ for (const [w, name] of [[1512, 'десктоп'], [390, 'мобильная']])
         acc.shape.add([...document.querySelectorAll('.steps__led-lobe')]
           .map((e) => getComputedStyle(e).transform + '/' + getComputedStyle(e, '::before').transform).join('|'));
         acc.bg.add(getComputedStyle(node).backgroundColor);
-        acc.border.add(getComputedStyle(node).borderTopColor);
+        // Обводки у кружка быть не должно вовсе — следим за ШИРИНОЙ.
+        acc.border.add(getComputedStyle(node).borderTopWidth);
         performance.now() - t0 < 6800 ? requestAnimationFrame(t) : res(); }; requestAnimationFrame(t); });
       return { led: acc.led.size, fill: acc.fill.size, halo: acc.halo.size, num: acc.num.size,
-               shape: acc.shape.size, bg: acc.bg.size, border: acc.border.size };
+               shape: acc.shape.size, bg: acc.bg.size, border: acc.border.size,
+               zero: [...acc.border].every((v) => v === '0px'), widths: [...acc.border].join('/') };
     });
 
     const okGeom = geom.dir === (w < 500 ? 'vertical' : 'horizontal') && geom.trackEnd <= 2 && geom.at.length === 3;
     const okMove = rm
       ? (move.led === 1 && move.fill === 1 && move.halo === 1 && move.num === 1 &&
-         move.shape === 1 && move.bg === 1 && move.border === 1)
+         move.shape === 1 && move.bg === 1 && move.border === 1 && move.zero)
       // У заливки узла и цифры ровно два состояния — так и задумано:
       // промежуточные цвета делали цифру нечитаемой (см. steps.css).
-      // Плавно гаснут обводка и свечение.
+      // Обводки нет вовсе: её ширина обязана оставаться нулевой.
       : (move.led > 20 && move.fill > 20 && move.halo > 5 &&
-         move.shape > 20 && move.bg === 2 && move.num === 2 && move.border > 10);
+         move.shape > 20 && move.bg === 2 && move.num === 2 && move.border === 1 && move.zero);
     if (!okGeom || !okMove) bad++;
     console.log(`  ${okGeom && okMove ? 'ok ' : 'НЕТ'} ${name}${rm ? ', движение выключено' : ''}: ` +
       `дорожка ${geom.dir}, длина ${geom.len}, конец в ${geom.trackEnd} px от центра последнего кружка, ` +
       `доли ${geom.at.join('/')}`);
     console.log(`      за полный цикл: капля ${move.led} положений и ${move.shape} состояний контура, заливка ${move.fill}, ` +
-      `свечение ${move.halo}, у узла ${move.bg} цветов фона и ${move.border} цветов обводки, цифра ${move.num}`);
+      `свечение ${move.halo}, у узла ${move.bg} цветов фона, цифра ${move.num}, ширина обводки ${move.widths}`);
     await c.close();
   }
 }

@@ -46,7 +46,9 @@ const PROBES = [
   ['текст на заливке', '.referral__text', 'color'],
   ['дорожка шагов', '.steps__track', 'backgroundColor'],
   ['подсветка дорожки', '.steps__track-fill', 'backgroundColor'],
-  ['капля света', '.steps__led', 'backgroundColor'],
+  // У самой капли и у её долей фона нет: градиент лежит на
+  // псевдоэлементе доли, он и есть перелив сердцевины.
+  ['перелив в капле', '.steps__led-lobe', 'backgroundImage', '::before'],
   ['свечение узла', '.step__halo', 'backgroundImage'],
   ['узел шага', '.step__node', 'backgroundColor'],
   // Подвал залит градиентом, а не цветом.
