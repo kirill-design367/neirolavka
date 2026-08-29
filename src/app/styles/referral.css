@@ -14,6 +14,55 @@
   z-index: -1;
   border-radius: inherit;
   background: var(--c-fill);
+  overflow: hidden;
+}
+
+/* Перелив только в тёмной теме: светлую не трогаем.
+
+   Два слоя с мягкими пятнами медленно ползают внутри блока.
+   Двигается СЛОЙ через transform, а не позиция градиента: браузер
+   перекладывает готовый растр на композиторе, а не перерисовывает
+   градиент каждый кадр. Циклы разной длины и в разные стороны,
+   поэтому рисунок не повторяется на глаз. */
+[data-theme='dark'] .referral__plate::before,
+[data-theme='dark'] .referral__plate::after {
+  content: '';
+  position: absolute;
+  inset: -55%;
+  pointer-events: none;
+}
+
+[data-theme='dark'] .referral__plate::before {
+  background:
+    radial-gradient(circle at 32% 34%, var(--c-pearl-1) 0%, transparent 58%),
+    radial-gradient(circle at 74% 66%, var(--c-pearl-3) 0%, transparent 54%);
+  animation: pearl-a 38s linear infinite;
+}
+
+[data-theme='dark'] .referral__plate::after {
+  background:
+    radial-gradient(circle at 68% 26%, var(--c-pearl-2) 0%, transparent 56%),
+    radial-gradient(circle at 24% 78%, var(--c-pearl-1) 0%, transparent 52%);
+  opacity: 0.8;
+  animation: pearl-b 53s linear infinite;
+}
+
+@keyframes pearl-a {
+  0% {
+    transform: rotate(0deg) translate3d(0, 0, 0);
+  }
+  100% {
+    transform: rotate(360deg) translate3d(0, 0, 0);
+  }
+}
+
+@keyframes pearl-b {
+  0% {
+    transform: rotate(360deg) scale(1.05);
+  }
+  100% {
+    transform: rotate(0deg) scale(1.05);
+  }
 }
 
 .referral__content {
