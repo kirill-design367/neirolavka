@@ -68,6 +68,30 @@
   margin-top: var(--sp-3);
 }
 
+/* В тёмной теме название набирается градиентом по трём соседним
+   тонам палитры. Заливка идёт по самому тексту, поэтому размер
+   градиента привязан к строке, а не к экрану: при переносе строки
+   каждая получает полный переход, а не кусок общего.
+
+   background-clip требует прозрачного цвета текста, и на этом легко
+   потерять доступность: если браузер не поддержит обрезку, текст
+   станет невидимым. Поэтому правило спрятано за @supports —
+   без поддержки остаётся обычный цвет. */
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  [data-theme='dark'] .hero__title {
+    background-image: linear-gradient(
+      104deg,
+      var(--c-brand) 0%,
+      var(--c-pearl-tint) 46%,
+      var(--c-brand) 100%
+    );
+    background-size: 100% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
 .hero__lead {
   margin-top: var(--sp-4);
   max-width: 42ch;
