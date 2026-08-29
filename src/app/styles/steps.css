@@ -48,7 +48,7 @@
   place-items: center;
   background: var(--c-surface);
   border: 1px solid var(--c-line-strong);
-  color: var(--c-brand);
+  color: var(--c-text);
 }
 
 .step__num {

@@ -238,10 +238,16 @@
   line-height: 1.4;
 }
 
+/* Цена — обычный текст. Акцентом она становится только у выбранного
+   тарифа: акцент обязан значить «выбрано», а не «здесь цифра». */
 .tariff__price {
   margin-top: var(--sp-2);
   font-size: var(--t-body);
   font-weight: 600;
+  color: var(--c-text);
+}
+
+.tariff--active .tariff__price {
   color: var(--c-brand);
 }
 
