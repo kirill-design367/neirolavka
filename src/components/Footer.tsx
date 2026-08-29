@@ -16,7 +16,7 @@ export function Footer() {
           </h2>
           {reviewsArePlaceholders && (
             <p className="footer__disclaimer" data-reveal>
-              Примеры оформления блока. Настоящие отзывы подключим из бота вместе с прайсом.
+              Примеры оформления блока.
             </p>
           )}
         </div>
