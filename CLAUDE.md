@@ -37,9 +37,22 @@ npm run dev                       # разработка
 npm run build                     # статический экспорт в out/
 npx tsc --noEmit                  # проверка типов
 python3 scripts/subset-fonts.py   # перенарезать шрифты (нужен fonttools+brotli+uharfbuzz)
-python3 scripts/audit-fonts.py <папка с ttf>    # проверка cmap и покрытия кириллицы
+```
+
+Проверки. Сначала поднять выдачу: `npm run build` и отдать `out/`
+статикой на `localhost:4173` (сервер должен **сжимать**, иначе замер
+производительности занижен — GitHub Pages сжимает).
+
+```bash
+node scripts/check-export.mjs out /neirolavka   # выдача: basePath, .nojekyll, preload
+node scripts/verify-live.mjs   <url>            # запросы, консоль, CLS
+node scripts/check-contrast.mjs <url>           # контраст на отрисованной странице, обе темы
+node scripts/check-theme-motion.mjs <url>       # вспышка темы, prefers-reduced-motion
+node scripts/measure-fps.mjs <url> [замедление] # кадры на настоящей прокрутке
+node scripts/lighthouse-median.mjs <url> 10     # медиана десяти прогонов
+node scripts/screenshots.mjs <папка> <url>      # три разрешения × две темы
+python3 scripts/audit-fonts.py <папка с ttf>    # cmap и покрытие кириллицы
 python3 scripts/audit-kerning.py <папка с ttf>  # кириллические кернинг-пары
-python3 scripts/contrast.py <файл.json>         # контраст по WCAG
 ```
 
 `NEXT_PUBLIC_BASE_PATH` — префикс пути. На GitHub Pages `/neirolavka`, на своём
@@ -136,10 +149,39 @@ PageSpeed 90+ на мобильной (медиана десяти прогон�
 CLS 0, контраст 4.5:1 в обеих темах, корректность на 1920×1080, 1512×820 и 390×844.
 Мобильная — отдельная композиция, а не сжатый десктоп.
 
+## Достигнутая планка
+
+Замерено на выдаче со сжатием, мобильный профиль, медиана десяти прогонов:
+
+| | |
+|---|---|
+| Производительность | 94 (разброс 94–96) |
+| Доступность, лучшие практики, SEO | 100 / 100 / 100 |
+| CLS | 0.0000 |
+| FCP / LCP / Speed Index | 0.91 с / 2.69 с / 1.19 с |
+| Прокрутка | медиана кадра 16.70 мс (59.9 fps), кадров дольше 17 мс — 0 |
+| Контраст | нарушений нет; наименьший запас 5.09:1 при пороге 4.5 |
+
 ## Публикация
 
-GitHub Actions собирает статический экспорт и публикует на GitHub Pages
-(`.github/workflows/deploy.yml`). `.nojekyll` создаётся в корне выдачи на шаге
-сборки, иначе Pages выбрасывает папку `_next`.
+`.github/workflows/deploy.yml` собирает статический экспорт, проверяет выдачу
+скриптом `check-export.mjs` и публикует **двумя путями**:
+
+1. `deploy-artefakt` — штатный `actions/deploy-pages`, работает, когда
+   источником Pages выбрано «GitHub Actions». Помечен `continue-on-error`.
+2. `deploy-vetka` — та же выдача уезжает в ветку `gh-pages`. Окружение
+   `github-pages` не задействуется вовсе, поэтому этот путь работает всегда.
+
+Почему так: задача с окружением `github-pages` падает мгновенно, ещё до
+первого шага, — окружение не пускает эту ветку. Настройки Pages из этой
+среды недоступны (API закрыт прокси), поэтому вместо починки настроек
+добавлен путь, который от них не зависит.
+
+`.nojekyll` создаётся в корне выдачи на шаге сборки, иначе Pages выбрасывает
+папку `_next`.
+
+**Чтобы сайт открылся,** нужно один раз выбрать источник в настройках
+репозитория: Settings → Pages → Build and deployment → Source →
+«Deploy from a branch» → ветка `gh-pages`, папка `/ (root)`.
 
 Ветка разработки: `claude/neirolavka-site-setup-bd3e7p`.
