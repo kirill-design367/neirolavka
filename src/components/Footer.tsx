@@ -4,7 +4,7 @@ import { getCatalog } from '@/lib/catalog';
 import { useReveal } from '@/lib/motion';
 
 export function Footer() {
-  const { reviews, reviewsArePlaceholders, botUrl } = getCatalog();
+  const { reviews, reviewsArePlaceholders } = getCatalog();
   const ref = useReveal<HTMLElement>({ stagger: 0.06 });
 
   return (
@@ -39,11 +39,7 @@ export function Footer() {
         <div className="footer__bottom">
           <p className="footer__brand">Нейролавка</p>
           <p className="footer__legal">
-            Витрина и калькулятор. Оплата, выдача доступа и поддержка — в{' '}
-            <a href={botUrl} target="_blank" rel="noopener noreferrer" className="footer__botlink">
-              Telegram-боте
-            </a>
-            .
+            Витрина и калькулятор. Оплата, выдача доступа и поддержка — в Telegram-боте.
           </p>
         </div>
       </div>

@@ -12,9 +12,11 @@ type OrderState = {
   selection: { product: Product; plan: Plan } | null;
   payment: PaymentMethod | null;
   total: number;
-  /** Кнопка перехода в бот активна только при полном выборе. */
+  /** Выбор полон: тариф и способ оплаты. */
   ready: boolean;
-  /** Ссылка в бот с выбранным заказом в параметре. */
+  /** Бот заведён и по ссылке есть куда идти. */
+  botReady: boolean;
+  /** Ссылка в бот с выбранным заказом в параметре, либо пусто. */
   botHref: string;
   toggleProduct: (id: string) => void;
   choosePlan: (id: string) => void;
@@ -70,16 +72,18 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
     const total = selection ? selection.plan.priceRub : 0;
     const ready = Boolean(selection && payment);
 
-    const params = new URLSearchParams();
-    if (selection) {
-      params.set('tovar', selection.plan.id);
+    // Пока адрес бота пуст, ссылки не собираются вовсе: вести
+    // на несуществующего бота хуже, чем честно ничего не предлагать.
+    const botReady = catalog.botUrl.length > 0;
+    let botHref = '';
+    if (botReady) {
+      const params = new URLSearchParams();
+      if (selection) params.set('tovar', selection.plan.id);
+      if (payment) params.set('oplata', payment.id);
+      // Telegram передаёт боту всё, что лежит в start, одной строкой.
+      const start = params.toString().replace(/[=&]/g, '_');
+      botHref = start ? `${catalog.botUrl}?start=${start}` : catalog.botUrl;
     }
-    if (payment) {
-      params.set('oplata', payment.id);
-    }
-    // Telegram передаёт боту всё, что лежит в start, одной строкой.
-    const start = params.toString().replace(/[=&]/g, '_');
-    const botHref = start ? `${catalog.botUrl}?start=${start}` : catalog.botUrl;
 
     return {
       openProductId,
@@ -89,6 +93,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       payment,
       total,
       ready,
+      botReady,
       botHref,
       toggleProduct,
       choosePlan,

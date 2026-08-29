@@ -5,6 +5,7 @@ import { useReveal } from '@/lib/motion';
 
 export function Referral() {
   const { botUrl } = getCatalog();
+  const botReady = botUrl.length > 0;
   const ref = useReveal<HTMLElement>({ stagger: 0.07 });
 
   return (
@@ -36,9 +37,16 @@ export function Referral() {
           </div>
         </dl>
 
-        <a className="referral__link" href={botUrl} target="_blank" rel="noopener noreferrer" data-reveal>
-          Забрать свою ссылку
-        </a>
+        {/* Пока бота нет, звать «забрать ссылку» некуда. */}
+        {botReady ? (
+          <a className="referral__link" href={botUrl} target="_blank" rel="noopener noreferrer" data-reveal>
+            Забрать свою ссылку
+          </a>
+        ) : (
+          <p className="referral__soon" data-reveal>
+            Ссылки раздаст бот — он готовится к запуску.
+          </p>
+        )}
       </div>
     </section>
   );

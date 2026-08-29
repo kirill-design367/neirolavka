@@ -23,7 +23,7 @@ const formatRub = (n: number) => `${n.toLocaleString('ru-RU')} ₽`;
  */
 export function OrderPanel() {
   const catalog = getCatalog();
-  const { selection, payment, paymentId, total, ready, botHref, choosePayment } = useOrder();
+  const { selection, payment, paymentId, total, ready, botReady, botHref, choosePayment } = useOrder();
   const totalRef = useCountUp(total, useCallback(formatRub, []));
   const restRef = useExpand<HTMLDivElement>(Boolean(selection));
 
@@ -100,18 +100,23 @@ export function OrderPanel() {
             </div>
           )}
 
-          {ready ? (
+          {/* Пока бот не заведён, кнопка остаётся кнопкой, но никуда
+              не ведёт и прямо говорит почему: ссылка в никуда хуже,
+              чем честная надпись. */}
+          {ready && botReady ? (
             <a className="order__cta" href={botHref} target="_blank" rel="noopener noreferrer">
               Перейти в бот
             </a>
           ) : (
             <button type="button" className="order__cta order__cta--off" disabled>
-              {selection ? 'Выберите способ оплаты' : 'Выберите тариф'}
+              {!selection ? 'Выберите тариф' : !ready ? 'Выберите способ оплаты' : 'Бот скоро откроется'}
             </button>
           )}
 
           <p className="order__fineprint">
-            Регистрация, оплата и выдача доступа — в боте. На сайте ничего вводить не нужно.
+            {botReady
+              ? 'Регистрация, оплата и выдача доступа — в боте. На сайте ничего вводить не нужно.'
+              : 'Регистрация, оплата и выдача доступа будут в Telegram-боте. Он готовится к запуску, на сайте вводить ничего не нужно.'}
           </p>
         </div>
       </div>
@@ -122,7 +127,7 @@ export function OrderPanel() {
 /** Нижняя полоса для телефона. Та же логика, другая раскладка. */
 export function OrderBar() {
   const catalog = getCatalog();
-  const { selection, total, ready, botHref, paymentId, choosePayment } = useOrder();
+  const { selection, total, ready, botReady, botHref, paymentId, choosePayment } = useOrder();
   const totalRef = useCountUp<HTMLParagraphElement>(total, useCallback(formatRub, []));
 
   return (
@@ -157,13 +162,13 @@ export function OrderBar() {
           )}
         </div>
 
-        {ready ? (
+        {ready && botReady ? (
           <a className="bar__cta" href={botHref} target="_blank" rel="noopener noreferrer">
             В бот
           </a>
         ) : (
           <button type="button" className="bar__cta bar__cta--off" disabled>
-            В бот
+            {ready && !botReady ? 'Скоро' : 'В бот'}
           </button>
         )}
       </div>

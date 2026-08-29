@@ -22,9 +22,24 @@ for (const theme of ['light', 'dark']) {
     window.__first = null;
     document.addEventListener('readystatechange', () => {
       if (document.readyState === 'interactive' && window.__first === null) {
+        // Токены зарегистрированы через @property как <color>,
+        // поэтому браузер отдаёт вычисленное значение (rgb), а не
+        // исходный hex. Приводим к общему виду холстом, иначе
+        // сравнение строк даёт ложную тревогу.
+        const cvs = document.createElement('canvas');
+        cvs.width = cvs.height = 1;
+        const cx = cvs.getContext('2d');
+        const norm = (c) => {
+          cx.clearRect(0, 0, 1, 1);
+          cx.fillStyle = c;
+          cx.fillRect(0, 0, 1, 1);
+          const d = cx.getImageData(0, 0, 1, 1).data;
+          return `${d[0]},${d[1]},${d[2]}`;
+        };
         window.__first = {
           theme: document.documentElement.dataset.theme,
-          bg: getComputedStyle(document.documentElement).getPropertyValue('--c-bg').trim(),
+          bg: norm(getComputedStyle(document.documentElement).getPropertyValue('--c-bg').trim()),
+          raw: getComputedStyle(document.documentElement).getPropertyValue('--c-bg').trim(),
           scheme: document.documentElement.style.colorScheme,
         };
       }
@@ -33,9 +48,9 @@ for (const theme of ['light', 'dark']) {
   const page = await ctx.newPage();
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
   const first = await page.evaluate(() => window.__first);
-  const expect = theme === 'dark' ? '#1a1d21' : '#f2eee7';
-  const ok = first?.theme === theme && first?.bg.toLowerCase() === expect;
-  console.log(`  тема «${theme}»: на первом кадре data-theme=${first?.theme}, --c-bg=${first?.bg}, color-scheme=${first?.scheme} → ${ok ? 'вспышки нет' : 'ВСПЫШКА'}`);
+  const expect = theme === 'dark' ? '26,29,33' : '242,238,231';
+  const ok = first?.theme === theme && first?.bg === expect;
+  console.log(`  тема «${theme}»: на первом кадре data-theme=${first?.theme}, --c-bg=${first?.raw} (${first?.bg}), color-scheme=${first?.scheme} → ${ok ? 'вспышки нет' : 'ВСПЫШКА'}`);
   if (!ok) bad++;
   await ctx.close();
 }

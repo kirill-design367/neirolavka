@@ -68,10 +68,12 @@ export type Catalog = {
   payments: PaymentMethod[];
   /** Счётчик оформленных подписок для навигации. */
   subscribers: number;
-  /** Ссылка на бота. */
+  /**
+   * Ссылка на бота. Пока пусто: бота ещё нет, и вести на несуществующий
+   * адрес нельзя. Как только сюда попадёт ссылка, кнопки и переходы
+   * включатся сами — отдельных правок в компонентах не потребуется.
+   */
   botUrl: string;
-  /** Тот же бот словами: чтобы найти его поиском в Telegram, не кликая. */
-  botHandle: string;
   reviews: Review[];
   /** true, пока отзывы демонстрационные. Влияет на подпись у блока. */
   reviewsArePlaceholders: boolean;
@@ -256,8 +258,7 @@ const REVIEWS: Review[] = [
 ];
 
 const CATALOG: Catalog = {
-  botUrl: 'https://t.me/neirolavka_bot',
-  botHandle: '@neirolavka_bot',
+  botUrl: '',
   subscribers: 2417,
   reviews: REVIEWS,
   reviewsArePlaceholders: true,

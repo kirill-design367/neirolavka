@@ -80,6 +80,12 @@
   transform: translateX(3px);
 }
 
+.referral__soon {
+  margin-top: var(--sp-5);
+  font-size: var(--t-label);
+  color: var(--c-on-fill-muted);
+}
+
 @media (min-width: 640px) {
   .referral__content {
     padding: var(--sp-7) var(--sp-6);

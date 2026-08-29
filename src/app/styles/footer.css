@@ -95,11 +95,6 @@
   max-width: 46ch;
 }
 
-.footer__botlink {
-  color: var(--c-accent-text);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
 
 @media (min-width: 640px) {
   .reviews {
