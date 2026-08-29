@@ -1,0 +1,134 @@
+/* Навигация и переключатель темы. */
+
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--c-bg);
+  border-bottom: 1px solid var(--c-line);
+}
+
+.nav__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  min-height: 3.5rem;
+}
+
+.nav__counter {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--t-label);
+  color: var(--c-muted);
+  min-width: 0;
+}
+
+.nav__counter-number {
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+/* На телефоне подпись короче: длинная не влезает в липкую полосу
+   и уводит её в две строки. */
+.nav__counter-tail {
+  display: none;
+}
+
+.nav__counter-short {
+  display: inline;
+}
+
+.nav__pulse {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--c-brand);
+  flex: none;
+  box-shadow: 0 0 0 0.25rem color-mix(in oklab, var(--c-brand) 16%, transparent);
+}
+
+.nav__links {
+  display: none;
+  gap: var(--sp-5);
+}
+
+.nav__link {
+  font-size: var(--t-label);
+  color: var(--c-muted);
+  transition: color 0.18s var(--ease-out);
+}
+
+.nav__link:hover {
+  color: var(--c-text);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+  padding: 0.375rem 0.5rem;
+  border-radius: 999px;
+  color: var(--c-muted);
+  font-size: var(--t-micro);
+  transition: color 0.18s var(--ease-out);
+}
+
+.theme-toggle:hover {
+  color: var(--c-text);
+}
+
+.theme-toggle__track {
+  position: relative;
+  width: 2.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-line);
+  flex: none;
+}
+
+.theme-toggle__thumb {
+  position: absolute;
+  top: 50%;
+  left: 0.1875rem;
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-top: -0.4375rem;
+  border-radius: 50%;
+  background: var(--c-brand);
+  /* Только transform: ни left, ни width в анимации. */
+  transition: transform 0.28s var(--ease-out);
+}
+
+[data-theme='dark'] .theme-toggle__thumb {
+  transform: translateX(1rem);
+}
+
+.theme-toggle__label {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .nav__inner {
+    min-height: 4rem;
+  }
+
+  .nav__links {
+    display: flex;
+  }
+
+  .nav__counter-tail {
+    display: inline;
+  }
+
+  .nav__counter-short {
+    display: none;
+  }
+
+  .theme-toggle__label {
+    display: inline;
+  }
+}

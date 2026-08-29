@@ -1,0 +1,131 @@
+/* Первый экран и условия лавки. */
+
+.hero {
+  padding-top: var(--sp-7);
+  padding-bottom: var(--sp-6);
+}
+
+.hero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--t-micro);
+  color: var(--c-accent-text);
+  letter-spacing: 0.01em;
+}
+
+.hero__eyebrow::before {
+  content: '';
+  width: 1.5rem;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+.hero__title {
+  font-family: var(--font-display);
+  font-size: var(--t-display);
+  font-weight: 620;
+  line-height: 0.95;
+  letter-spacing: -0.025em;
+  color: var(--c-brand);
+  margin-top: var(--sp-3);
+}
+
+.hero__lead {
+  margin-top: var(--sp-4);
+  max-width: 42ch;
+  color: var(--c-muted);
+  line-height: 1.55;
+}
+
+.hero__chips {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-5);
+  flex-wrap: wrap;
+}
+
+.hero__chip {
+  padding: 0.4375rem 0.875rem;
+  border-radius: 999px;
+  border: 1px solid var(--c-line);
+  background: var(--c-surface);
+  font-size: var(--t-label);
+  color: var(--c-muted);
+  transition:
+    transform 0.18s var(--ease-out),
+    color 0.18s var(--ease-out);
+}
+
+.hero__chip:hover {
+  color: var(--c-text);
+  transform: translateY(-1px);
+}
+
+/* Условия лавки. Намеренно не карточки: это не список достоинств,
+   а то, что честная лавка пишет прямо на прилавке. */
+.terms {
+  display: grid;
+  gap: 0;
+  margin: var(--sp-6) 0 0;
+}
+
+.term {
+  padding: var(--sp-3) 0;
+  border-top: 1px solid var(--c-line);
+}
+
+.term:last-child {
+  border-bottom: 1px solid var(--c-line);
+}
+
+.term__title {
+  font-size: var(--t-label);
+  font-weight: 600;
+}
+
+.term__text {
+  margin: 0.125rem 0 0;
+  font-size: var(--t-micro);
+  color: var(--c-muted);
+  line-height: 1.5;
+}
+
+@media (min-width: 1024px) {
+  .hero {
+    padding-top: var(--sp-8);
+    padding-bottom: var(--sp-6);
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    grid-template-areas:
+      'eyebrow terms'
+      'title   terms'
+      'lead    terms';
+    align-items: start;
+    column-gap: var(--sp-7);
+  }
+
+  .hero__eyebrow {
+    grid-area: eyebrow;
+  }
+
+  .hero__title {
+    grid-area: title;
+  }
+
+  .hero__lead {
+    grid-area: lead;
+  }
+
+  .terms {
+    grid-area: terms;
+    margin-top: var(--sp-2);
+    align-self: end;
+  }
+
+  /* На широком экране разделы живут в липкой шапке. */
+  .hero__chips {
+    display: none;
+  }
+}

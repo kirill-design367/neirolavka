@@ -1,16 +1,20 @@
+import { getCatalog } from '@/lib/catalog';
 import { SmoothScroll } from '@/lib/motion';
-import { ThemeToggle } from '@/components/ThemeToggle';
+import { Nav } from '@/components/Nav';
+import { Hero } from '@/components/Hero';
 
 export default function Home() {
+  const catalog = getCatalog();
+
   return (
     <>
       <SmoothScroll />
-      <main className="page" style={{ paddingBlock: 'var(--sp-8)' }}>
-        <ThemeToggle />
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--t-display)', lineHeight: 1, color: 'var(--c-brand)' }}>
-          Нейролавка
-        </h1>
-      </main>
+      <Nav subscribers={catalog.subscribers} />
+      <div className="layout page">
+        <main className="layout__main">
+          <Hero />
+        </main>
+      </div>
     </>
   );
 }
