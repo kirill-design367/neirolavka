@@ -26,7 +26,6 @@ FONTS = [
     # (имя файла на выходе, url исходника)
     ('golos-text', 'https://raw.githubusercontent.com/google/fonts/main/ofl/golostext/GolosText%5Bwght%5D.ttf'),
     ('akt',        'https://raw.githubusercontent.com/google/fonts/main/ofl/akt/Akt%5Bwght%5D.ttf'),
-    ('onest',      'https://raw.githubusercontent.com/google/fonts/main/ofl/onest/Onest%5Bwght%5D.ttf'),
 ]
 
 def main():

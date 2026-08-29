@@ -66,9 +66,6 @@ for (const font of ['golos_text', 'akt']) {
   }
 }
 
-// Onest нужен только на /fonts и не должен тянуться на главную
-if (index.includes('onest')) problems.push('Onest подключён на главной, хотя нужен только на /fonts');
-
 if (problems.length) {
   console.error('Проверка выдачи не пройдена:');
   for (const p of problems) console.error('  • ' + p);
