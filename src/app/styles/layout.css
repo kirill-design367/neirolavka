@@ -1,0 +1,34 @@
+/* Раскладка страницы. Телефон — одна колонка и нижняя полоса заказа,
+   десктоп — содержимое слева и липкий чек справа. */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-6);
+  align-items: start;
+  padding-bottom: var(--sp-8);
+}
+
+.layout__side {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) 20.5rem;
+    gap: var(--sp-7);
+    padding-bottom: var(--sp-7);
+  }
+
+  .layout__side {
+    display: block;
+    position: sticky;
+    top: 5.5rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+  }
+}
