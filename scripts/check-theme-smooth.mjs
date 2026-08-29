@@ -33,7 +33,7 @@ const PROBES = [
   ['бумага чека', '.order__paper', 'backgroundColor'],
   ['тень чека', '.order__paper', 'boxShadow'],
   ['кнопка в бот', '.order__cta', 'backgroundColor'],
-  ['выбранная оплата (color-mix)', '.pay--active', 'backgroundColor'],
+  ['выбранная оплата (color-mix)', '.pays__item--active', 'backgroundColor'],
   ['заливка рефералки', '.referral__plate', 'backgroundColor'],
   ['текст на заливке', '.referral__text', 'color'],
   ['нить шагов (градиент)', '.step:not(:last-child)', 'backgroundImage', '::before'],
@@ -41,15 +41,25 @@ const PROBES = [
   ['подвал', '.footer', 'backgroundColor'],
   ['подложка отзыва', '.review__plate', 'backgroundColor'],
   ['маячок счётчика', '.nav__pulse', 'backgroundColor'],
-  ['ореол маячка (color-mix)', '.nav__pulse', 'boxShadow'],
+  ['волна маячка', '.nav__pulse', 'backgroundColor', '::before'],
+  ['плашка надзаголовка', '.hero__eyebrow', 'backgroundColor', '::before'],
+  ['карточка преимущества', '.term', 'backgroundColor'],
+  ['подложка итога', '.order__total', 'backgroundColor'],
+  ['движок переключателя', '.theme-toggle__thumb', 'backgroundColor'],
+  ['иконка переключателя', '.theme-toggle__icon--sun', 'stroke'],
+  ['тень липкой шапки', '.nav', 'boxShadow'],
 ];
 
-const samples = await page.evaluate(async (probes) => {
+const result = await page.evaluate(async (probes) => {
   const seen = probes.map(() => new Set());
+  const missing = [];
   const read = () => {
-    probes.forEach(([, sel, prop, pseudo], i) => {
+    probes.forEach(([label, sel, prop, pseudo], i) => {
       const el = document.querySelector(sel);
-      if (!el) return;
+      if (!el) {
+        if (!missing.includes(label)) missing.push(label);
+        return;
+      }
       const cs = getComputedStyle(el, pseudo || undefined);
       seen[i].add(cs[prop]);
     });
@@ -67,10 +77,17 @@ const samples = await page.evaluate(async (probes) => {
   });
   await new Promise((r) => setTimeout(r, 250));
   read();
-  return seen.map((s) => [...s]);
+  return { values: seen.map((s) => [...s]), missing };
 }, PROBES);
 
+const { values: samples, missing } = result;
 let bad = 0;
+if (missing.length) {
+  // Проверка, которая целится в несуществующий селектор, молча
+  // перестаёт проверять. Это должно быть видно сразу.
+  console.log(`\nСЕЛЕКТОР НЕ НАЙДЕН: ${missing.join(', ')} — проба устарела, поправьте список`);
+  bad += missing.length;
+}
 console.log('\nразных значений за переход  ·  что проверяли');
 for (let i = 0; i < PROBES.length; i++) {
   const n = samples[i].length;
