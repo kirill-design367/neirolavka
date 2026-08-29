@@ -228,6 +228,15 @@
   display: none;
 }
 
+.theme-toggle__word {
+  grid-area: 1 / 1;
+}
+
+[data-theme='light'] .theme-toggle__word[data-word='dark'],
+[data-theme='dark'] .theme-toggle__word[data-word='light'] {
+  visibility: hidden;
+}
+
 @media (min-width: 1024px) {
   .nav__inner {
     min-height: 3.25rem;
@@ -246,6 +255,7 @@
   }
 
   .theme-toggle__label {
-    display: inline;
+    display: grid;
+    justify-items: start;
   }
 }

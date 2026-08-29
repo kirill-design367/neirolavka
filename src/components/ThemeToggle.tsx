@@ -12,12 +12,10 @@ import { THEME_STORAGE_KEY, THEME_TRANSITION_MS, type Theme } from '@/lib/theme'
  */
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>('light');
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const current = document.documentElement.dataset.theme;
     setTheme(current === 'dark' ? 'dark' : 'light');
-    setMounted(true);
   }, []);
 
   const toggle = useCallback(() => {
@@ -64,8 +62,18 @@ export function ThemeToggle() {
           </svg>
         </span>
       </span>
-      <span className="theme-toggle__label" suppressHydrationWarning>
-        {mounted ? (dark ? 'Тёмная' : 'Светлая') : 'Светлая'}
+      {/* Оба слова всегда в разметке и лежат в одной ячейке сетки:
+          ширина подписи определяется самым длинным из них и при
+          переключении не меняется. Прежде подпись меняла ширину,
+          и вся шапка ехала. Скрытое слово держит место через
+          visibility, а не display. */}
+      <span className="theme-toggle__label" aria-hidden="true">
+        <span className="theme-toggle__word" data-word="light">
+          Светлая
+        </span>
+        <span className="theme-toggle__word" data-word="dark">
+          Тёмная
+        </span>
       </span>
     </button>
   );
