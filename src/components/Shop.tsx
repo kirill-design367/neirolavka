@@ -44,7 +44,17 @@ function Shelf({ product }: { product: Product }) {
 
       {/* Тарифы разворачиваются прямо из заголовка: высота едет с easing,
           содержимое проявляется следом. */}
-      <div className="shelf__body" id={panelId} ref={bodyRef} role="region" aria-label={`Тарифы ${product.name}`}>
+      {/* inert на свёрнутой полке: высота ноль и прозрачность ноль прячут
+          её от глаз, но не от клавиатуры — без этого человек уходил
+          табуляцией в невидимые кнопки тарифов. */}
+      <div
+        className="shelf__body"
+        id={panelId}
+        ref={bodyRef}
+        role="region"
+        aria-label={`Тарифы ${product.name}`}
+        inert={!open}
+      >
         <div className="shelf__body-inner">
           {product.groups.map((group) => (
             <div className="group" key={group.id} data-expand-item>

@@ -60,7 +60,7 @@ export function OrderPanel() {
           </div>
 
           {/* Способ оплаты разворачивается, когда товар выбран. */}
-          <div className="order__rest" ref={restRef}>
+          <div className="order__rest" ref={restRef} inert={!selection}>
             <div>
               <div className="order__block" data-expand-item>
                 <p className="order__label" id="sposob-oplaty">
