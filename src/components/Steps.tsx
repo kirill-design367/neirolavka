@@ -1,6 +1,6 @@
 'use client';
 
-import { useMergedRefs, useParallax, useReveal } from '@/lib/motion';
+import { useMergedRefs, useParallax, useReveal, useStepTrack } from '@/lib/motion';
 
 /** Покупка действительно идёт по шагам, поэтому нумерация здесь несёт смысл. */
 const STEPS = [
@@ -23,6 +23,7 @@ const STEPS = [
 
 export function Steps() {
   const ref = useMergedRefs(useReveal<HTMLElement>({ stagger: 0.08 }), useParallax<HTMLElement>());
+  const trackRef = useStepTrack<HTMLOListElement>();
 
   return (
     <section className="steps" ref={ref}>
@@ -32,10 +33,21 @@ export function Steps() {
 
       {/* Не три одинаковые карточки, а одна нить: шаги нанизаны на линию,
           и видно, что это последовательность, а не список свойств. */}
-      <ol className="steps__thread" data-parallax="0.8">
+      <ol className="steps__thread" data-parallax="0.8" ref={trackRef}>
+        {/* Дорожка и бегущая по ней точка. Разметка одна на весь блок:
+            подсвеченный участок должен быть непрерывным, а не собранным
+            из отрезков между соседними шагами. */}
+        <span className="steps__track" aria-hidden="true">
+          <span className="steps__track-fill" />
+          <span className="steps__led" />
+        </span>
         {STEPS.map((step) => (
           <li className="step" key={step.n}>
             <span className="step__node" aria-hidden="true">
+              {/* Кольцо — отдельный слой без текста: увеличивается
+                  и светится оно, а сам номер только меняет цвет.
+                  Масштаб на узле с текстом растянул бы готовый растр. */}
+              <span className="step__halo" />
               <span className="step__num tnum">{step.n}</span>
             </span>
             <div className="step__body" data-reveal>

@@ -13,12 +13,144 @@
   margin-bottom: var(--sp-5);
 }
 
+/* ─── Дорожка со светодиодом ────────────────────────────────────
+   Точка бежит от первого кружка к последнему и оставляет за собой
+   подсвеченный участок. Когда она равняется с кружком, вокруг номера
+   разгорается кольцо, а сам номер набирает акцентный цвет.
+
+   Всё движение — transform и opacity. Кольцо и точка не содержат
+   текста, поэтому масштаб им разрешён; номер только перекрашивается.
+
+   Геометрию дорожки считает useStepTrack и раздаёт переменными:
+   на телефоне она вертикальная, на широком экране горизонтальная,
+   и формулами по числу колонок это не описать. */
 .steps__thread {
+  position: relative;
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: var(--sp-5);
+  --cycle: 5.6s;
+}
+
+.steps__track {
+  position: absolute;
+  left: var(--track-x, 0);
+  top: var(--track-y, 0);
+  width: 1px;
+  height: var(--track-len, 0);
+  background: var(--c-line);
+  transform: translate(-50%, 0);
+  transform-origin: top left;
+  pointer-events: none;
+}
+
+.steps__thread[data-track-dir='horizontal'] .steps__track {
+  width: var(--track-len, 0);
+  height: 1px;
+  transform: translate(0, -50%);
+}
+
+.steps__track-fill,
+.steps__led {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Подсвеченный участок за точкой: растёт масштабом, а не шириной. */
+.steps__track-fill {
+  inset: 0;
+  background: var(--c-brand);
+  transform-origin: top center;
+  transform: scaleY(0);
+  animation: track-fill var(--cycle) linear infinite;
+}
+
+.steps__thread[data-track-dir='horizontal'] .steps__track-fill {
+  transform-origin: left center;
+  transform: scaleX(0);
+  animation-name: track-fill-x;
+}
+
+/* Сама точка со свечением. */
+.steps__led {
+  left: 50%;
+  top: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin: -0.25rem 0 0 -0.25rem;
+  border-radius: 50%;
+  background: var(--c-brand);
+  box-shadow: 0 0 0.5rem 0.125rem var(--c-brand);
+  animation:
+    led-move-y var(--cycle) linear infinite,
+    led-fade var(--cycle) linear infinite;
+}
+
+.steps__thread[data-track-dir='horizontal'] .steps__led {
+  left: 0;
+  top: 50%;
+  animation-name: led-move-x, led-fade;
+}
+
+@keyframes track-fill {
+  0% {
+    transform: scaleY(0);
+    opacity: 1;
+  }
+  92% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleY(1);
+    opacity: 0;
+  }
+}
+
+@keyframes track-fill-x {
+  0% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+  92% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+@keyframes led-move-y {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 0 var(--track-len, 0);
+  }
+}
+
+@keyframes led-move-x {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: var(--track-len, 0) 0;
+  }
+}
+
+@keyframes led-fade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  7%,
+  90% {
+    opacity: 1;
+  }
 }
 
 .step {
@@ -29,18 +161,10 @@
   align-items: start;
 }
 
-/* Нить, на которую нанизаны шаги: на телефоне вертикальная. */
-.step:not(:last-child)::before {
-  content: '';
-  position: absolute;
-  left: 1rem;
-  top: 2rem;
-  bottom: calc(var(--sp-5) * -1);
-  width: 1px;
-  background: linear-gradient(var(--c-line-strong), var(--c-line));
-}
 
 .step__node {
+  position: relative;
+  isolation: isolate;
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
@@ -51,9 +175,90 @@
   color: var(--c-text);
 }
 
+/* Кольцо разгорается, когда точка равняется с этим шагом.
+   Задержка равна доле пути, на которой шаг стоит. */
+.step__halo {
+  position: absolute;
+  inset: -0.3125rem;
+  z-index: -1;
+  border-radius: 50%;
+  background: var(--c-brand);
+  opacity: 0;
+  transform: scale(0.55);
+  animation: step-lit var(--cycle, 5.6s) linear infinite;
+  animation-delay: calc(var(--at, 0) * var(--cycle, 5.6s));
+}
+
+.step__num {
+  position: relative;
+  transition: color 0.3s var(--ease-out);
+  animation: step-num var(--cycle, 5.6s) linear infinite;
+  animation-delay: calc(var(--at, 0) * var(--cycle, 5.6s));
+}
+
+@keyframes step-lit {
+  0% {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+  5% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  18% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+/* Номер не масштабируется: у него меняется только цвет. */
+@keyframes step-num {
+  0%,
+  100% {
+    color: var(--c-text);
+  }
+  5%,
+  14% {
+    color: var(--c-brand);
+  }
+  26% {
+    color: var(--c-text);
+  }
+}
+
 .step__num {
   font-size: var(--t-label);
   font-weight: 600;
+}
+
+/* Движение выключено — точка стоит в начале, все шаги подсвечены
+   одинаково: иначе схлопнутые в один кадр анимации оставили бы
+   их погашенными. */
+@media (prefers-reduced-motion: reduce) {
+  .steps__track-fill {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0.5;
+  }
+
+  .steps__led {
+    animation: none !important;
+  }
+
+  .step__halo {
+    animation: none !important;
+    opacity: 0.4 !important;
+    transform: scale(1) !important;
+  }
+
+  .step__num {
+    animation: none !important;
+    color: var(--c-text) !important;
+  }
 }
 
 .step__title {
@@ -86,16 +291,6 @@
     gap: var(--sp-3);
   }
 
-  /* На широком экране нить разворачивается по горизонтали. */
-  .step:not(:last-child)::before {
-    left: 2.5rem;
-    right: calc(var(--sp-5) * -1);
-    top: 1rem;
-    bottom: auto;
-    width: auto;
-    height: 1px;
-    background: linear-gradient(90deg, var(--c-line-strong), var(--c-line));
-  }
 
   .steps__note {
     padding-left: 0;

@@ -214,6 +214,62 @@ export function useParallax<T extends HTMLElement>() {
 }
 
 /**
+ * Геометрия дорожки шагов.
+ *
+ * Дорожка идёт от центра первого кружка до центра последнего, а на
+ * десктопе и на телефоне она разная: там горизонталь, тут вертикаль.
+ * Считать это в CSS пришлось бы формулами по числу колонок и величине
+ * промежутка — они разъедутся при первой же правке раскладки. Поэтому
+ * положение снимается с настоящих кружков и раздаётся переменными,
+ * а CSS только рисует.
+ *
+ * Каждому шагу достаётся --at: доля пути, на которой он стоит.
+ * От неё зависит момент, когда его подсветит пробегающая точка.
+ */
+export function useStepTrack<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+
+  useIsomorphicLayoutEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+
+    const measure = () => {
+      const nodes = Array.from(root.querySelectorAll<HTMLElement>('.step__node'));
+      if (nodes.length < 2) return;
+      const base = root.getBoundingClientRect();
+      const centre = (el: HTMLElement) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.left - base.left + r.width / 2, y: r.top - base.top + r.height / 2 };
+      };
+      const first = centre(nodes[0]);
+      const last = centre(nodes[nodes.length - 1]);
+      const dx = last.x - first.x;
+      const dy = last.y - first.y;
+      const vertical = Math.abs(dy) > Math.abs(dx);
+      const len = vertical ? dy : dx;
+
+      root.style.setProperty('--track-x', `${first.x}px`);
+      root.style.setProperty('--track-y', `${first.y}px`);
+      root.style.setProperty('--track-len', `${Math.abs(len)}px`);
+      root.dataset.trackDir = vertical ? 'vertical' : 'horizontal';
+
+      nodes.forEach((node) => {
+        const c = centre(node);
+        const at = len === 0 ? 0 : ((vertical ? c.y - first.y : c.x - first.x) / len);
+        (node.closest('.step') as HTMLElement | null)?.style.setProperty('--at', at.toFixed(4));
+      });
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, []);
+
+  return ref;
+}
+
+/**
  * Число, которое плавно добегает до нового значения.
  * Цифры табличные, поэтому ширина не гуляет и соседей не дёргает.
  */
