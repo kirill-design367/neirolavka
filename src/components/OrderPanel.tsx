@@ -36,7 +36,7 @@ export function OrderPanel() {
   return (
     <aside className="order" aria-label="Заказ">
       <div className="order__paper">
-        <div className="order__scroll" data-lenis-prevent>
+        <div className="order__scroll" data-lenis-scrollable>
           <h2 className="order__title">Заказ</h2>
 
           <div className="order__block">
