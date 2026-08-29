@@ -41,7 +41,7 @@
   border-radius: inherit;
   background: var(--c-surface);
   border: 1px solid var(--c-line);
-  box-shadow: 0 1px 2px rgb(var(--c-shadow) / var(--shadow-strength-2));
+  box-shadow: 0 1px 2px var(--c-shadow-1);
   transition:
     border-color 0.25s var(--ease-out),
     box-shadow 0.25s var(--ease-out);
@@ -49,7 +49,7 @@
 
 .shelf--open .shelf__plate {
   border-color: color-mix(in oklab, var(--c-brand) 42%, var(--c-line));
-  box-shadow: 0 8px 24px -12px rgb(var(--c-shadow) / var(--shadow-strength));
+  box-shadow: 0 8px 24px -12px var(--c-shadow-2);
 }
 
 .shelf__heading {

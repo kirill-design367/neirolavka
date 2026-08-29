@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { THEME_STORAGE_KEY, type Theme } from '@/lib/theme';
+import { THEME_STORAGE_KEY, THEME_TRANSITION_MS, type Theme } from '@/lib/theme';
 
 /**
  * Переключатель темы.
@@ -24,7 +24,7 @@ export function ThemeToggle() {
     const next: Theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     const root = document.documentElement;
 
-    // На время смены темы включаем переход по цвету. Класс снимается,
+    // На время смены темы включаем переход по переменным. Класс снимается,
     // иначе каждый ховер тоже начал бы плавно перекрашиваться.
     root.classList.add('theme-transition');
     root.dataset.theme = next;
@@ -35,7 +35,7 @@ export function ThemeToggle() {
       // приватный режим — просто не запоминаем
     }
     setTheme(next);
-    window.setTimeout(() => root.classList.remove('theme-transition'), 320);
+    window.setTimeout(() => root.classList.remove('theme-transition'), THEME_TRANSITION_MS + 60);
   }, []);
 
   const dark = theme === 'dark';

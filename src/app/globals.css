@@ -9,6 +9,136 @@
 @import './styles/hero.css';
 
 /* ─────────────────────────────────────────────────────────────
+   Регистрация цветовых токенов.
+
+   Без @property пользовательское свойство для браузера — просто
+   строка, и переход по нему невозможен. Зарегистрированное как
+   <color> оно становится интерполируемым, и достаточно анимировать
+   переменные на корне: всё, что читает их через var(), включая
+   градиенты, color-mix и тени, пересчитывается каждый кадр само.
+   ───────────────────────────────────────────────────────────── */
+
+@property --c-bg {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #f2eee7;
+}
+
+@property --c-surface {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #fbf9f5;
+}
+
+@property --c-surface-2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #eae5db;
+}
+
+@property --c-text {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1b211c;
+}
+
+@property --c-muted {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #5a6159;
+}
+
+@property --c-line {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #d9d2c5;
+}
+
+@property --c-line-strong {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #b9b0a0;
+}
+
+@property --c-brand {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #14452f;
+}
+
+@property --c-on-brand {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #fbf9f5;
+}
+
+@property --c-fill {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #14452f;
+}
+
+@property --c-on-fill {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #fbf9f5;
+}
+
+@property --c-on-fill-muted {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #c9dccf;
+}
+
+@property --c-fill-btn {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #fbf9f5;
+}
+
+@property --c-on-fill-btn {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #14452f;
+}
+
+@property --c-accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #c9862a;
+}
+
+@property --c-on-accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1b211c;
+}
+
+@property --c-accent-text {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #7a5314;
+}
+
+@property --c-shadow-1 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgb(27 33 28 / 0.06);
+}
+
+@property --c-shadow-2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgb(27 33 28 / 0.09);
+}
+
+@property --c-shadow-3 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgb(27 33 28 / 0.10);
+}
+
+/* ─────────────────────────────────────────────────────────────
    Токены. Светлая тема — тёплый камень, тёмная — графит
    с зелёной подложкой. Каждая пара текст/фон проверена
    скриптом scripts/contrast.py, порог 4.5:1.
@@ -36,9 +166,9 @@
   --c-accent: #c9862a;      /* янтарь: фон кнопки */
   --c-on-accent: #1b211c;   /* 5.41:1 на янтаре */
   --c-accent-text: #7a5314; /* янтарь, пригодный как текст: 5.91:1 */
-  --c-shadow: 27 33 28;
-  --shadow-strength: 0.09;
-  --shadow-strength-2: 0.06;
+  --c-shadow-1: rgb(27 33 28 / 0.06);  /* мягкая тень карточки */
+  --c-shadow-2: rgb(27 33 28 / 0.09);  /* подъём над фоном */
+  --c-shadow-3: rgb(27 33 28 / 0.10);  /* нижняя полоса заказа */
 }
 
 [data-theme='dark'] {
@@ -60,9 +190,9 @@
   --c-accent: #e0a542;
   --c-on-accent: #191c1a;   /* 7.88:1 */
   --c-accent-text: #e0a542; /* 7.88:1 как текст */
-  --c-shadow: 0 0 0;
-  --shadow-strength: 0.5;
-  --shadow-strength-2: 0.34;
+  --c-shadow-1: rgb(0 0 0 / 0.34);
+  --c-shadow-2: rgb(0 0 0 / 0.5);
+  --c-shadow-3: rgb(0 0 0 / 0.5);
 }
 
 @theme inline {
@@ -114,6 +244,7 @@
   --r-xl: 1.75rem;
 
   --page: 78rem;
+  --theme-dur: 0.38s;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
 }
@@ -155,17 +286,45 @@ body {
   overflow-x: clip;
 }
 
-/* Плавная смена темы. Класс висит только на время переключения,
-   иначе каждый ховер тоже перекрашивался бы с задержкой. */
-.theme-transition,
-.theme-transition *,
-.theme-transition *::before,
-.theme-transition *::after {
+/* Плавная смена темы.
+
+   Раньше переход висел на КАЖДОМ элементе страницы и перечислял
+   свойства поимённо. Это давало сразу две беды: сотни элементов
+   одновременно анимировали фон, цвет, границу и тень — отсюда рывки;
+   и всё, чего не было в списке, менялось скачком — градиенты нити
+   шагов, цвет обводки фокуса, любые заливки через color-mix.
+
+   Теперь анимируются сами переменные, и только на корне. Элемент,
+   который перекрашивается, ровно один; всё остальное просто читает
+   переменную и пересчитывается вместе с ней. */
+.theme-transition {
   transition:
-    background-color 0.3s var(--ease-inout),
-    border-color 0.3s var(--ease-inout),
-    color 0.3s var(--ease-inout),
-    box-shadow 0.3s var(--ease-inout) !important;
+    --c-bg var(--theme-dur) var(--ease-inout),
+    --c-surface var(--theme-dur) var(--ease-inout),
+    --c-surface-2 var(--theme-dur) var(--ease-inout),
+    --c-text var(--theme-dur) var(--ease-inout),
+    --c-muted var(--theme-dur) var(--ease-inout),
+    --c-line var(--theme-dur) var(--ease-inout),
+    --c-line-strong var(--theme-dur) var(--ease-inout),
+    --c-brand var(--theme-dur) var(--ease-inout),
+    --c-on-brand var(--theme-dur) var(--ease-inout),
+    --c-fill var(--theme-dur) var(--ease-inout),
+    --c-on-fill var(--theme-dur) var(--ease-inout),
+    --c-on-fill-muted var(--theme-dur) var(--ease-inout),
+    --c-fill-btn var(--theme-dur) var(--ease-inout),
+    --c-on-fill-btn var(--theme-dur) var(--ease-inout),
+    --c-accent var(--theme-dur) var(--ease-inout),
+    --c-on-accent var(--theme-dur) var(--ease-inout),
+    --c-accent-text var(--theme-dur) var(--ease-inout),
+    --c-shadow-1 var(--theme-dur) var(--ease-inout),
+    --c-shadow-2 var(--theme-dur) var(--ease-inout),
+    --c-shadow-3 var(--theme-dur) var(--ease-inout);
+}
+
+/* Фон холста браузера (то, что видно за пределами body при оттяжке)
+   переключается вместе с темой, а не мгновенно. */
+.theme-transition body {
+  transition: background-color var(--theme-dur) var(--ease-inout);
 }
 
 h1,

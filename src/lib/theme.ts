@@ -2,6 +2,9 @@ export type Theme = 'light' | 'dark';
 
 export const THEME_STORAGE_KEY = 'neirolavka-theme';
 
+/** Должно совпадать с --theme-dur в globals.css. */
+export const THEME_TRANSITION_MS = 380;
+
 /**
  * Скрипт, который выполняется в <head> ДО первой отрисовки.
  * Он ставит data-theme на <html>, поэтому браузер сразу красит страницу

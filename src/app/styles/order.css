@@ -9,7 +9,7 @@
   border-bottom: none;
   border-radius: var(--r-lg) var(--r-lg) 0 0;
   padding: var(--sp-5);
-  box-shadow: 0 12px 32px -20px rgb(var(--c-shadow) / var(--shadow-strength));
+  box-shadow: 0 12px 32px -20px var(--c-shadow-2);
 }
 
 .order__paper::after {
@@ -249,7 +249,7 @@
   background: var(--c-surface);
   border-top: 1px solid var(--c-line);
   padding: var(--sp-3) var(--sp-5) calc(var(--sp-3) + env(safe-area-inset-bottom));
-  box-shadow: 0 -8px 28px -18px rgb(var(--c-shadow) / 0.5);
+  box-shadow: 0 -8px 28px -18px var(--c-shadow-3);
 }
 
 .bar__pays {
