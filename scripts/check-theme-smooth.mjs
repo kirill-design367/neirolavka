@@ -63,7 +63,7 @@ const PROBES = [
   ['иконка переключателя', '.theme-toggle__icon--sun', 'stroke'],
   // Тень шапки живёт на подложке капсулы, а не на самой шапке.
   ['тень липкой шапки', '.nav__inner', 'boxShadow', '::before'],
-  ['свет внутри рефералки', '.referral__glow', 'boxShadow'],
+  ['свет вокруг рефералки', '.referral__glow', 'boxShadow'],
 ];
 
 const result = await page.evaluate(async (probes) => {
