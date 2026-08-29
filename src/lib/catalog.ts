@@ -52,6 +52,15 @@ export type Product = {
   groups: PlanGroup[];
 };
 
+/** Отзыв. Пока это примеры оформления: настоящие приедут из бота. */
+export type Review = {
+  id: string;
+  author: string;
+  /** Что человек купил — короткой строкой. */
+  bought: string;
+  text: string;
+};
+
 export type Catalog = {
   products: Product[];
   payments: PaymentMethod[];
@@ -59,6 +68,9 @@ export type Catalog = {
   subscribers: number;
   /** Ссылка на бота. */
   botUrl: string;
+  reviews: Review[];
+  /** true, пока отзывы демонстрационные. Влияет на подпись у блока. */
+  reviewsArePlaceholders: boolean;
 };
 
 const PRICE = 1;
@@ -192,9 +204,50 @@ const chatgptTokens: Plan[] = [
   },
 ];
 
+const REVIEWS: Review[] = [
+  {
+    id: 'r1',
+    author: 'Артём',
+    bought: 'Claude Pro, 6 месяцев',
+    text: 'Брал на полгода, чтобы не возвращаться к этому вопросу. Доступ пришёл в боте минут через пять, зашёл со своей почты, всё на месте.',
+  },
+  {
+    id: 'r2',
+    author: 'Нина',
+    bought: 'Claude Pro, 1 месяц',
+    text: 'Сначала взяла на месяц — проверить, что это не развод. Проверила, продлила. Оплатила через СБП, никаких данных карты никуда не вводила.',
+  },
+  {
+    id: 'r3',
+    author: 'Дмитрий',
+    bought: 'Пакет 20 млн токенов',
+    text: 'Нужен был ключ к API под рабочий скрипт. Выдали ключ, лимит совпал с заявленным. Отдельно порадовало, что цена сразу видна и не меняется на последнем шаге.',
+  },
+  {
+    id: 'r4',
+    author: 'Соня',
+    bought: 'Claude Pro, 12 месяцев',
+    text: 'Год вышел заметно дешевле помесячной оплаты. Написала в бот с вопросом про продление — ответили в тот же вечер.',
+  },
+  {
+    id: 'r5',
+    author: 'Павел',
+    bought: 'Пакет 5 млн токенов',
+    text: 'Платил в USDT, сеть TON. Зачлось быстрее, чем я успел закрыть кошелёк.',
+  },
+  {
+    id: 'r6',
+    author: 'Марина',
+    bought: 'Claude Pro, 3 месяца',
+    text: 'До этого покупала у перекупа в личке и потеряла деньги. Тут хотя бы понятно, за что платишь и что будет дальше.',
+  },
+];
+
 const CATALOG: Catalog = {
   botUrl: 'https://t.me/neirolavka_bot',
   subscribers: 2417,
+  reviews: REVIEWS,
+  reviewsArePlaceholders: true,
   payments: [
     { id: 'card', title: 'Карта РФ', caption: 'Любой российский банк' },
     { id: 'sbp', title: 'СБП', caption: 'Перевод по номеру телефона' },
