@@ -13,12 +13,12 @@
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: var(--c-brand);
+  background: var(--c-fill);
 }
 
 .referral__content {
   padding: var(--sp-6) var(--sp-5);
-  color: var(--c-on-brand);
+  color: var(--c-on-fill);
 }
 
 .referral__title {
@@ -32,7 +32,7 @@
   margin-top: var(--sp-3);
   max-width: 52ch;
   font-size: var(--t-label);
-  opacity: 0.86;
+  color: var(--c-on-fill-muted);
   line-height: 1.6;
 }
 
@@ -41,12 +41,12 @@
   gap: var(--sp-4);
   margin: var(--sp-5) 0 0;
   padding-top: var(--sp-5);
-  border-top: 1px solid color-mix(in oklab, var(--c-on-brand) 22%, transparent);
+  border-top: 1px solid color-mix(in oklab, var(--c-on-fill) 22%, transparent);
 }
 
 .fact__label {
   font-size: var(--t-micro);
-  opacity: 0.7;
+  color: var(--c-on-fill-muted);
 }
 
 .fact__value {
@@ -62,8 +62,8 @@
   margin-top: var(--sp-5);
   padding: 0.75rem 1.25rem;
   border-radius: var(--r-md);
-  background: var(--c-on-brand);
-  color: var(--c-brand);
+  background: var(--c-fill-btn);
+  color: var(--c-on-fill-btn);
   font-size: var(--t-label);
   font-weight: 600;
   transition: transform 0.18s var(--ease-out);

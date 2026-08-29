@@ -25,6 +25,14 @@
   --c-line-strong: #b9b0a0;
   --c-brand: #14452f;       /* бутылочно-зелёный: 9.45:1 на фоне */
   --c-on-brand: #fbf9f5;    /* 10.39:1 на зелёном */
+  /* Заливка больших плоскостей — отдельный токен.
+     Акцентный цвет годится для текста, но не для целого блока:
+     в тёмной теме мятный на графите светится. */
+  --c-fill: #14452f;
+  --c-on-fill: #fbf9f5;     /* 10.39:1 на заливке */
+  --c-on-fill-muted: #c9dccf; /* 7.61:1 на заливке */
+  --c-fill-btn: #fbf9f5;
+  --c-on-fill-btn: #14452f; /* 10.39:1 */
   --c-accent: #c9862a;      /* янтарь: фон кнопки */
   --c-on-accent: #1b211c;   /* 5.41:1 на янтаре */
   --c-accent-text: #7a5314; /* янтарь, пригодный как текст: 5.91:1 */
@@ -43,6 +51,12 @@
   --c-line-strong: #4a524c;
   --c-brand: #7fcb9b;       /* 8.93:1 на фоне */
   --c-on-brand: #10251a;
+  /* В тёмной теме заливка уходит вглубь, а не вверх по светлоте. */
+  --c-fill: #1f3a2e;
+  --c-on-fill: #e8e6e0;     /* 9.88:1 на заливке */
+  --c-on-fill-muted: #a8bdaf; /* 6.20:1 на заливке */
+  --c-fill-btn: #7fcb9b;
+  --c-on-fill-btn: #12251c; /* 8.35:1 */
   --c-accent: #e0a542;
   --c-on-accent: #191c1a;   /* 7.88:1 */
   --c-accent-text: #e0a542; /* 7.88:1 как текст */
@@ -61,6 +75,8 @@
   --color-line-strong: var(--c-line-strong);
   --color-brand: var(--c-brand);
   --color-on-brand: var(--c-on-brand);
+  --color-fill: var(--c-fill);
+  --color-on-fill: var(--c-on-fill);
   --color-accent: var(--c-accent);
   --color-on-accent: var(--c-on-accent);
   --color-accent-text: var(--c-accent-text);
