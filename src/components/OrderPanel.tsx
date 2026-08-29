@@ -83,7 +83,7 @@ export function OrderPanel() {
                   ))}
                 </div>
                 <p className="order__pay-caption">
-                  {payment ? payment.caption : 'Выберите, чем удобнее заплатить'}
+                  {payment ? payment.caption : 'Выберите, чем привычнее заплатить'}
                 </p>
               </div>
             </div>
