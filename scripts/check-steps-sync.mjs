@@ -49,9 +49,13 @@ for (const [w, name, theme] of [[1512, 'десктоп, светлая', 'light'
     const dist = (c) => { const m = rgb(c);
       return Math.hypot(m[0] - brand[0], m[1] - brand[1], m[2] - brand[2]); };
     const out = [];
+    // Отсчёт идёт с четвёртого повтора, а не с первого: у второго и
+    // третьего узла задержка в 2.2 и 4.4 с, и внутри неё анимация
+    // вообще не применяет стилей — первый повтор показывает не то,
+    // что видит человек через пару секунд после загрузки.
     const N = 200;
     for (let i = 0; i <= N; i++) {
-      const t = (i / N) * cyc;
+      const t = (i / N) * cyc + cyc * 3;
       anims.forEach((a) => { a.currentTime = t; });
       const f = fill.getBoundingClientRect();
       const l = led.getBoundingClientRect();
@@ -68,7 +72,7 @@ for (const [w, name, theme] of [[1512, 'десктоп, светлая', 'light'
                  col: getComputedStyle(n.querySelector('.step__num')).color,
                  bd: st.borderTopColor };
       });
-      out.push({ t: +(t / cyc).toFixed(3), gap: +(edge - dot).toFixed(2), ext: +ext.toFixed(1),
+      out.push({ t: +((t - cyc * 3) / cyc).toFixed(3), gap: +(edge - dot).toFixed(2), ext: +ext.toFixed(1),
                  fo: +(+fs.opacity).toFixed(2), lo: +(+ls.opacity).toFixed(2), dot, nodes: nodeState });
     }
     anims.forEach((a) => a.play());
