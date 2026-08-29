@@ -14,9 +14,17 @@
 }
 
 @media (min-width: 1024px) {
-  .layout {
-    grid-template-columns: minmax(0, 1fr) 20.5rem;
-    gap: var(--sp-7);
+  /* .layout.page, а не просто .layout: правило .page объявлено в
+     globals.css ниже по файлу и при равной специфичности перебивало
+     отступ справа. */
+  .layout.page {
+    grid-template-columns: minmax(0, 1fr) 19.5rem;
+    /* Воздуха между содержимым и чеком стало больше: раньше колонки
+       стояли в трёх сантиметрах друг от друга и композиция читалась
+       сжатой. */
+    gap: var(--sp-8);
+    /* И сам чек отодвинут от края экрана, а не прижат к нему. */
+    padding-right: var(--sp-7);
     padding-bottom: var(--sp-7);
   }
 
@@ -28,7 +36,8 @@
 }
 
 @media (min-width: 1280px) {
-  .layout {
-    grid-template-columns: minmax(0, 1fr) 22rem;
+  .layout.page {
+    grid-template-columns: minmax(0, 1fr) 21rem;
+    padding-right: var(--sp-8);
   }
 }
