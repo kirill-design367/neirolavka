@@ -23,7 +23,7 @@
   .layout__side {
     display: block;
     position: sticky;
-    top: 5.5rem;
+    top: var(--side-top);
   }
 }
 

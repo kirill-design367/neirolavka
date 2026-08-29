@@ -248,6 +248,7 @@
   --r-xl: 1.75rem;
 
   --page: 78rem;
+  --side-top: 5.5rem;
   --theme-dur: 0.38s;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
