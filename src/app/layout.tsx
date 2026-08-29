@@ -24,7 +24,7 @@ export const viewport: Viewport = {
   // не было светлой полосы над тёмной страницей.
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#f2eee7' },
-    { media: '(prefers-color-scheme: dark)', color: '#191c1a' },
+    { media: '(prefers-color-scheme: dark)', color: '#1a1d21' },
   ],
 };
 

@@ -33,7 +33,7 @@ for (const theme of ['light', 'dark']) {
   const page = await ctx.newPage();
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
   const first = await page.evaluate(() => window.__first);
-  const expect = theme === 'dark' ? '#191c1a' : '#f2eee7';
+  const expect = theme === 'dark' ? '#1a1d21' : '#f2eee7';
   const ok = first?.theme === theme && first?.bg.toLowerCase() === expect;
   console.log(`  тема «${theme}»: на первом кадре data-theme=${first?.theme}, --c-bg=${first?.bg}, color-scheme=${first?.scheme} → ${ok ? 'вспышки нет' : 'ВСПЫШКА'}`);
   if (!ok) bad++;
