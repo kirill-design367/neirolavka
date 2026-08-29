@@ -51,7 +51,18 @@ export function ThemeToggle() {
       suppressHydrationWarning
     >
       <span className="theme-toggle__track" aria-hidden="true">
-        <span className="theme-toggle__thumb" />
+        <span className="theme-toggle__thumb">
+          {/* Обе иконки лежат друг на друге и меняются проявлением
+              с поворотом. Подмены картинки нет: оба узла в разметке
+              всегда, меняются только opacity и transform. */}
+          <svg className="theme-toggle__icon theme-toggle__icon--sun" viewBox="0 0 24 24" focusable="false">
+            <circle cx="12" cy="12" r="4.2" />
+            <path d="M12 2.4v2.3M12 19.3v2.3M2.4 12h2.3M19.3 12h2.3M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6" />
+          </svg>
+          <svg className="theme-toggle__icon theme-toggle__icon--moon" viewBox="0 0 24 24" focusable="false">
+            <path d="M20.1 14.8A8.4 8.4 0 0 1 9.2 3.9a8.6 8.6 0 1 0 10.9 10.9Z" />
+          </svg>
+        </span>
       </span>
       <span className="theme-toggle__label" suppressHydrationWarning>
         {mounted ? (dark ? 'Тёмная' : 'Светлая') : 'Светлая'}

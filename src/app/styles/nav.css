@@ -82,29 +82,65 @@
 
 .theme-toggle__track {
   position: relative;
-  width: 2.25rem;
-  height: 1.25rem;
+  width: 3.25rem;
+  height: 1.75rem;
   border-radius: 999px;
   background: var(--c-surface-2);
-  border: 1px solid var(--c-line);
   flex: none;
 }
 
 .theme-toggle__thumb {
   position: absolute;
-  top: 50%;
+  top: 0.1875rem;
   left: 0.1875rem;
-  width: 0.875rem;
-  height: 0.875rem;
-  margin-top: -0.4375rem;
+  width: 1.375rem;
+  height: 1.375rem;
   border-radius: 50%;
   background: var(--c-brand);
+  color: var(--c-on-brand);
+  display: grid;
+  place-items: center;
   /* Только transform: ни left, ни width в анимации. */
-  transition: transform 0.28s var(--ease-out);
+  transition: transform 0.34s var(--ease-out);
 }
 
 [data-theme='dark'] .theme-toggle__thumb {
-  transform: translateX(1rem);
+  transform: translateX(1.5rem);
+}
+
+/* Иконки лежат одна на другой и меняются проявлением с поворотом. */
+.theme-toggle__icon {
+  grid-area: 1 / 1;
+  width: 0.8125rem;
+  height: 0.8125rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition:
+    opacity 0.28s var(--ease-out),
+    transform 0.34s var(--ease-out);
+}
+
+.theme-toggle__icon--sun {
+  opacity: 1;
+  transform: rotate(0deg);
+}
+
+.theme-toggle__icon--moon {
+  opacity: 0;
+  transform: rotate(-70deg);
+}
+
+[data-theme='dark'] .theme-toggle__icon--sun {
+  opacity: 0;
+  transform: rotate(70deg);
+}
+
+[data-theme='dark'] .theme-toggle__icon--moon {
+  opacity: 1;
+  transform: rotate(0deg);
 }
 
 .theme-toggle__label {
