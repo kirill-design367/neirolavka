@@ -163,6 +163,18 @@
   initial-value: rgb(0 0 0 / 0);
 }
 
+@property --c-scroll-thumb {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #877d6d;
+}
+
+@property --c-scroll-track {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #e9e3d8;
+}
+
 @property --c-title-edge {
   syntax: '<color>';
   inherits: true;
@@ -212,6 +224,11 @@
   --c-muted: #5a6159;       /* 5.52:1 на фоне */
   --c-line: #d9d2c5;        /* границы */
   --c-line-strong: #b9b0a0;
+  /* Полоса прокрутки — такие же токены, как всё остальное. Иначе
+     её красит системная тема через color-scheme, и она меняет цвет
+     мгновенно, пока страница перекрашивается 380 мс. */
+  --c-scroll-thumb: #877d6d; /* 3.18:1 на дорожке полосы */
+  --c-scroll-track: #e9e3d8;
   --c-brand: #14452f;       /* бутылочно-зелёный: 9.45:1 на фоне */
   /* Точки градиента названия. В светлой теме обе одного цвета:
      заголовок выглядит сплошным, но выводится тем же способом,
@@ -256,6 +273,8 @@
   --c-muted: #9aa39c;       /* 6.62:1 на фоне */
   --c-line: #343a36;
   --c-line-strong: #4a524c;
+  --c-scroll-thumb: #6d716c; /* 3.19:1 на дорожке полосы */
+  --c-scroll-track: #20241f;
   /* Единственная замена: вместо мятного зелёного — приглушённый
      сливово-аметистовый. Он лежит между бордовым и фиолетовым,
      низкой насыщенности, поэтому читается дорого, а не неоново. */
@@ -375,6 +394,15 @@
 html {
   -webkit-text-size-adjust: 100%;
   scroll-behavior: auto; /* прокруткой управляет Lenis */
+  /* Полоса прокрутки красится своими токенами, а не системной темой.
+     Пока её цвет определял color-scheme, она перещёлкивалась в тот
+     же кадр, когда меняется data-theme, — то есть за 380 мс до того,
+     как страница доезжала до конечного цвета. Теперь она читает
+     переменные и едет вместе со всем остальным.
+
+     Свойство наследуемое, поэтому внутренние прокручиваемые области
+     (например, .order__scroll) подхватывают его сами. */
+  scrollbar-color: var(--c-scroll-thumb) var(--c-scroll-track);
 }
 
 body {
@@ -411,6 +439,8 @@ body {
     --c-muted var(--theme-dur) var(--ease-inout),
     --c-line var(--theme-dur) var(--ease-inout),
     --c-line-strong var(--theme-dur) var(--ease-inout),
+    --c-scroll-thumb var(--theme-dur) var(--ease-inout),
+    --c-scroll-track var(--theme-dur) var(--ease-inout),
     --c-brand var(--theme-dur) var(--ease-inout),
     --c-on-brand var(--theme-dur) var(--ease-inout),
     --c-fill var(--theme-dur) var(--ease-inout),
