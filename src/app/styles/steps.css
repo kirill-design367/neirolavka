@@ -83,52 +83,116 @@
   animation-name: track-fill-x;
 }
 
-/* Капля света. Идеального круга нет: две одинаковые по цвету
-   эллиптические доли крутятся с разной скоростью, и их общий силуэт
-   всё время немного меняется. Обе доли — только transform, поэтому
-   перерисовки формы не происходит, слой просто трансформируется. */
+/* Капля света. Идеального круга нет: две эллиптические доли
+   крутятся с разной скоростью, и их общий силуэт всё время немного
+   меняется.
+
+   Внутри каждой доли — крупный слой с ярким многоцветным градиентом,
+   который медленно ползает. Доля обрезает его по кругу, поэтому
+   видно только сердцевину: в ней переливаются несколько цветов, как
+   будто внутри что-то движется. Двигается СЛОЙ через transform,
+   а не позиция градиента: браузер перекладывает готовый растр, а не
+   перерисовывает градиент каждый кадр.
+
+   Сам .steps__led цвета не несёт — он только ездит и гаснет. */
 .steps__led {
   left: 50%;
   top: 0;
-  width: 0.625rem;
-  height: 0.625rem;
-  margin: -0.3125rem 0 0 -0.3125rem;
-  border-radius: 50%;
-  background: var(--c-brand);
+  width: 0.75rem;
+  height: 0.75rem;
+  margin: -0.375rem 0 0 -0.375rem;
   animation:
     led-move-y var(--cycle) linear infinite,
-    led-fade var(--cycle) linear infinite,
-    led-wobble-a 3.1s ease-in-out infinite;
+    led-fade var(--cycle) linear infinite;
 }
 
-.steps__led::before,
-.steps__led::after {
+.steps__led-lobe {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
+  animation: led-wobble-a 3.1s ease-in-out infinite;
+}
+
+.steps__led-lobe--b {
+  animation: led-wobble-b 4.3s ease-in-out infinite;
+}
+
+.steps__led-lobe::before {
   content: '';
   position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
+  inset: -85%;
+  animation: spark-a 2.6s linear infinite;
+  background:
+    radial-gradient(circle at 32% 28%, var(--c-spark-2) 0%, transparent 46%),
+    radial-gradient(circle at 72% 62%, var(--c-spark-3) 0%, transparent 44%),
+    conic-gradient(
+      from 0deg,
+      var(--c-spark-1),
+      var(--c-spark-3),
+      var(--c-spark-2),
+      var(--c-spark-1)
+    );
 }
 
-/* Вторая доля капли. */
-.steps__led::before {
-  inset: 0;
-  background: var(--c-brand);
-  animation: led-wobble-b 4.3s ease-in-out infinite;
+/* У второй доли и рисунок, и ход другие: периоды не кратны, поэтому
+   сочетание цветов в сердцевине не повторяется на глаз. */
+.steps__led-lobe--b::before {
+  animation: spark-b 3.7s linear infinite;
+  background:
+    radial-gradient(circle at 66% 34%, var(--c-spark-3) 0%, transparent 45%),
+    radial-gradient(circle at 26% 70%, var(--c-spark-1) 0%, transparent 42%),
+    conic-gradient(
+      from 140deg,
+      var(--c-spark-2),
+      var(--c-spark-1),
+      var(--c-spark-3),
+      var(--c-spark-2)
+    );
 }
 
 /* Мягкое свечение вокруг капли: дышит отдельно от формы, поэтому
    пульс и колыхание контура не попадают в такт друг другу. */
 .steps__led::after {
-  inset: -0.6875rem;
+  content: '';
+  position: absolute;
+  inset: -0.625rem;
+  border-radius: 50%;
+  pointer-events: none;
   background: radial-gradient(circle, var(--c-brand) 0%, transparent 68%);
   opacity: 0.5;
   animation: led-breathe 2.3s ease-in-out infinite;
 }
 
+@keyframes spark-a {
+  0% {
+    transform: rotate(0deg) translate3d(6%, -4%, 0);
+  }
+  50% {
+    transform: rotate(180deg) translate3d(-5%, 6%, 0);
+  }
+  100% {
+    transform: rotate(360deg) translate3d(6%, -4%, 0);
+  }
+}
+
+@keyframes spark-b {
+  0% {
+    transform: rotate(360deg) translate3d(-6%, 5%, 0);
+  }
+  50% {
+    transform: rotate(180deg) translate3d(5%, -6%, 0);
+  }
+  100% {
+    transform: rotate(0deg) translate3d(-6%, 5%, 0);
+  }
+}
+
 .steps__thread[data-track-dir='horizontal'] .steps__led {
   left: 0;
   top: 50%;
-  animation-name: led-move-x, led-fade, led-wobble-a;
+  animation-name: led-move-x, led-fade;
 }
 
 @keyframes track-fill {
@@ -384,7 +448,8 @@
   }
 
   .steps__led,
-  .steps__led::before,
+  .steps__led-lobe,
+  .steps__led-lobe::before,
   .steps__led::after {
     animation: none !important;
   }

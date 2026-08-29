@@ -38,6 +38,7 @@ for (const [w, name] of [[1512, 'десктоп'], [390, 'мобильная']])
 
     const move = await p.evaluate(async () => {
       const led = document.querySelector('.steps__led');
+      if (!document.querySelector('.steps__led-lobe')) throw new Error('нет .steps__led-lobe — проба устарела');
       const fill = document.querySelector('.steps__track-fill');
       const halo = document.querySelector('.step__halo');
       const node = document.querySelector('.step__node');
@@ -51,7 +52,8 @@ for (const [w, name] of [[1512, 'десктоп'], [390, 'мобильная']])
         acc.fill.add(getComputedStyle(fill).transform);
         acc.halo.add(getComputedStyle(halo).opacity);
         acc.num.add(getComputedStyle(num).color);
-        acc.shape.add(getComputedStyle(led).transform + '|' + getComputedStyle(led, '::before').transform);
+        acc.shape.add([...document.querySelectorAll('.steps__led-lobe')]
+          .map((e) => getComputedStyle(e).transform + '/' + getComputedStyle(e, '::before').transform).join('|'));
         acc.bg.add(getComputedStyle(node).backgroundColor);
         acc.border.add(getComputedStyle(node).borderTopColor);
         performance.now() - t0 < 6800 ? requestAnimationFrame(t) : res(); }; requestAnimationFrame(t); });

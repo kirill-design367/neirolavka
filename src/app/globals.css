@@ -175,6 +175,24 @@
   initial-value: #e9e3d8;
 }
 
+@property --c-spark-1 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #14452f;
+}
+
+@property --c-spark-2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #c9862a;
+}
+
+@property --c-spark-3 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #6fc79a;
+}
+
 @property --c-title-edge {
   syntax: '<color>';
   inherits: true;
@@ -229,6 +247,12 @@
      мгновенно, пока страница перекрашивается 380 мс. */
   --c-scroll-thumb: #877d6d; /* 3.18:1 на дорожке полосы */
   --c-scroll-track: #e9e3d8;
+  /* Цвета сердцевины капли света в блоке шагов. Тут не нужен
+     контраст с фоном: это не текст, а свет. Нужна разница МЕЖДУ
+     ними — иначе перелива не увидеть. */
+  --c-spark-1: #14452f;
+  --c-spark-2: #d99a34;
+  --c-spark-3: #6fc79a;
   --c-brand: #14452f;       /* бутылочно-зелёный: 9.45:1 на фоне */
   /* Точки градиента названия. В светлой теме обе одного цвета:
      заголовок выглядит сплошным, но выводится тем же способом,
@@ -275,6 +299,9 @@
   --c-line-strong: #4a524c;
   --c-scroll-thumb: #6d716c; /* 3.19:1 на дорожке полосы */
   --c-scroll-track: #20241f;
+  --c-spark-1: #cf9ee2;
+  --c-spark-2: #e0a542;
+  --c-spark-3: #f2e2ff;
   /* Единственная замена: вместо мятного зелёного — приглушённый
      сливово-аметистовый. Он лежит между бордовым и фиолетовым,
      низкой насыщенности, поэтому читается дорого, а не неоново. */
@@ -441,6 +468,9 @@ body {
     --c-line-strong var(--theme-dur) var(--ease-inout),
     --c-scroll-thumb var(--theme-dur) var(--ease-inout),
     --c-scroll-track var(--theme-dur) var(--ease-inout),
+    --c-spark-1 var(--theme-dur) var(--ease-inout),
+    --c-spark-2 var(--theme-dur) var(--ease-inout),
+    --c-spark-3 var(--theme-dur) var(--ease-inout),
     --c-brand var(--theme-dur) var(--ease-inout),
     --c-on-brand var(--theme-dur) var(--ease-inout),
     --c-fill var(--theme-dur) var(--ease-inout),

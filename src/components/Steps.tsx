@@ -39,7 +39,14 @@ export function Steps() {
             из отрезков между соседними шагами. */}
         <span className="steps__track" aria-hidden="true">
           <span className="steps__track-fill" />
-          <span className="steps__led" />
+          {/* Две доли капли. Каждая — круг с обрезкой, внутри которого
+              медленно ползает крупный яркий градиент: это и есть
+              перелив сердцевины. Доли крутятся с разными периодами,
+              поэтому их общий силуэт всё время меняется. */}
+          <span className="steps__led">
+            <span className="steps__led-lobe" />
+            <span className="steps__led-lobe steps__led-lobe--b" />
+          </span>
         </span>
         {STEPS.map((step) => (
           <li className="step" key={step.n}>
