@@ -14,10 +14,12 @@ import { PNG } from 'pngjs';
 
 const URL = process.argv[2];
 const THEME = process.argv[3] ?? 'dark';
+const VW = Number(process.argv[4] ?? 1512);
 const MARGIN = 220;
 
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
-const c = await b.newContext({ viewport: { width: 1512, height: 1180 }, locale: 'ru-RU' });
+const c = await b.newContext({ viewport: { width: VW, height: 1180 }, locale: 'ru-RU',
+                               isMobile: VW < 500, hasTouch: VW < 500 });
 await c.addInitScript((t) => localStorage.setItem('neirolavka-theme', t), THEME);
 const p = await c.newPage();
 await p.goto(URL, { waitUntil: 'networkidle' });
@@ -83,7 +85,7 @@ for (let y = 0; y < H; y++) {
 }
 const rows = [...bins.entries()].sort((a, z) => a[0] - z[0]);
 
-console.log(`  ${THEME === 'dark' ? 'тёмная' : 'светлая'} тема, блок ${bl.w}x${bl.h} в кадре ${W}x${H}, ${outsidePx} пикселей вокруг`);
+console.log(`  ${THEME === 'dark' ? 'тёмная' : 'светлая'} тема, ширина окна ${VW}, блок ${bl.w}x${bl.h} в кадре ${W}x${H}, ${outsidePx} пикселей вокруг`);
 console.log('  прирост яркости наружу от края блока (уровни из 255, среднее / наибольшее):');
 for (const [d, [sum, n, mx]] of rows.slice(0, 20))
   console.log(`      ${String(d).padStart(3)}–${String(d + 9).padStart(3)} px: ${(sum / n).toFixed(2)} / ${mx.toFixed(2)}`);
