@@ -4,6 +4,9 @@ import { SmoothScroll } from '@/lib/motion';
 import { Nav } from '@/components/Nav';
 import { Hero } from '@/components/Hero';
 import { Shop } from '@/components/Shop';
+import { Steps } from '@/components/Steps';
+import { Referral } from '@/components/Referral';
+import { Footer } from '@/components/Footer';
 import { OrderPanel, OrderBar } from '@/components/OrderPanel';
 
 export default function Home() {
@@ -20,6 +23,8 @@ export default function Home() {
         <main className="layout__main">
           <Hero />
           <Shop />
+          <Steps />
+          <Referral />
         </main>
 
         <div className="layout__side">
@@ -27,6 +32,7 @@ export default function Home() {
         </div>
       </div>
 
+      <Footer />
       <OrderBar />
     </OrderProvider>
   );

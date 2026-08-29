@@ -1,0 +1,45 @@
+'use client';
+
+import { getCatalog } from '@/lib/catalog';
+import { useReveal } from '@/lib/motion';
+
+export function Referral() {
+  const { botUrl } = getCatalog();
+  const ref = useReveal<HTMLElement>({ stagger: 0.07 });
+
+  return (
+    <section className="referral" id="referalka" ref={ref}>
+      <span className="referral__plate" data-reveal-plate aria-hidden="true" />
+
+      <div className="referral__content">
+        <h2 className="referral__title" data-reveal>
+          Приводите своих
+        </h2>
+        <p className="referral__text" data-reveal>
+          У каждого покупателя в боте есть личная ссылка. Друг покупает по ней — вам
+          возвращается часть его оплаты, ему достаётся скидка на первый заказ.
+          Начисления и вывод живут в боте, здесь ничего заводить не нужно.
+        </p>
+
+        <dl className="referral__facts">
+          <div className="fact" data-reveal>
+            <dt className="fact__label">Кому ссылка</dt>
+            <dd className="fact__value">Всем, кто уже покупал</dd>
+          </div>
+          <div className="fact" data-reveal>
+            <dt className="fact__label">Когда начисляется</dt>
+            <dd className="fact__value">После оплаты друга</dd>
+          </div>
+          <div className="fact" data-reveal>
+            <dt className="fact__label">Где смотреть</dt>
+            <dd className="fact__value">В том же чате</dd>
+          </div>
+        </dl>
+
+        <a className="referral__link" href={botUrl} target="_blank" rel="noopener noreferrer" data-reveal>
+          Забрать свою ссылку
+        </a>
+      </div>
+    </section>
+  );
+}

@@ -1,0 +1,103 @@
+/* Как это устроено. Покупка действительно идёт по шагам, поэтому
+   нумерация здесь несёт смысл, а не украшает. */
+
+.steps {
+  padding-top: var(--sp-8);
+}
+
+.steps__title {
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin-bottom: var(--sp-5);
+}
+
+.steps__thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-5);
+}
+
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+/* Нить, на которую нанизаны шаги: на телефоне вертикальная. */
+.step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 1rem;
+  top: 2rem;
+  bottom: calc(var(--sp-5) * -1);
+  width: 1px;
+  background: linear-gradient(var(--c-line-strong), var(--c-line));
+}
+
+.step__node {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--c-surface);
+  border: 1px solid var(--c-line-strong);
+  color: var(--c-brand);
+}
+
+.step__num {
+  font-size: var(--t-label);
+  font-weight: 600;
+}
+
+.step__title {
+  font-size: var(--t-body);
+  font-weight: 600;
+}
+
+.step__text {
+  margin-top: 0.125rem;
+  font-size: var(--t-label);
+  color: var(--c-muted);
+  max-width: 56ch;
+}
+
+.steps__note {
+  margin-top: var(--sp-5);
+  padding-left: calc(2rem + var(--sp-4));
+  font-size: var(--t-micro);
+  color: var(--c-muted);
+}
+
+@media (min-width: 1024px) {
+  .steps__thread {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--sp-5);
+  }
+
+  .step {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-3);
+  }
+
+  /* На широком экране нить разворачивается по горизонтали. */
+  .step:not(:last-child)::before {
+    left: 2.5rem;
+    right: calc(var(--sp-5) * -1);
+    top: 1rem;
+    bottom: auto;
+    width: auto;
+    height: 1px;
+    background: linear-gradient(90deg, var(--c-line-strong), var(--c-line));
+  }
+
+  .steps__note {
+    padding-left: 0;
+  }
+}
