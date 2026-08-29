@@ -22,7 +22,14 @@ const URL = process.argv[2];
 const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: false });
+let bad = 0;
+
+// Оба направления: светлая → тёмная и обратно. Одного мало — правило
+// может оказаться однобоким, а переход по переменным симметричен
+// только если он действительно идёт по переменным.
+for (const from of ['light', 'dark']) {
 const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU' });
+await ctx.addInitScript((t) => localStorage.setItem('neirolavka-theme', t), from);
 const page = await ctx.newPage();
 await page.goto(URL, { waitUntil: 'networkidle' });
 await page.waitForTimeout(700);
@@ -80,7 +87,7 @@ const t0 = await page.evaluate(() => {
 });
 await page.waitForTimeout(900);
 await cdp.send('Page.stopScreencast');
-await browser.close();
+await ctx.close();
 
 const pick = (png, p) => { const o = (png.width * p.y + p.x) << 2; return [png.data[o], png.data[o + 1], png.data[o + 2]]; };
 const rows = [];
@@ -92,6 +99,7 @@ for (const f of frames) {
 const after = rows.filter((r) => r.t >= -30);
 if (after.length < 6) {
   console.log(`  СЛИШКОМ МАЛО КАДРОВ: ${after.length}. Замер недействителен.`);
+  await browser.close();
   process.exit(1);
 }
 
@@ -108,20 +116,46 @@ const settle = (key) => {
 };
 const steps = (key) => new Set(after.map((r) => r[key].join(','))).size;
 
+// Момент, когда цвет прошёл ПОЛОВИНУ своего пути. Вердикт вынесен по
+// нему, а не по моменту окончания: у ползунка путь вчетверо короче,
+// чем у фона (#877d6d → #6d716c против почти чёрного из почти
+// белого), и до целого значения канала он доходит на пару кадров
+// раньше просто от округления. Середина пути от округления далеко.
+const half = (key) => {
+  const a = after[0][key], z = after[after.length - 1][key];
+  const total = Math.hypot(z[0] - a[0], z[1] - a[1], z[2] - a[2]);
+  if (total < 6) return NaN;   // ехать некуда, момент не определён
+  for (const r of after) {
+    const gone = Math.hypot(r[key][0] - a[0], r[key][1] - a[1], r[key][2] - a[2]);
+    if (gone >= total / 2) return r.t;
+  }
+  return NaN;
+};
+
 const s = {};
-for (const k of ['thumb', 'track', 'bg']) s[k] = { ...settle(k), n: steps(k) };
+for (const k of ['thumb', 'track', 'bg']) s[k] = { ...settle(k), n: steps(k), h: half(k) };
 
 const label = { thumb: 'ползунок полосы', track: 'дорожка полосы', bg: 'фон страницы' };
-console.log(`  кадров за переход: ${after.length}, шаг ${(after[after.length - 1].t / (after.length - 1)).toFixed(1)} мс`);
+console.log(`\n  ${from === 'light' ? 'светлая → тёмная' : 'тёмная → светлая'}: кадров за переход ${after.length}, шаг ${(after[after.length - 1].t / (after.length - 1)).toFixed(1)} мс`);
 console.log(`  точка ползунка ${THUMB.x},${THUMB.y}; дорожки ${TRACK.x},${TRACK.y}; фона ${probe.bg.x},${probe.bg.y}`);
 for (const k of ['bg', 'thumb', 'track'])
   console.log(`  ${label[k].padEnd(16)} различных цветов за переход ${String(s[k].n).padStart(3)}, ` +
-              `конечный rgb(${s[k].c.join(',')}) достигнут на ${s[k].t.toFixed(0)} мс`);
+              `половина пути на ${Number.isFinite(s[k].h) ? s[k].h.toFixed(0) : '—'} мс, ` +
+              `конечный rgb(${s[k].c.join(',')}) на ${s[k].t.toFixed(0)} мс`);
 
-const spread = Math.max(s.bg.t, s.thumb.t, s.track.t) - Math.min(s.bg.t, s.thumb.t, s.track.t);
-const jumpy = ['thumb', 'track'].filter((k) => s[k].n <= 2);
-console.log(`  разброс окончания: ${spread.toFixed(0)} мс`);
-if (jumpy.length) console.log(`  СКАЧКОМ: ${jumpy.map((k) => label[k]).join(', ')} — цвет меняется без промежуточных значений`);
-const ok = spread <= 60 && !jumpy.length;
-console.log(ok ? '  Полоса и фон приходят к цвету одновременно' : '  ПОЛОСА И ФОН РАСХОДЯТСЯ');
-process.exit(ok ? 0 : 1);
+const hs = ['bg', 'thumb', 'track'].map((k) => s[k].h);
+const spreadHalf = hs.every(Number.isFinite) ? Math.max(...hs) - Math.min(...hs) : NaN;
+const spreadEnd = Math.max(s.bg.t, s.thumb.t, s.track.t) - Math.min(s.bg.t, s.thumb.t, s.track.t);
+const jumpy = ['thumb', 'track'].filter((k) => s[k].n <= 3);
+console.log(`  разброс середины пути: ${Number.isFinite(spreadHalf) ? spreadHalf.toFixed(0) + ' мс' : 'не определён'}` +
+            `, разброс окончания: ${spreadEnd.toFixed(0)} мс`);
+if (jumpy.length) console.log(`  СКАЧКОМ: ${jumpy.map((k) => label[k]).join(', ')} — цвет меняется почти без промежуточных значений`);
+if (!Number.isFinite(spreadHalf)) console.log('  ПУТИ НЕТ: какой-то из трёх цветов не меняется вовсе — мерить нечего');
+const ok = Number.isFinite(spreadHalf) && spreadHalf <= 34 && !jumpy.length;
+if (!ok) bad++;
+console.log(ok ? '  Полоса и фон идут в одном темпе' : '  ПОЛОСА И ФОН РАСХОДЯТСЯ');
+}
+
+await browser.close();
+console.log(bad ? `\nПровалов: ${bad} из 2 направлений` : '\nВ обе стороны полоса идёт вместе со страницей');
+process.exit(bad ? 1 : 0);
