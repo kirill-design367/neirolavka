@@ -163,6 +163,18 @@
   initial-value: #e3c8ea;
 }
 
+@property --c-title-edge {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #14452f;
+}
+
+@property --c-title-mid {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #14452f;
+}
+
 @property --c-lava-1 {
   syntax: '<color>';
   inherits: true;
@@ -201,6 +213,11 @@
   --c-line: #d9d2c5;        /* границы */
   --c-line-strong: #b9b0a0;
   --c-brand: #14452f;       /* бутылочно-зелёный: 9.45:1 на фоне */
+  /* Точки градиента названия. В светлой теме обе одного цвета:
+     заголовок выглядит сплошным, но выводится тем же способом,
+     что и в тёмной, — через обрезку фона по тексту. */
+  --c-title-edge: #14452f;
+  --c-title-mid: #14452f;
   --c-on-brand: #fbf9f5;    /* 10.39:1 на зелёном */
   /* Заливка больших плоскостей — отдельный токен.
      Акцентный цвет годится для текста, но не для целого блока:
@@ -251,6 +268,8 @@
   --c-pearl-3: #24333f;
   /* Светлый оттенок того же семейства — для градиента названия. */
   --c-pearl-tint: #e3c8ea;
+  --c-title-edge: #cf9ee2;
+  --c-title-mid: #e3c8ea;
   --c-accent: #e0a542;      /* прежний янтарь действия */
   --c-on-accent: #191c1a;   /* 7.88:1 */
   --c-accent-text: #e0a542; /* 7.88:1 как текст */
@@ -390,6 +409,8 @@ body {
     --c-pearl-2 var(--theme-dur) var(--ease-inout),
     --c-pearl-3 var(--theme-dur) var(--ease-inout),
     --c-pearl-tint var(--theme-dur) var(--ease-inout),
+    --c-title-edge var(--theme-dur) var(--ease-inout),
+    --c-title-mid var(--theme-dur) var(--ease-inout),
     --c-lava-1 var(--theme-dur) var(--ease-inout),
     --c-lava-2 var(--theme-dur) var(--ease-inout),
     --c-lava-3 var(--theme-dur) var(--ease-inout);
