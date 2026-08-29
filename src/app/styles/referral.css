@@ -30,6 +30,7 @@
   position: absolute;
   inset: -55%;
   pointer-events: none;
+  will-change: transform;
 }
 
 [data-theme='dark'] .referral__plate::before {

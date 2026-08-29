@@ -148,6 +148,10 @@
     radial-gradient(circle at 72% 68%, var(--c-lava-2) 0%, transparent 58%),
     radial-gradient(circle at 50% 90%, var(--c-lava-3) 0%, transparent 55%);
   animation: lava 42s linear infinite;
+  /* Слой большой и всё время вращается. Без явного закрепления
+     браузер время от времени перерастеризует его заново, и на это
+     уходит целый кадр — замер ловил три просадки на 350 кадров. */
+  will-change: transform;
 }
 
 .term:nth-child(2) .term__lava {
