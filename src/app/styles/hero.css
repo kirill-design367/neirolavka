@@ -5,21 +5,57 @@
   padding-bottom: var(--sp-6);
 }
 
+/* Надзаголовок в плашке, которая парит над фоном.
+
+   Подложка вынесена отдельным слоем не для красоты: дышать масштабом
+   должна она, а не сам элемент. Масштабируя узел с текстом, браузер
+   тянет уже отрисованный растр, и буквы плывут. Поэтому текст только
+   поднимается и опускается, а масштаб достаётся слою без текста. */
 .hero__eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
+  position: relative;
+  isolation: isolate;
+  display: inline-block;
+  padding: 0.4375rem 0.9375rem;
+  border-radius: 999px;
   font-size: var(--t-micro);
   color: var(--c-accent-text);
   letter-spacing: 0.01em;
+  animation: eyebrow-rise 7s var(--ease-inout) infinite;
 }
 
 .hero__eyebrow::before {
   content: '';
-  width: 1.5rem;
-  height: 1px;
-  background: currentColor;
-  opacity: 0.6;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--c-surface);
+  box-shadow:
+    0 10px 24px -12px var(--c-shadow-2),
+    0 2px 5px -2px var(--c-shadow-1);
+  animation: eyebrow-breathe 7s var(--ease-inout) infinite;
+}
+
+@keyframes eyebrow-rise {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes eyebrow-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.94;
+  }
+  50% {
+    transform: scale(1.035);
+    opacity: 1;
+  }
 }
 
 .hero__title {
