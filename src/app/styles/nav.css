@@ -1,11 +1,19 @@
 /* Навигация и переключатель темы. */
 
+/* Липкая шапка отделяется от содержимого мягкой тенью, и только
+   когда под неё что-то заехало. У самого верха страницы отделять
+   нечего, поэтому там тени нет. */
 .nav {
   position: sticky;
   top: 0;
   z-index: 40;
   background: var(--c-bg);
-  border-bottom: 1px solid var(--c-line);
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow 0.25s var(--ease-out);
+}
+
+.nav--stuck {
+  box-shadow: 0 6px 20px -14px var(--c-shadow-2);
 }
 
 .nav__inner {

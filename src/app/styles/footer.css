@@ -1,7 +1,7 @@
 /* Подвал: отзывы. */
 
+/* Подвал отделяется перепадом фона, а не линией. */
 .footer {
-  border-top: 1px solid var(--c-line);
   background: var(--c-surface);
   /* Снизу запас под липкую полосу заказа, иначе она накрывает подвал. */
   padding: var(--sp-7) 0 calc(var(--sp-7) + 5rem);
@@ -61,8 +61,6 @@
   align-items: baseline;
   gap: var(--sp-2) var(--sp-3);
   margin-top: var(--sp-4);
-  padding-top: var(--sp-3);
-  border-top: 1px dashed var(--c-line);
 }
 
 .review__name {
@@ -81,9 +79,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: var(--sp-3);
-  margin-top: var(--sp-7);
-  padding-top: var(--sp-5);
-  border-top: 1px solid var(--c-line);
+  margin-top: var(--sp-8);
 }
 
 .footer__brand {

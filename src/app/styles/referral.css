@@ -39,9 +39,7 @@
 .referral__facts {
   display: grid;
   gap: var(--sp-4);
-  margin: var(--sp-5) 0 0;
-  padding-top: var(--sp-5);
-  border-top: 1px solid color-mix(in oklab, var(--c-on-fill) 22%, transparent);
+  margin: var(--sp-6) 0 0;
 }
 
 .fact__label {

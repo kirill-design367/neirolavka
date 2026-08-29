@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useCountUp } from '@/lib/motion';
 
@@ -17,8 +17,26 @@ export function Nav({ subscribers }: { subscribers: number }) {
   // но прыжка вёрстки нет: цифры табличные и ширина зарезервирована.
   const countRef = useCountUp(subscribers, useCallback(formatCount, []));
 
+  // Тень под шапкой появляется, только когда под неё что-то заехало:
+  // у самого верха страницы отделять нечего. Слушатель пассивный
+  // и меняет класс лишь на переходе через порог, а не каждый кадр.
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    let last = false;
+    const onScroll = () => {
+      const next = window.scrollY > 8;
+      if (next !== last) {
+        last = next;
+        setStuck(next);
+      }
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   return (
-    <header className="nav">
+    <header className={`nav${stuck ? ' nav--stuck' : ''}`}>
       <div className="nav__inner page">
         <p className="nav__counter">
           <span className="nav__pulse" aria-hidden="true" />
