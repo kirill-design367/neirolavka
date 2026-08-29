@@ -24,7 +24,9 @@ await page.waitForTimeout(500);
 const PROBES = [
   ['фон страницы', 'body', 'backgroundColor'],
   ['текст первого экрана', '.hero__lead', 'color'],
-  ['заголовок', '.hero__title', 'color'],
+  // У заголовка меряем градиент, а не color: он выводится обрезкой
+  // фона по тексту и цвет текста у него всегда прозрачный.
+  ['заголовок (градиент)', '.hero__title', 'backgroundImage'],
   ['подложка полки', '.shelf__plate', 'backgroundColor'],
   ['граница подложки полки', '.shelf__plate', 'borderTopColor'],
   ['тень подложки полки', '.shelf__plate', 'boxShadow'],
@@ -35,10 +37,20 @@ const PROBES = [
   ['кнопка в бот', '.order__cta', 'backgroundColor'],
   ['выбранная оплата (color-mix)', '.pays__item--active', 'backgroundColor'],
   ['заливка рефералки', '.referral__plate', 'backgroundColor'],
+  // Градиент плашки объявлен только в тёмной теме, поэтому само
+  // свойство при переключении возникает скачком. Видно этого не
+  // будет: точки градиента — переменные, и в момент переключения
+  // все три ещё равны цвету светлой заливки. Проба это показывает —
+  // значений много, а не два.
+  ['градиент рефералки', '.referral__plate', 'backgroundImage'],
   ['текст на заливке', '.referral__text', 'color'],
-  ['нить шагов (градиент)', '.step:not(:last-child)', 'backgroundImage', '::before'],
+  ['дорожка шагов', '.steps__track', 'backgroundColor'],
+  ['подсветка дорожки', '.steps__track-fill', 'backgroundColor'],
+  ['капля света', '.steps__led', 'backgroundColor'],
+  ['свечение узла', '.step__halo', 'backgroundImage'],
   ['узел шага', '.step__node', 'backgroundColor'],
-  ['подвал', '.footer', 'backgroundColor'],
+  // Подвал залит градиентом, а не цветом.
+  ['подвал (градиент)', '.footer', 'backgroundImage'],
   ['подложка отзыва', '.review__plate', 'backgroundColor'],
   ['маячок счётчика', '.nav__pulse', 'backgroundColor'],
   ['волна маячка', '.nav__pulse', 'backgroundColor', '::before'],
@@ -47,7 +59,9 @@ const PROBES = [
   ['подложка итога', '.order__total', 'backgroundColor'],
   ['движок переключателя', '.theme-toggle__thumb', 'backgroundColor'],
   ['иконка переключателя', '.theme-toggle__icon--sun', 'stroke'],
-  ['тень липкой шапки', '.nav', 'boxShadow'],
+  // Тень шапки живёт на подложке капсулы, а не на самой шапке.
+  ['тень липкой шапки', '.nav__inner', 'boxShadow', '::before'],
+  ['свет внутри рефералки', '.referral__glow', 'boxShadow'],
 ];
 
 const result = await page.evaluate(async (probes) => {
@@ -91,6 +105,14 @@ if (missing.length) {
 console.log('\nразных значений за переход  ·  что проверяли');
 for (let i = 0; i < PROBES.length; i++) {
   const n = samples[i].length;
+  const flat = samples[i].every((v) => v === 'none' || v === 'rgba(0, 0, 0, 0)' || v === '');
+  if (flat) {
+    // Проба, которая на обоих концах ничего не рисует, ничего и не
+    // проверяет. Молча засчитывать её нельзя.
+    console.log(`  ПУСТО     ${PROBES[i][0]} — свойство не задано ни в одной теме, проба бесполезна`);
+    bad++;
+    continue;
+  }
   const ok = n > 3;
   if (!ok) bad++;
   console.log(`  ${String(n).padStart(3)}  ${ok ? 'плавно ' : 'СКАЧКОМ'}  ${PROBES[i][0]}`);

@@ -14,7 +14,6 @@ import { PNG } from 'pngjs';
 
 const URL = process.argv[2];
 const PHASES = Number(process.argv[3] ?? 6);
-const SPAN = Number(process.argv[4] ?? 16000); // весь цикл, мс
 
 const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
 const lum = ([r, g, b]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
@@ -56,20 +55,50 @@ for (const theme of ['light', 'dark']) {
                  x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
       })), sels);
 
+  // Текст на время съёмки делается прозрачным: тогда под ним видна
+  // настоящая подложка. Полоса «чуть выше строки» тут не работает —
+  // у многострочного абзаца она попадает в заголовок сверху, и
+  // проверка меряет контраст текста с текстом.
+  await page.evaluate((sels2) => {
+    const st = document.createElement('style');
+    st.id = 'probe-hide';
+    st.textContent = `${sels2.join(',')} { color: transparent !important; }`;
+    document.head.appendChild(st);
+  }, sels);
+  await page.waitForTimeout(200);
+
   for (let ph = 0; ph < PHASES; ph++) {
-    if (ph) await page.waitForTimeout(SPAN / PHASES);
+    // Фазы задаются временем анимаций, а не ожиданием: циклы слоёв
+    // длятся десятки секунд и не кратны друг другу, так что ждать
+    // пришлось бы минуты, и всё равно вышла бы одна диагональ.
+    // Каждому слою даётся своя доля цикла, поэтому за PHASES проб
+    // перебираются РАЗНЫЕ сочетания слоёв, а не одно и то же.
+    await page.evaluate((n) => {
+      document.getAnimations().forEach((a, j) => {
+        const d = a.effect?.getTiming?.().duration;
+        if (typeof d !== 'number' || !isFinite(d)) return;
+        a.pause();
+        a.currentTime = (((n * (j + 1) * 0.37) % 1) + 1) % 1 * d;
+      });
+    }, ph);
+    await page.waitForTimeout(220);
     const png = PNG.sync.read(await page.screenshot());
     for (const t of targets) {
       if (t.y < 0 || t.y + t.h > png.height || t.w < 4) continue;
       // берём полосу фона чуть выше строки — там подложка без букв
-      const yy = Math.max(0, t.y - Math.max(2, Math.round(t.h * 0.35)));
-      const samples = [];
-      for (let i = 0; i < t.w; i += 3) {
-        const idx = (png.width * yy + t.x + i) << 2;
-        samples.push([png.data[idx], png.data[idx + 1], png.data[idx + 2]]);
+      // Берём всю площадь под элементом и ищем самый светлый её
+      // пиксель: подложка градиентная, и опасен её самый яркий кусок.
+      let med = null, best = -1;
+      for (let yy = t.y; yy < t.y + t.h; yy += 2) {
+        if (yy < 0 || yy >= png.height) continue;
+        for (let xx = t.x; xx < t.x + t.w; xx += 2) {
+          const idx = (png.width * yy + xx) << 2;
+          const c = [png.data[idx], png.data[idx + 1], png.data[idx + 2]];
+          const L = lum(c);
+          if (L > best) { best = L; med = c; }
+        }
       }
-      if (!samples.length) continue;
-      const med = [0, 1, 2].map((k) => samples.map((s) => s[k]).sort((a, b) => a - b)[samples.length >> 1]);
+      if (!med) continue;
       const r = ratio(t.fg, med);
       const prev = worst.get(t.sel);
       if (!prev || r < prev.r) worst.set(t.sel, { r, bg: med, ph });

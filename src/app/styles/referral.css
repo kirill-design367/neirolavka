@@ -17,9 +17,27 @@
   overflow: hidden;
 }
 
-/* Перелив только в тёмной теме: светлую не трогаем.
+/* Плашка залита градиентом по всей площади, а не одним цветом:
+   от бордово-красного через фиолетовый к сливовому.
 
-   Два слоя с мягкими пятнами медленно ползают внутри блока.
+   Всё это только в тёмной теме. Со стопами одного цвета светлая
+   тема выглядела бы так же, но не была бы такой же: замер показал,
+   что путь через градиент и полупрозрачные слои сдвигает 98 % её
+   пикселей на 1–3 уровня из 255. Видеть это нельзя, но менять
+   светлую тему просили не просто так. */
+[data-theme='dark'] .referral__plate {
+  background-image: linear-gradient(
+    118deg,
+    var(--c-fill-1) 0%,
+    var(--c-fill-2) 52%,
+    var(--c-fill-3) 100%
+  );
+}
+
+/* Поверх градиента медленно ползают два слоя мягких пятен — от них
+   рисунок смещается, а жёстких краёв не появляется: пятна уходят в
+   прозрачность, а слои крупнее плашки и краями в неё не попадают.
+
    Двигается СЛОЙ через transform, а не позиция градиента: браузер
    перекладывает готовый растр на композиторе, а не перерисовывает
    градиент каждый кадр. Циклы разной длины и в разные стороны,
@@ -28,27 +46,53 @@
 [data-theme='dark'] .referral__plate::after {
   content: '';
   position: absolute;
-  inset: -55%;
+  inset: -60%;
   pointer-events: none;
   will-change: transform;
 }
 
 [data-theme='dark'] .referral__plate::before {
   background:
-    radial-gradient(circle at 32% 34%, var(--c-pearl-1) 0%, transparent 58%),
-    radial-gradient(circle at 74% 66%, var(--c-pearl-3) 0%, transparent 54%);
-  animation: pearl-a 38s linear infinite;
+    radial-gradient(circle at 30% 32%, var(--c-fill-1) 0%, transparent 62%),
+    radial-gradient(circle at 76% 70%, var(--c-fill-3) 0%, transparent 58%);
+  opacity: 0.85;
+  animation: fill-drift-a 46s linear infinite;
 }
 
 [data-theme='dark'] .referral__plate::after {
   background:
-    radial-gradient(circle at 68% 26%, var(--c-pearl-2) 0%, transparent 56%),
-    radial-gradient(circle at 24% 78%, var(--c-pearl-1) 0%, transparent 52%);
-  opacity: 0.8;
-  animation: pearl-b 53s linear infinite;
+    radial-gradient(circle at 70% 24%, var(--c-fill-2) 0%, transparent 60%),
+    radial-gradient(circle at 22% 80%, var(--c-fill-1) 0%, transparent 56%);
+  opacity: 0.7;
+  animation: fill-drift-b 67s linear infinite;
 }
 
-@keyframes pearl-a {
+/* Свечение в светлой теме прозрачное, дышать нечему. */
+:root:not([data-theme='dark']) .referral__glow {
+  animation: none;
+}
+
+/* Свет изнутри границ. Тень вдавленная и сильно размытая, разбег
+   нулевой — у неё нет чёткого края, поэтому это свечение, а не
+   обводка. Два слоя: короткий по самой кромке и длинный, уходящий
+   вглубь плашки.
+
+   Разбег именно нулевой: у вдавленной тени отрицательный разбег
+   утягивает свет ЗА пределы плашки, и от него остаются считанные
+   уровни яркости — замер показывал 3,44 из 255 у кромки. */
+.referral__glow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 2rem var(--c-fill-glow),
+    inset 0 0 6.5rem var(--c-fill-glow);
+  animation: fill-glow 24s ease-in-out infinite;
+}
+
+@keyframes fill-drift-a {
   0% {
     transform: rotate(0deg) translate3d(0, 0, 0);
   }
@@ -57,12 +101,31 @@
   }
 }
 
-@keyframes pearl-b {
+@keyframes fill-drift-b {
   0% {
-    transform: rotate(360deg) scale(1.05);
+    transform: rotate(360deg) scale(1.06);
   }
   100% {
-    transform: rotate(0deg) scale(1.05);
+    transform: rotate(0deg) scale(1.06);
+  }
+}
+
+/* Дышит только прозрачность слоя: сама тень не пересчитывается. */
+@keyframes fill-glow {
+  0%,
+  100% {
+    opacity: 0.78;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .referral__plate::before,
+  .referral__plate::after,
+  .referral__glow {
+    animation: none !important;
   }
 }
 

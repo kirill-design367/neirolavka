@@ -11,6 +11,9 @@ export function Referral() {
   return (
     <section className="referral" id="referalka" ref={ref}>
       <span className="referral__plate" data-reveal-plate aria-hidden="true" />
+      {/* Свет изнутри границ — отдельным слоем поверх плашки: он не
+          должен вращаться вместе с пятнами перелива. */}
+      <span className="referral__glow" aria-hidden="true" />
 
       <div className="referral__content" data-parallax="0.7">
         <h2 className="referral__title" data-reveal>
