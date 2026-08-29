@@ -89,22 +89,34 @@ const AUDIT = () => {
     const y = Math.min(Math.max(rect.top + rect.height / 2, 1), innerHeight - 1);
     const cs = getComputedStyle(el);
     const bg = bgOf(el, x, y);
-    const fg = over(parse(cs.color), bg);
+
+    // Текст, залитый градиентом через background-clip, имеет
+    // прозрачный цвет: браузер рисует его фоном. Сравнивать прозрачное
+    // с фоном бессмысленно — берём КАЖДУЮ опорную точку градиента
+    // и проверяем худшую из них.
+    const clipped = (cs.webkitBackgroundClip === 'text' || cs.backgroundClip === 'text')
+      && parse(cs.color).a < 0.05;
+    const fgs = clipped
+      ? (cs.backgroundImage.match(/rgba?\([^)]+\)|#[0-9a-f]{3,8}/gi) || []).map((c) => over(parse(c), bg))
+      : [over(parse(cs.color), bg)];
+    const fg = fgs[0];
 
     const px = parseFloat(cs.fontSize);
     const weight = Number(cs.fontWeight) || 400;
     const large = px >= 24 || (px >= 18.66 && weight >= 700);
     const need = large ? 3 : 4.5;
-    const r = ratio(fg, bg);
+    const r = fgs.length ? Math.min(...fgs.map((f) => ratio(f, bg))) : ratio(fg, bg);
     const row = { text: text.slice(0, 46), cls: el.className?.toString().slice(0, 34), px, weight, r: +r.toFixed(2), need,
-                  fg: cs.color, bg: `rgb(${Math.round(bg.r)}, ${Math.round(bg.g)}, ${Math.round(bg.b)})` };
+                  fg: clipped ? `градиент из ${fgs.length} точек` : cs.color,
+                  bg: `rgb(${Math.round(bg.r)}, ${Math.round(bg.g)}, ${Math.round(bg.b)})` };
     all.push(row);
     if (r < need) out.push(row);
   }
   // Возвращаем и нарушения, и покрытие: проверка, которая ничего
   // не проверила, обязана быть отличима от проверки, где всё чисто.
   const margin = all.map((x) => ({ ...x, slack: +(x.r / x.need).toFixed(2) })).sort((a, b) => a.slack - b.slack);
-  return { issues: out, checked: all.length, skipped: skippedCount, tightest: margin.slice(0, 4) };
+  return { issues: out, checked: all.length, skipped: skippedCount, tightest: margin.slice(0, 4),
+           gradients: all.filter((x) => String(x.fg).startsWith('градиент')) };
 };
 
 let bad = 0;
@@ -120,7 +132,7 @@ for (const theme of ['light', 'dark']) {
     await page.getByRole('button', { name: /СБП/ }).first().click().catch(() => {});
     await page.waitForTimeout(600);
 
-    const { issues, checked, skipped, tightest } = await page.evaluate(AUDIT);
+    const { issues, checked, skipped, tightest, gradients } = await page.evaluate(AUDIT);
     console.log(`\n── ${theme} / ${name} (${w}×${h}) — проверено узлов: ${checked}, пропущено невидимых: ${skipped}`);
     if (!issues.length) console.log('  нарушений нет');
     for (const i of issues) {
@@ -129,6 +141,8 @@ for (const theme of ['light', 'dark']) {
     }
     console.log('  с наименьшим запасом:');
     for (const t of tightest) console.log(`    ${t.r}:1 при пороге ${t.need} — «${t.text}» .${t.cls}`);
+    for (const g of gradients)
+      console.log(`    ${g.fg} «${g.text}»: худшая опорная точка ${g.r}:1 при пороге ${g.need}`);
     await ctx.close();
   }
 }

@@ -139,6 +139,48 @@
   initial-value: rgb(27 33 28 / 0.10);
 }
 
+@property --c-pearl-1 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #4a2350;
+}
+
+@property --c-pearl-2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #3b2140;
+}
+
+@property --c-pearl-3 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #24333f;
+}
+
+@property --c-pearl-tint {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #e3c8ea;
+}
+
+@property --c-lava-1 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #f6eee6;
+}
+
+@property --c-lava-2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #eaf0e8;
+}
+
+@property --c-lava-3 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #f0ece0;
+}
+
 /* ─────────────────────────────────────────────────────────────
    Токены. Светлая тема — тёплый камень с бутылочной зеленью
    и янтарём. Тёмная — тот же графит и тот же янтарь действия,
@@ -343,7 +385,14 @@ body {
     --c-accent-text var(--theme-dur) var(--ease-inout),
     --c-shadow-1 var(--theme-dur) var(--ease-inout),
     --c-shadow-2 var(--theme-dur) var(--ease-inout),
-    --c-shadow-3 var(--theme-dur) var(--ease-inout);
+    --c-shadow-3 var(--theme-dur) var(--ease-inout),
+    --c-pearl-1 var(--theme-dur) var(--ease-inout),
+    --c-pearl-2 var(--theme-dur) var(--ease-inout),
+    --c-pearl-3 var(--theme-dur) var(--ease-inout),
+    --c-pearl-tint var(--theme-dur) var(--ease-inout),
+    --c-lava-1 var(--theme-dur) var(--ease-inout),
+    --c-lava-2 var(--theme-dur) var(--ease-inout),
+    --c-lava-3 var(--theme-dur) var(--ease-inout);
 }
 
 /* На время смены темы собственные переходы элементов выключаются.
