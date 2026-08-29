@@ -27,12 +27,3 @@ export const golos = localFont({
   adjustFontFallback: 'Arial',
   fallback: ['system-ui', 'sans-serif'],
 });
-
-/** Третий вариант для страницы выбора. Дмитрий Волошин и Андрей Кудрявцев. */
-export const onest = localFont({
-  src: [{ path: '../fonts/onest.woff2', weight: '100 900', style: 'normal' }],
-  variable: '--font-onest',
-  display: 'swap',
-  adjustFontFallback: 'Arial',
-  fallback: ['system-ui', 'sans-serif'],
-});

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -41,18 +41,58 @@ jobs:
       - name: Файл .nojekyll в корне выдачи
         run: touch out/.nojekyll
 
+      - name: Проверка выдачи
+        run: node scripts/check-export.mjs out "/${{ github.event.repository.name }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: out
+          include-hidden-files: true
+
       - uses: actions/configure-pages@v5
+        continue-on-error: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out
 
-  deploy:
+  # Основной путь: публикация артефакта, когда источником Pages выбран
+  # «GitHub Actions». Задача помечена continue-on-error, потому что при
+  # другом источнике или ограничении окружения github-pages она падает
+  # мгновенно, и из-за этого краснел бы весь прогон.
+  deploy-artefakt:
     needs: build
     runs-on: ubuntu-latest
+    continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # Запасной путь: та же выдача уезжает в ветку gh-pages.
+  # Работает, когда источником Pages выбрано «Deploy from a branch».
+  # Окружение github-pages здесь не задействовано вовсе.
+  deploy-vetka:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: site
+
+      - name: Публикация в ветку gh-pages
+        run: |
+          touch site/.nojekyll
+          cd site
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Выдача из ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:gh-pages

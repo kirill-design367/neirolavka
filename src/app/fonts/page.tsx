@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { akt, golos, onest } from '@/lib/fonts';
+import { akt, golos } from '@/lib/fonts';
+import { onest } from '@/lib/fonts-alt';
 import { formatPrice } from '@/lib/catalog';
 import './fonts.css';
 
