@@ -2,7 +2,7 @@ name: Сборка и публикация на GitHub Pages
 
 on:
   push:
-    branches: [claude/neirolavka-site-setup-bd3e7p, main]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
