@@ -115,9 +115,7 @@
   color: var(--c-muted);
 }
 
-/* Условия лавки. Каждое — самостоятельная плашка: раньше они были
-   строками списка, разделёнными волосяными линейками, и читались
-   как один блок текста, а не как три отдельные вещи. */
+/* Условия лавки: три равные карточки под подзаголовком. */
 .terms {
   display: grid;
   gap: var(--sp-3);
@@ -125,12 +123,61 @@
 }
 
 .term {
+  position: relative;
+  overflow: hidden;
   padding: var(--sp-4);
   border-radius: var(--r-md);
   background: var(--c-surface);
   box-shadow:
     0 1px 2px var(--c-shadow-1),
     0 6px 16px -12px var(--c-shadow-2);
+}
+
+/* Лава: два мягких пятна медленно ползают под текстом.
+   Двигается слой целиком через transform — браузер перекладывает
+   готовый растр, а не перерисовывает градиент каждый кадр.
+   Оттенки взяты соседними с поверхностью карточки, поэтому
+   контраст текста держится в любой момент цикла. */
+.term__lava {
+  position: absolute;
+  inset: -70%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 30% 30%, var(--c-lava-1) 0%, transparent 60%),
+    radial-gradient(circle at 72% 68%, var(--c-lava-2) 0%, transparent 58%),
+    radial-gradient(circle at 50% 90%, var(--c-lava-3) 0%, transparent 55%);
+  animation: lava 42s linear infinite;
+}
+
+.term:nth-child(2) .term__lava {
+  animation-duration: 55s;
+  animation-delay: -18s;
+  animation-direction: reverse;
+}
+
+.term:nth-child(3) .term__lava {
+  animation-duration: 48s;
+  animation-delay: -33s;
+}
+
+/* Текст лежит поверх лавы. */
+.term__title,
+.term__text {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes lava {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.12);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
 }
 
 .term__title {
@@ -145,36 +192,26 @@
   line-height: 1.5;
 }
 
+/* Три карточки в ряд, как только для этого есть ширина. */
+@media (min-width: 640px) {
+  .terms {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--sp-4);
+  }
+}
+
 @media (min-width: 1024px) {
   .hero {
     padding-top: var(--sp-8);
     padding-bottom: var(--sp-6);
-    display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-    grid-template-areas:
-      'eyebrow terms'
-      'title   terms'
-      'lead    terms';
-    align-items: start;
-    column-gap: var(--sp-7);
-  }
-
-  .hero__eyebrow {
-    grid-area: eyebrow;
-  }
-
-  .hero__title {
-    grid-area: title;
   }
 
   .hero__lead {
-    grid-area: lead;
+    max-width: 52ch;
   }
 
   .terms {
-    grid-area: terms;
-    margin-top: var(--sp-2);
-    align-self: end;
+    margin-top: var(--sp-7);
   }
 
   /* На широком экране разделы живут в липкой шапке. */
