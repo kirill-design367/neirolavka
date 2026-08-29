@@ -1,11 +1,25 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import Lenis from 'lenis';
 
 gsap.registerPlugin(ScrollTrigger);
+
+/**
+ * Один узел нужен сразу двум хукам: и появлению, и параллаксу.
+ * Колбэк-ссылка раздаёт его обоим.
+ */
+export function useMergedRefs<T>(...refs: React.MutableRefObject<T | null>[]) {
+  return useCallback(
+    (node: T | null) => {
+      for (const r of refs) r.current = node;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    refs,
+  );
+}
 
 /** На сервере useLayoutEffect шумит в консоль — там берём useEffect. */
 export const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -140,6 +154,56 @@ export function useReveal<T extends HTMLElement>(options: RevealOptions = {}) {
 
     return () => ctx.revert();
   }, [stagger, y, start]);
+
+  return ref;
+}
+
+/**
+ * Лёгкий параллакс внутри блока.
+ *
+ * Элементы едут по вертикали с разной скоростью, поэтому внутри блока
+ * появляется небольшая глубина. Полный размах — 10–16 px за весь проход
+ * блока через экран, то есть движение замечаешь, только если приглядеться.
+ *
+ * Сдвиг пишется в переменную --par, а CSS применяет её через translate.
+ * Это важно: появление блоков уже занимает transform, а translate —
+ * отдельное свойство, и они складываются, не затирая друг друга.
+ */
+export function useParallax<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+
+  useIsomorphicLayoutEffect(() => {
+    const root = ref.current;
+    if (!root || prefersReducedMotion()) return;
+
+    const items = Array.from(root.querySelectorAll<HTMLElement>('[data-parallax]'));
+    if (!items.length) return;
+
+    const ctx = gsap.context(() => {
+      for (const el of items) {
+        const depth = Number(el.dataset.parallax) || 1;
+        const shift = 5 * depth; // размах 10–16 px
+        gsap.fromTo(
+          el,
+          { '--par': `${shift}px` },
+          {
+            '--par': `${-shift}px`,
+            ease: 'none',
+            scrollTrigger: {
+              trigger: root,
+              start: 'top bottom',
+              end: 'bottom top',
+              // Небольшое сглаживание: сдвиг догоняет прокрутку,
+              // а не дёргается за каждым её пикселем.
+              scrub: 0.6,
+            },
+          },
+        );
+      }
+    }, root);
+
+    return () => ctx.revert();
+  }, []);
 
   return ref;
 }

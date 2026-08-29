@@ -1,6 +1,6 @@
 'use client';
 
-import { useReveal } from '@/lib/motion';
+import { useMergedRefs, useParallax, useReveal } from '@/lib/motion';
 
 /** Покупка действительно идёт по шагам, поэтому нумерация здесь несёт смысл. */
 const STEPS = [
@@ -22,7 +22,7 @@ const STEPS = [
 ];
 
 export function Steps() {
-  const ref = useReveal<HTMLElement>({ stagger: 0.08 });
+  const ref = useMergedRefs(useReveal<HTMLElement>({ stagger: 0.08 }), useParallax<HTMLElement>());
 
   return (
     <section className="steps" ref={ref}>
@@ -32,7 +32,7 @@ export function Steps() {
 
       {/* Не три одинаковые карточки, а одна нить: шаги нанизаны на линию,
           и видно, что это последовательность, а не список свойств. */}
-      <ol className="steps__thread">
+      <ol className="steps__thread" data-parallax="0.8">
         {STEPS.map((step) => (
           <li className="step" key={step.n}>
             <span className="step__node" aria-hidden="true">
@@ -46,7 +46,7 @@ export function Steps() {
         ))}
       </ol>
 
-      <p className="steps__note" data-reveal>
+      <p className="steps__note" data-reveal data-parallax="1.4">
         Сайт не хранит и не запрашивает ваши данные: здесь только витрина и калькулятор.
       </p>
     </section>

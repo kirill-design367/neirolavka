@@ -1,0 +1,215 @@
+/* ═════════════════════════════════════════════════════════════
+   Жизнь страницы: параллакс, дыхание, микрореакции.
+
+   Три правила, общие для всего файла.
+
+   Первое: только transform и opacity. «Изменение светлоты» и
+   «появление тени» сделаны слоем, у которого меняется прозрачность,
+   а не свойствами background и box-shadow — их анимация заставляет
+   браузер перерисовывать элемент каждый кадр.
+
+   Второе: текст не масштабируется нигде. Всё, что дышит масштабом, —
+   это слой без текста, лежащий под ним.
+
+   Третье: каждая пауза в keyframes начинается и заканчивается
+   состоянием покоя. При prefers-reduced-motion общее правило
+   в globals.css схлопывает анимацию в один кадр, и элемент
+   замирает именно в покое, а не на середине.
+   ═════════════════════════════════════════════════════════════ */
+
+/* Сдвиг параллакса пишет GSAP в переменную --par. Свойство translate
+   отдельное от transform, поэтому параллакс складывается с появлением
+   блока, а не затирает его. */
+[data-parallax] {
+  translate: 0 var(--par, 0px);
+}
+
+/* ─── Слой отклика ──────────────────────────────────────────────
+   Общая заготовка: невидимый слой под содержимым, который
+   проявляется при наведении и даёт разом и подсветку, и тень. */
+.tariff,
+.term,
+.review,
+.pays__item,
+.hero__chip {
+  position: relative;
+  isolation: isolate;
+}
+
+.tariff::before,
+.term::before,
+.review::before,
+.pays__item::before,
+.hero__chip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 0.28s var(--ease-out);
+  pointer-events: none;
+}
+
+.tariff:hover::before,
+.term:hover::before,
+.review:hover::before,
+.pays__item:hover::before,
+.hero__chip:hover::before {
+  /* 4% основного цвета: в светлой теме подложка чуть темнеет,
+     в тёмной — чуть светлеет. Заметно ровно настолько, чтобы
+     понять, что элемент откликнулся. */
+  opacity: 0.04;
+}
+
+/* Тень при наведении — тоже слой с прозрачностью. */
+.tariff::after,
+.term::after,
+.review::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  border-radius: inherit;
+  box-shadow: 0 10px 26px -14px var(--c-shadow-2);
+  opacity: 0;
+  transition: opacity 0.28s var(--ease-out);
+  pointer-events: none;
+}
+
+.tariff:hover::after,
+.term:hover::after,
+.review:hover::after {
+  opacity: 1;
+}
+
+/* Сдвиг при наведении. Длительность в требуемом окне 0.25–0.3 с. */
+.tariff,
+.term,
+.review,
+.pays__item,
+.hero__chip,
+.order__cta,
+.referral__link,
+.bar__pay {
+  transition: transform 0.28s var(--ease-out);
+}
+
+.tariff:hover,
+.term:hover {
+  transform: translateY(-3px);
+}
+
+.review:hover {
+  transform: translateY(-2px);
+}
+
+.pays__item:hover,
+.bar__pay:hover,
+.hero__chip:hover {
+  transform: translateY(-1px);
+}
+
+.order__cta:not(.order__cta--off):hover,
+.referral__link:hover {
+  transform: translateY(-2px);
+}
+
+/* Нажатие возвращает элемент на место — отклик на палец и мышь. */
+.tariff:active,
+.term:active,
+.pays__item:active,
+.hero__chip:active,
+.order__cta:not(.order__cta--off):active {
+  transform: translateY(0);
+  transition-duration: 0.09s;
+}
+
+/* ─── Дыхание ───────────────────────────────────────────────────
+   Слой той же заготовки, но живущий сам по себе. Амплитуда
+   подобрана так, чтобы движение читалось периферийным зрением
+   и не отвлекало при чтении. */
+
+@keyframes breathe-tint {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.022;
+  }
+}
+
+@keyframes breathe-scale {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.012);
+    opacity: 1;
+  }
+}
+
+/* Карточки тарифов дышат светлотой, вразнобой: одинаковый цикл
+   у соседей читался бы как мигание блока целиком. */
+.tariff::before {
+  animation: breathe-tint 5.4s var(--ease-inout) infinite;
+}
+
+.group__list > li:nth-child(2) .tariff::before {
+  animation-delay: 1.3s;
+}
+
+.group__list > li:nth-child(3) .tariff::before {
+  animation-delay: 2.7s;
+}
+
+.group__list > li:nth-child(4) .tariff::before {
+  animation-delay: 4s;
+}
+
+/* На наведении дыхание уступает отклику: иначе прозрачность
+   слоя одновременно ведут анимация и переход. */
+.tariff:hover::before {
+  animation: none;
+}
+
+/* Панель заказа дышит подложкой, а не сама: в ней текст. */
+.order__paper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  animation: breathe-tint 6s var(--ease-inout) infinite;
+  pointer-events: none;
+}
+
+.order__paper {
+  isolation: isolate;
+}
+
+/* Плашка надзаголовка дышит масштабом — но масштаб достаётся
+   подложке, а надпись поверх него только поднимается. */
+.hero__eyebrow::before {
+  animation: breathe-scale 5.6s var(--ease-inout) infinite;
+}
+
+/* ─── Полки ─────────────────────────────────────────────────────
+   У полки уже есть отдельный слой подложки, отклик вешаем на него. */
+.shelf__trigger:not(:disabled):hover ~ .shelf__plate,
+.shelf:has(.shelf__trigger:not(:disabled):hover) .shelf__plate {
+  transform: translateY(-2px);
+}
+
+.shelf__plate {
+  transition:
+    transform 0.28s var(--ease-out),
+    border-color 0.25s var(--ease-out),
+    box-shadow 0.25s var(--ease-out);
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useReveal } from '@/lib/motion';
+import { useMergedRefs, useParallax, useReveal } from '@/lib/motion';
 
 const CHIPS = [
   { href: '#magazin', label: 'Магазин' },
@@ -9,7 +9,9 @@ const CHIPS = [
 ];
 
 export function Hero() {
-  const ref = useReveal<HTMLElement>({ stagger: 0.06 });
+  const revealRef = useReveal<HTMLElement>({ stagger: 0.06 });
+  const parallaxRef = useParallax<HTMLElement>();
+  const ref = useMergedRefs(revealRef, parallaxRef);
 
   return (
     <section className="hero" ref={ref}>
@@ -17,7 +19,7 @@ export function Hero() {
         Лавка доступа к нейросетям
       </p>
 
-      <h1 className="hero__title" data-reveal>
+      <h1 className="hero__title" data-reveal data-parallax="0.6">
         Нейролавка
       </h1>
 
@@ -29,7 +31,7 @@ export function Hero() {
 
       {/* Условия лавки. Намеренно не карточки: это не список достоинств,
           а то, что честная лавка пишет на прилавке. */}
-      <dl className="terms">
+      <dl className="terms" data-parallax="1.4">
         <div className="term" data-reveal>
           <dt className="term__title">Цена видна сразу</dt>
           <dd className="term__text">Никаких «напишите в личку». Сколько показано, столько и платите.</dd>

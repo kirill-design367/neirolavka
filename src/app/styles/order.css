@@ -135,10 +135,6 @@
     background-color 0.18s var(--ease-out);
 }
 
-.pays__item:hover {
-  border-color: var(--c-line-strong);
-}
-
 .pays__item--active {
   border-color: var(--c-brand);
   background: color-mix(in oklab, var(--c-brand) 10%, var(--c-surface));
@@ -196,14 +192,6 @@
   font-size: var(--t-label);
   font-weight: 600;
   text-align: center;
-  transition:
-    transform 0.18s var(--ease-out),
-    opacity 0.18s var(--ease-out);
-}
-
-.order__cta:hover,
-.bar__cta:hover {
-  transform: translateY(-2px);
 }
 
 .order__cta--off,
@@ -213,10 +201,7 @@
   cursor: not-allowed;
 }
 
-.order__cta--off:hover,
-.bar__cta--off:hover {
-  transform: none;
-}
+
 
 .order__fineprint {
   margin-top: var(--sp-3);

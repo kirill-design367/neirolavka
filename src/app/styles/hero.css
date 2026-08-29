@@ -89,14 +89,6 @@
   background: var(--c-surface);
   font-size: var(--t-label);
   color: var(--c-muted);
-  transition:
-    transform 0.18s var(--ease-out),
-    color 0.18s var(--ease-out);
-}
-
-.hero__chip:hover {
-  color: var(--c-text);
-  transform: translateY(-1px);
 }
 
 /* Условия лавки. Каждое — самостоятельная плашка: раньше они были
@@ -115,13 +107,6 @@
   box-shadow:
     0 1px 2px var(--c-shadow-1),
     0 6px 16px -12px var(--c-shadow-2);
-  /* Реакция на наведение только по transform: ни тени, ни цвета,
-     ни размеров — иначе браузер пересчитывает раскладку. */
-  transition: transform 0.24s var(--ease-out);
-}
-
-.term:hover {
-  transform: translateY(-3px);
 }
 
 .term__title {

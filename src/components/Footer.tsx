@@ -1,16 +1,16 @@
 'use client';
 
 import { getCatalog } from '@/lib/catalog';
-import { useReveal } from '@/lib/motion';
+import { useMergedRefs, useParallax, useReveal } from '@/lib/motion';
 
 export function Footer() {
   const { reviews, reviewsArePlaceholders } = getCatalog();
-  const ref = useReveal<HTMLElement>({ stagger: 0.06 });
+  const ref = useMergedRefs(useReveal<HTMLElement>({ stagger: 0.06 }), useParallax<HTMLElement>());
 
   return (
     <footer className="footer" id="otzyvy" ref={ref}>
       <div className="page">
-        <div className="footer__head">
+        <div className="footer__head" data-parallax="1.2">
           <h2 className="footer__title" data-reveal>
             Что пишут
           </h2>
@@ -21,7 +21,7 @@ export function Footer() {
           )}
         </div>
 
-        <ul className="reviews">
+        <ul className="reviews" data-parallax="0.6">
           {reviews.map((review) => (
             <li className="review" key={review.id}>
               <span className="review__plate" data-reveal-plate aria-hidden="true" />

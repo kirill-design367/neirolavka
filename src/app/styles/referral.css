@@ -64,16 +64,11 @@
   color: var(--c-on-fill-btn);
   font-size: var(--t-label);
   font-weight: 600;
-  transition: transform 0.18s var(--ease-out);
 }
 
 .referral__link::after {
   content: '→';
   transition: transform 0.18s var(--ease-out);
-}
-
-.referral__link:hover {
-  transform: translateY(-2px);
 }
 
 .referral__link:hover::after {

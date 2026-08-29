@@ -1,18 +1,18 @@
 'use client';
 
 import { getCatalog } from '@/lib/catalog';
-import { useReveal } from '@/lib/motion';
+import { useMergedRefs, useParallax, useReveal } from '@/lib/motion';
 
 export function Referral() {
   const { botUrl } = getCatalog();
   const botReady = botUrl.length > 0;
-  const ref = useReveal<HTMLElement>({ stagger: 0.07 });
+  const ref = useMergedRefs(useReveal<HTMLElement>({ stagger: 0.07 }), useParallax<HTMLElement>());
 
   return (
     <section className="referral" id="referalka" ref={ref}>
       <span className="referral__plate" data-reveal-plate aria-hidden="true" />
 
-      <div className="referral__content">
+      <div className="referral__content" data-parallax="0.7">
         <h2 className="referral__title" data-reveal>
           Приводите своих
         </h2>
@@ -22,7 +22,7 @@ export function Referral() {
           Начисления и вывод живут в боте, здесь ничего заводить не нужно.
         </p>
 
-        <dl className="referral__facts">
+        <dl className="referral__facts" data-parallax="1.4">
           <div className="fact" data-reveal>
             <dt className="fact__label">Кому ссылка</dt>
             <dd className="fact__value">Всем, кто уже покупал</dd>
