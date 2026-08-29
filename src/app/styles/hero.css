@@ -99,21 +99,29 @@
   transform: translateY(-1px);
 }
 
-/* Условия лавки. Намеренно не карточки: это не список достоинств,
-   а то, что честная лавка пишет прямо на прилавке. */
+/* Условия лавки. Каждое — самостоятельная плашка: раньше они были
+   строками списка, разделёнными волосяными линейками, и читались
+   как один блок текста, а не как три отдельные вещи. */
 .terms {
   display: grid;
-  gap: 0;
+  gap: var(--sp-3);
   margin: var(--sp-6) 0 0;
 }
 
 .term {
-  padding: var(--sp-3) 0;
-  border-top: 1px solid var(--c-line);
+  padding: var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  box-shadow:
+    0 1px 2px var(--c-shadow-1),
+    0 6px 16px -12px var(--c-shadow-2);
+  /* Реакция на наведение только по transform: ни тени, ни цвета,
+     ни размеров — иначе браузер пересчитывает раскладку. */
+  transition: transform 0.24s var(--ease-out);
 }
 
-.term:last-child {
-  border-bottom: 1px solid var(--c-line);
+.term:hover {
+  transform: translateY(-3px);
 }
 
 .term__title {
