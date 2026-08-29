@@ -36,8 +36,8 @@ for (const vp of VIEWPORTS) {
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(700);
 
-    await page.getByRole('button', { name: /Claude/ }).first().click();
-    await page.waitForTimeout(1600);
+    // Claude раскрыт с первого кадра — снимаем как есть,
+    // затем проверяем саму механику на ChatGPT и обратно.
     await page.screenshot({ path: `${OUT}/${vp.name}-${theme}-2-тарифы.png` });
 
     await page.getByRole('button', { name: /6 месяцев/ }).first().click();
