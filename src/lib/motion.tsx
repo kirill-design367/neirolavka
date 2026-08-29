@@ -180,24 +180,29 @@ export function useParallax<T extends HTMLElement>() {
     if (!items.length) return;
 
     const ctx = gsap.context(() => {
+      // Один триггер на блок, а не на каждый элемент. Все сдвиги
+      // складываются в одну ленту: восемь отдельных прокруточных
+      // триггеров стоили заметной части работы главного потока
+      // при загрузке, четыре обходятся дешевле при том же движении.
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: root,
+          start: 'top bottom',
+          end: 'bottom top',
+          // Небольшое сглаживание: сдвиг догоняет прокрутку,
+          // а не дёргается за каждым её пикселем.
+          scrub: 0.6,
+        },
+      });
+
       for (const el of items) {
         const depth = Number(el.dataset.parallax) || 1;
-        const shift = 5 * depth; // размах 10–16 px
-        gsap.fromTo(
+        const shift = 5 * depth; // размах 10–14 px
+        tl.fromTo(
           el,
           { '--par': `${shift}px` },
-          {
-            '--par': `${-shift}px`,
-            ease: 'none',
-            scrollTrigger: {
-              trigger: root,
-              start: 'top bottom',
-              end: 'bottom top',
-              // Небольшое сглаживание: сдвиг догоняет прокрутку,
-              // а не дёргается за каждым её пикселем.
-              scrub: 0.6,
-            },
-          },
+          { '--par': `${-shift}px`, ease: 'none', duration: 1 },
+          0,
         );
       }
     }, root);
