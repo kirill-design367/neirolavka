@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import './styles/layout.css';
+@import './styles/shop.css';
 @import './styles/nav.css';
 @import './styles/hero.css';
 

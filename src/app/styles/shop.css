@@ -1,0 +1,323 @@
+/* Магазин: полки нейросетей и тарифы, которые из них разворачиваются. */
+
+.shop {
+  padding-top: var(--sp-6);
+}
+
+.shop__head {
+  margin-bottom: var(--sp-5);
+}
+
+.shop__title {
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.shop__hint {
+  margin-top: var(--sp-2);
+  font-size: var(--t-label);
+  color: var(--c-muted);
+}
+
+.shop__shelves {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.shelf {
+  position: relative;
+  border-radius: var(--r-lg);
+  isolation: isolate;
+}
+
+/* Подложка отдельным слоем: именно она получает масштаб при появлении,
+   поэтому текст поверх неё никогда не растягивается и не мылится. */
+.shelf__plate {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--c-surface);
+  border: 1px solid var(--c-line);
+  box-shadow: 0 1px 2px rgb(var(--c-shadow) / var(--shadow-strength-2));
+  transition:
+    border-color 0.25s var(--ease-out),
+    box-shadow 0.25s var(--ease-out);
+}
+
+.shelf--open .shelf__plate {
+  border-color: color-mix(in oklab, var(--c-brand) 42%, var(--c-line));
+  box-shadow: 0 8px 24px -12px rgb(var(--c-shadow) / var(--shadow-strength));
+}
+
+.shelf__heading {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.shelf__trigger {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'name meta'
+    'tag  meta';
+  align-items: center;
+  gap: 0.125rem var(--sp-4);
+  width: 100%;
+  padding: var(--sp-5);
+  text-align: left;
+  border-radius: var(--r-lg);
+}
+
+.shelf__trigger:disabled {
+  cursor: default;
+}
+
+.shelf__name {
+  grid-area: name;
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--c-text);
+  transition: color 0.25s var(--ease-out);
+}
+
+.shelf--open .shelf__name {
+  color: var(--c-brand);
+}
+
+.shelf__tagline {
+  grid-area: tag;
+  font-size: var(--t-label);
+  color: var(--c-muted);
+}
+
+.shelf__meta {
+  grid-area: meta;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.shelf__plan {
+  font-size: var(--t-micro);
+  color: var(--c-muted);
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: var(--c-surface-2);
+  white-space: nowrap;
+}
+
+/* Плюс, который поворотом становится минусом. Только transform. */
+.shelf__sign {
+  position: relative;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--c-line-strong);
+  transition: transform 0.35s var(--ease-out);
+}
+
+.shelf__sign::before,
+.shelf__sign::after {
+  content: '';
+  position: absolute;
+  inset: 50% 0.375rem;
+  height: 1px;
+  margin-top: -0.5px;
+  background: var(--c-text);
+  transition: transform 0.35s var(--ease-out);
+}
+
+.shelf__sign::after {
+  transform: rotate(90deg);
+}
+
+.shelf--open .shelf__sign {
+  transform: rotate(180deg);
+}
+
+.shelf--open .shelf__sign::after {
+  transform: rotate(0deg);
+}
+
+.shelf__soon {
+  font-size: var(--t-micro);
+  color: var(--c-accent-text);
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--c-accent) 16%, transparent);
+  white-space: nowrap;
+}
+
+.shelf--soon .shelf__name,
+.shelf--soon .shelf__tagline {
+  opacity: 0.62;
+}
+
+.shelf__soon-note {
+  padding: 0 var(--sp-5) var(--sp-5);
+  margin-top: calc(var(--sp-3) * -1);
+  font-size: var(--t-label);
+  color: var(--c-muted);
+}
+
+.shelf__body {
+  overflow: hidden;
+}
+
+.shelf__body-inner {
+  padding: 0 var(--sp-5) var(--sp-5);
+  display: grid;
+  gap: var(--sp-5);
+}
+
+.group__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-3);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px dashed var(--c-line);
+  margin-bottom: var(--sp-4);
+}
+
+.group__title {
+  font-size: var(--t-body);
+  font-weight: 600;
+}
+
+.group__caption {
+  font-size: var(--t-micro);
+  color: var(--c-muted);
+}
+
+.group__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.tariff {
+  position: relative;
+  display: grid;
+  gap: 0.125rem;
+  width: 100%;
+  height: 100%;
+  padding: var(--sp-4);
+  text-align: left;
+  border-radius: var(--r-md);
+  border: 1px solid var(--c-line);
+  background: var(--c-bg);
+  transition:
+    transform 0.18s var(--ease-out),
+    border-color 0.18s var(--ease-out),
+    background-color 0.18s var(--ease-out);
+}
+
+.tariff:hover {
+  transform: translateY(-2px);
+  border-color: var(--c-line-strong);
+}
+
+.tariff--active {
+  border-color: var(--c-brand);
+  background: color-mix(in oklab, var(--c-brand) 8%, var(--c-surface));
+}
+
+.tariff__short {
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--c-text);
+  padding-right: 1.5rem;
+}
+
+.tariff__note {
+  font-size: var(--t-micro);
+  color: var(--c-muted);
+  line-height: 1.4;
+}
+
+.tariff__price {
+  margin-top: var(--sp-2);
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--c-brand);
+}
+
+.tariff__badge {
+  position: absolute;
+  top: calc(var(--sp-4) * -0.5);
+  right: var(--sp-3);
+  font-size: var(--t-micro);
+  padding: 0.125rem 0.4375rem;
+  border-radius: 999px;
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+  white-space: nowrap;
+}
+
+.tariff__mark {
+  position: absolute;
+  top: var(--sp-4);
+  right: var(--sp-4);
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 1px solid var(--c-line-strong);
+  opacity: 0;
+  transform: scale(0.7);
+  transition:
+    opacity 0.2s var(--ease-out),
+    transform 0.2s var(--ease-out);
+}
+
+.tariff--active .tariff__mark {
+  opacity: 1;
+  transform: scale(1);
+  background: var(--c-brand);
+  border-color: var(--c-brand);
+}
+
+.tariff--active .tariff__mark::after {
+  content: '';
+  position: absolute;
+  left: 0.3125rem;
+  top: 0.125rem;
+  width: 0.25rem;
+  height: 0.5rem;
+  border: solid var(--c-on-brand);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+@media (min-width: 640px) {
+  .group__list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .shop__shelves {
+    gap: var(--sp-5);
+  }
+
+  .shelf__trigger {
+    padding: var(--sp-6);
+  }
+
+  .shelf__body-inner {
+    padding: 0 var(--sp-6) var(--sp-6);
+  }
+
+  .shelf__soon-note {
+    padding: 0 var(--sp-6) var(--sp-6);
+  }
+}
