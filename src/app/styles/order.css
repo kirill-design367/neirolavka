@@ -1,0 +1,289 @@
+/* Панель заказа — она же чек. Сигнатурный элемент страницы:
+   единственная «бумажная» деталь здесь — перфорация по нижнему краю,
+   всё остальное держится на пунктирных линейках и табличных цифрах. */
+
+.order__paper {
+  position: relative;
+  background: var(--c-surface);
+  border: 1px solid var(--c-line);
+  border-bottom: none;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  padding: var(--sp-5);
+  box-shadow: 0 12px 32px -20px rgb(var(--c-shadow) / var(--shadow-strength));
+}
+
+.order__paper::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  bottom: -0.5rem;
+  height: 0.5rem;
+  background: var(--c-surface);
+  border-inline: 1px solid var(--c-line);
+  -webkit-mask-image: radial-gradient(circle at 0.375rem 0.5rem, transparent 0.375rem, #000 0.4rem);
+  mask-image: radial-gradient(circle at 0.375rem 0.5rem, transparent 0.375rem, #000 0.4rem);
+  -webkit-mask-size: 0.75rem 0.5rem;
+  mask-size: 0.75rem 0.5rem;
+  -webkit-mask-repeat: repeat-x;
+  mask-repeat: repeat-x;
+}
+
+.order__title {
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--c-muted);
+}
+
+.order__block {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px dashed var(--c-line);
+}
+
+.order__label {
+  font-size: var(--t-micro);
+  color: var(--c-muted);
+  margin-bottom: var(--sp-2);
+}
+
+.order__item-name {
+  font-size: var(--t-body);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.order__item-note {
+  margin-top: 0.125rem;
+  font-size: var(--t-micro);
+  color: var(--c-muted);
+  line-height: 1.45;
+}
+
+.order__empty {
+  font-size: var(--t-label);
+  color: var(--c-muted);
+  line-height: 1.5;
+}
+
+/* Способ оплаты и итог разворачиваются, когда выбран товар:
+   спрашивать про оплату раньше — ставить второй шаг перед первым. */
+.order__rest {
+  overflow: hidden;
+}
+
+.order__payments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.pay {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-line);
+  background: var(--c-bg);
+  text-align: left;
+  transition:
+    border-color 0.18s var(--ease-out),
+    background-color 0.18s var(--ease-out);
+}
+
+.pay:hover {
+  border-color: var(--c-line-strong);
+}
+
+.pay--active {
+  border-color: var(--c-brand);
+  background: color-mix(in oklab, var(--c-brand) 8%, var(--c-surface));
+}
+
+.pay__dot {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 50%;
+  border: 1px solid var(--c-line-strong);
+  flex: none;
+  position: relative;
+}
+
+.pay--active .pay__dot {
+  border-color: var(--c-brand);
+}
+
+.pay--active .pay__dot::after {
+  content: '';
+  position: absolute;
+  inset: 0.1875rem;
+  border-radius: 50%;
+  background: var(--c-brand);
+}
+
+.pay__text {
+  display: grid;
+  min-width: 0;
+}
+
+.pay__title {
+  font-size: var(--t-label);
+  font-weight: 500;
+}
+
+.pay__caption {
+  font-size: var(--t-micro);
+  color: var(--c-muted);
+}
+
+.order__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--c-line);
+}
+
+.order__total-label {
+  font-size: var(--t-label);
+  color: var(--c-muted);
+}
+
+.order__total-value {
+  font-size: var(--t-title);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.order__cta,
+.bar__cta {
+  display: grid;
+  place-items: center;
+  margin-top: var(--sp-4);
+  padding: 0.875rem 1rem;
+  border-radius: var(--r-md);
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+  font-size: var(--t-label);
+  font-weight: 600;
+  text-align: center;
+  transition:
+    transform 0.18s var(--ease-out),
+    opacity 0.18s var(--ease-out);
+}
+
+.order__cta:hover,
+.bar__cta:hover {
+  transform: translateY(-2px);
+}
+
+.order__cta--off,
+.bar__cta--off {
+  background: var(--c-surface-2);
+  color: var(--c-muted);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.order__fineprint {
+  margin-top: var(--sp-3);
+  font-size: var(--t-micro);
+  color: var(--c-muted);
+  line-height: 1.45;
+}
+
+/* ─── Нижняя полоса: только телефон ─────────────────────────── */
+
+.bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  background: var(--c-surface);
+  border-top: 1px solid var(--c-line);
+  padding: var(--sp-3) var(--sp-5) calc(var(--sp-3) + env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 28px -18px rgb(var(--c-shadow) / 0.5);
+}
+
+.bar__pays {
+  display: flex;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.bar__pays::-webkit-scrollbar {
+  display: none;
+}
+
+.bar__pay {
+  flex: none;
+  padding: 0.4375rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--c-line);
+  background: var(--c-bg);
+  font-size: var(--t-micro);
+  color: var(--c-muted);
+  white-space: nowrap;
+}
+
+.bar__pay--active {
+  border-color: var(--c-brand);
+  background: color-mix(in oklab, var(--c-brand) 10%, var(--c-surface));
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+.bar__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  min-height: 2.75rem;
+}
+
+.bar__info {
+  min-width: 0;
+}
+
+.bar__name {
+  font-size: var(--t-micro);
+  color: var(--c-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar__total {
+  font-size: var(--t-body);
+  font-weight: 700;
+}
+
+.bar__empty {
+  font-size: var(--t-label);
+  color: var(--c-muted);
+}
+
+.bar__cta {
+  margin-top: 0;
+  flex: none;
+  min-width: 6.5rem;
+  padding: 0.75rem 1.25rem;
+}
+
+@media (min-width: 1024px) {
+  /* На десктопе чек живёт в липкой колонке — полоса не нужна. */
+  .bar {
+    display: none;
+  }
+}
