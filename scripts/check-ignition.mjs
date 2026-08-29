@@ -56,6 +56,11 @@ const HALF_MS = Number(process.argv[4] ?? 320);
 
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 let bad = 0;
+// Одна и та же геометрия, снятая в двух темах, даёт для метода
+// независимую оценку одного и того же момента. Расхождение между
+// ними и есть точность метода — печатать доли пикселя, которых у
+// него нет, нельзя.
+const cross = new Map();
 
 for (const [w, name] of [[1512, 'десктоп'], [390, 'мобильная']]) {
   for (const theme of ['light', 'dark']) {
@@ -272,8 +277,27 @@ for (const [w, name] of [[1512, 'десктоп'], [390, 'мобильная']])
     }
     if (noisy.length) console.log(`      ШУМ ЗАМЕРА ВЫШЕ ДОПУСТИМОГО у узлов ${noisy.map((o) => o.k + 1).join(', ')} — числам верить нельзя`);
     if (worst) console.log(`      наибольшее расхождение: ${worst.dpx >= 0 ? '+' : ''}${worst.dpx.toFixed(1)} px (плюс — узел загорелся позже прихода)`);
+    for (const o of usable) {
+      const key = `${w}:${o.k}`;
+      const e = cross.get(key) || [];
+      e.push({ theme, tCross: o.tCross, speed: o.speed });
+      cross.set(key, e);
+    }
   }
 }
 await b.close();
+
+// Точность метода: насколько две темы расходятся в оценке ОДНОГО и
+// того же момента при одинаковой геометрии.
+let worstRepro = 0;
+for (const [key, arr] of cross) {
+  if (arr.length < 2) continue;
+  const dt = Math.abs(arr[0].tCross - arr[1].tCross);
+  const dpx = dt * ((arr[0].speed + arr[1].speed) / 2);
+  if (dpx > worstRepro) worstRepro = dpx;
+}
+console.log(`\n  Воспроизводимость метода: одна и та же геометрия в двух темах даёт оценку` +
+  ` прихода, расходящуюся до ${worstRepro.toFixed(1)} px. Расхождения меньше этого числа` +
+  ` метод не различает — доли пикселя в строках выше в пределах его собственной погрешности.`);
 console.log(bad ? '\nЗАГОРАНИЕ НЕ СОВПАДАЕТ С ПРИХОДОМ КАПЛИ' : '\nУзлы загораются в момент прихода капли');
 process.exit(bad ? 1 : 0);
