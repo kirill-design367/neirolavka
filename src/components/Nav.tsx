@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useCountUp } from '@/lib/motion';
 
@@ -17,26 +17,30 @@ export function Nav({ subscribers }: { subscribers: number }) {
   // но прыжка вёрстки нет: цифры табличные и ширина зарезервирована.
   const countRef = useCountUp(subscribers, useCallback(formatCount, []));
 
-  // Тень под шапкой появляется, только когда под неё что-то заехало:
-  // у самого верха страницы отделять нечего. Слушатель пассивный
-  // и меняет класс лишь на переходе через порог, а не каждый кадр.
-  const [stuck, setStuck] = useState(false);
+  // Капсула проявляется по ходу прокрутки, а не по порогу.
+  // Пишем одну переменную на самой шапке: пересчёт стиля задевает
+  // только её поддерево, а не всю страницу. Запись через кадр,
+  // чтобы на один кадр приходилась одна запись, а не одна на событие.
+  const navRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    let last = false;
-    const onScroll = () => {
-      const next = window.scrollY > 8;
-      if (next !== last) {
-        last = next;
-        setStuck(next);
-      }
+    let queued = false;
+    const apply = () => {
+      queued = false;
+      const p = Math.min(1, Math.max(0, window.scrollY / 120));
+      navRef.current?.style.setProperty('--nav-p', p.toFixed(3));
     };
-    onScroll();
+    const onScroll = () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(apply);
+    };
+    apply();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   return (
-    <header className={`nav${stuck ? ' nav--stuck' : ''}`}>
+    <header className="nav" ref={navRef}>
       <div className="nav__inner page">
         <p className="nav__counter">
           <span className="nav__pulse" aria-hidden="true" />

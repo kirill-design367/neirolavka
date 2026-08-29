@@ -1,27 +1,68 @@
 /* Навигация и переключатель темы. */
 
-/* Липкая шапка отделяется от содержимого мягкой тенью, и только
-   когда под неё что-то заехало. У самого верха страницы отделять
-   нечего, поэтому там тени нет. */
+/* Шапка — не полоса во всю ширину, а отдельный объект.
+
+   Сама .nav прозрачна и служит только держателем: она отступает
+   от верхней кромки и не ловит мышь. Видимая капсула — .nav__inner,
+   она скруглена целиком и вписана в ту же сетку, что и содержимое
+   страницы, поэтому читается как предмет, лежащий поверх неё.
+
+   Реакция на прокрутку непрерывная, а не по порогу. Переменная
+   --nav-p идёт от 0 до 1 на первых 120 пикселях прокрутки; от неё
+   зависят прозрачность подложки и подъём капсулы. Подложка вынесена
+   отдельным слоем, поэтому меняется только opacity — ни фон,
+   ни тень покадрово не пересчитываются.
+
+   Матового стекла здесь нет намеренно: backdrop-filter заставляет
+   браузер каждый кадр размывать всё, что проезжает под шапкой,
+   и это самая дорогая вещь, какую можно повесить на липкий элемент. */
 .nav {
   position: sticky;
   top: 0;
   z-index: 40;
-  background: var(--c-bg);
-  box-shadow: 0 0 0 0 transparent;
-  transition: box-shadow 0.25s var(--ease-out);
-}
-
-.nav--stuck {
-  box-shadow: 0 6px 20px -14px var(--c-shadow-2);
+  padding-block: var(--sp-3);
+  pointer-events: none;
 }
 
 .nav__inner {
+  position: relative;
+  isolation: isolate;
+  pointer-events: auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-5);
-  min-height: 3.5rem;
+  min-height: 3rem;
+  border-radius: 999px;
+  translate: 0 calc(var(--nav-p, 0) * -2px);
+}
+
+/* Содержимое страницы проезжает в зазоре над капсулой и упирается
+   в кромку окна срезом. Растворяем его: узкая полоса фона, гаснущая
+   книзу. Проявляется вместе с капсулой, мышь не ловит. */
+.nav::before {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--sp-6);
+  background: linear-gradient(var(--c-bg) 38%, transparent);
+  opacity: var(--nav-p, 0);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.nav__inner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--c-surface);
+  box-shadow:
+    0 14px 34px -22px var(--c-shadow-2),
+    0 1px 3px -1px var(--c-shadow-1);
+  opacity: var(--nav-p, 0);
+  pointer-events: none;
 }
 
 .nav__counter {
@@ -189,7 +230,7 @@
 
 @media (min-width: 1024px) {
   .nav__inner {
-    min-height: 4rem;
+    min-height: 3.25rem;
   }
 
   .nav__links {
