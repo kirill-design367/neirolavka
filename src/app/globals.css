@@ -184,7 +184,7 @@
 @property --c-spark-2 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #c9862a;
+  initial-value: #d99a34;
 }
 
 @property --c-spark-3 {

@@ -70,7 +70,7 @@ for (const [w, name, theme] of [[1512, 'десктоп, светлая', 'light'
                  c: horiz ? r.left + r.width / 2 : r.top + r.height / 2,
                  bg: st.backgroundColor,
                  col: getComputedStyle(n.querySelector('.step__num')).color,
-                 bd: st.borderTopColor };
+                 bw: st.borderTopWidth };
       });
       out.push({ t: +((t - cyc * 3) / cyc).toFixed(3), gap: +(edge - dot).toFixed(2), ext: +ext.toFixed(1),
                  fo: +(+fs.opacity).toFixed(2), lo: +(+ls.opacity).toFixed(2), dot, nodes: nodeState });
@@ -93,7 +93,7 @@ for (const [w, name, theme] of [[1512, 'десктоп, светлая', 'light'
     let best = r.out[0], bd = -1;
     for (const s of r.out) if (s.nodes[k].d > bd) { bd = s.nodes[k].d; best = s; }
     arrive.push({ k, t: best.t, off: +(best.dot - best.nodes[k].c).toFixed(2),
-                  bg: best.nodes[k].bg, col: best.nodes[k].col, bd: best.nodes[k].bd, amp: +bd.toFixed(1) });
+                  bg: best.nodes[k].bg, col: best.nodes[k].col, bw: best.nodes[k].bw, amp: +bd.toFixed(1) });
   }
   const worstArr = arrive.reduce((m, a) => (Math.abs(a.off) > Math.abs(m.off) ? a : m), arrive[0]);
 
@@ -111,7 +111,7 @@ for (const [w, name, theme] of [[1512, 'десктоп, светлая', 'light'
   console.log(`      наибольший обгон заливки: ${worst.gap} px (${(worst.gap / len * 100).toFixed(1)} % дорожки) на доле цикла ${worst.t}`);
   console.log(`      проб, где заливка видна, а капли нет: ${blind} из ${r.out.length}`);
   for (const a of arrive)
-    console.log(`      узел ${a.k + 1} ярче всего на доле ${a.t}, капля в ${a.off} px от его центра; фон ${a.bg}, обводка ${a.bd}, цифра ${a.col}`);
+    console.log(`      узел ${a.k + 1} ярче всего на доле ${a.t}, капля в ${a.off} px от его центра; фон ${a.bg}, цифра ${a.col}, обводка ${a.bw}`);
   console.log(`      худший контраст цифры за цикл: ${wc.r.toFixed(2)}:1 на доле ${wc.t} (цифра ${wc.col} на ${wc.bg})`);
   await c.close();
 }

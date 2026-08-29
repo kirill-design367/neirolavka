@@ -50,6 +50,8 @@ import { PNG } from 'pngjs';
 
 const URL = process.argv[2];
 const STEP_MS = Number(process.argv[3] ?? 8);
+// Нижняя граница окна. Обычно окно всё равно шире: оно считается из
+// скорости капли, иначе на телефоне она не успевает отойти от кружка.
 const HALF_MS = Number(process.argv[4] ?? 320);
 
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
@@ -245,9 +247,17 @@ for (const [w, name] of [[1512, 'десктоп'], [390, 'мобильная']])
     }
     await c.close();
 
+    if (!setup.nodes.length) {
+      console.log('  УЗЛОВ НА СТРАНИЦЕ НЕТ — проба устарела, мерить нечего');
+      bad++; continue;
+    }
     const usable = out.filter((o) => Number.isFinite(o.dpx));
     const worst = usable.length ? usable.reduce((m, o) => (Math.abs(o.dpx) > Math.abs(m.dpx) ? o : m), usable[0]) : null;
-    const ok = usable.length === out.length && usable.every((o) => Math.abs(o.dpx) <= 4);
+    // Шум замера обязан быть заметно ниже порога загорания, иначе
+    // «первый кадр, где стало светлее» — это просто дрожание кадра.
+    const noisy = out.filter((o) => Number.isFinite(o.noise) && o.noise > 1);
+    const ok = usable.length === out.length && !noisy.length &&
+      usable.every((o) => Math.abs(o.dpx) <= 4);
     if (!ok) bad++;
     console.log(`  ${ok ? 'ok ' : 'НЕТ'} ${name}, ${theme === 'dark' ? 'тёмная' : 'светлая'}: шаг пробы ${STEP_MS} мс, окно ±${HALF.toFixed(0)} мс, капля ${setup.ledSize} css-px`);
     for (const o of out) {
@@ -260,6 +270,7 @@ for (const [w, name] of [[1512, 'десктоп'], [390, 'мобильная']])
       console.log(`               скорость ${(o.speed * 1000).toFixed(0)} px/с, видимый радиус капли ${o.rad.toFixed(0)} px, ` +
         `${o.clean} чистых кадров, шум замера ${Number.isFinite(o.noise) ? o.noise.toFixed(2) : '—'} при пороге 2.00`);
     }
+    if (noisy.length) console.log(`      ШУМ ЗАМЕРА ВЫШЕ ДОПУСТИМОГО у узлов ${noisy.map((o) => o.k + 1).join(', ')} — числам верить нельзя`);
     if (worst) console.log(`      наибольшее расхождение: ${worst.dpx >= 0 ? '+' : ''}${worst.dpx.toFixed(1)} px (плюс — узел загорелся позже прихода)`);
   }
 }

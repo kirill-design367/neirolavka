@@ -2,10 +2,19 @@
  * Перелив внутри капли света: правда ли внутри неё что-то движется
  * и сколько там цветов.
  *
- * Анимации перелива и колыхания прокручиваются по времени вручную,
- * поэтому фазы берутся детерминированно, а не «как повезёт». Каплю
- * снимаем при большом увеличении и считаем по её пикселям — цвета,
- * разброс тона, а также насколько картинка меняется от фазы к фазе.
+ * Замер разделён на два, иначе он ничего не доказывает. Если гнать
+ * все анимации разом, то «картинка внутри меняется» получится и от
+ * колыхания самого контура — то есть проверка перелива засчитает
+ * ровно то, что переливом не является.
+ *
+ *   перелив — колыхание и дыхание заморожены, крутится только
+ *             градиент внутри долей;
+ *   контур  — наоборот: градиент заморожен, крутятся доли.
+ *
+ * Мера движения — размах КАЖДОГО пикселя за цикл (max − min по
+ * фазам), усреднённый по сердцевине. Средняя разница между соседними
+ * фазами не годится: она падает при увеличении числа фаз, и вердикт
+ * начинает зависеть от аргумента командной строки.
  *
  * Свечение вокруг капли в счёт не идёт: берём только круг по её
  * собственному размеру.
@@ -48,31 +57,40 @@ for (const theme of ['light', 'dark']) {
       .flatMap((e) => e.getAnimations())
       .forEach((a) => { if (a.effect.getTiming().duration === cyc) { a.pause(); a.currentTime = cyc * 0.3; } });
     // Анимации перелива и колыхания — у долей и их псевдоэлементов.
-    const inner = document.getAnimations().filter((a) => {
-      const n = a.animationName || '';
-      return n.startsWith('spark-') || n.startsWith('led-wobble') || n === 'led-breathe';
-    });
-    inner.forEach((a) => a.pause());
-    window.__inner = inner;
-    return inner.map((a) => ({ n: a.animationName, d: a.effect.getTiming().duration }));
+    const pick = (test) => document.getAnimations().filter((a) => test(a.animationName || ''));
+    const spark = pick((n) => n.startsWith('spark-'));
+    const shape = pick((n) => n.startsWith('led-wobble') || n === 'led-breathe');
+    [...spark, ...shape].forEach((a) => { a.pause(); a.currentTime = 0; });
+    window.__spark = spark;
+    window.__shape = shape;
+    return { spark: spark.map((a) => ({ n: a.animationName, d: a.effect.getTiming().duration })),
+             shape: shape.map((a) => ({ n: a.animationName, d: a.effect.getTiming().duration })) };
   });
 
-  if (!periods.length) {
-    console.log('  НЕТ АНИМАЦИЙ ПЕРЕЛИВА — проба устарела, поправьте имена в скрипте');
+  if (!periods.spark.length || !periods.shape.length) {
+    console.log(`  НЕТ АНИМАЦИЙ (перелив ${periods.spark.length}, контур ${periods.shape.length}) — проба устарела, поправьте имена в скрипте`);
     bad++; await c.close(); continue;
   }
 
   const box = await p.locator('.steps__led').boundingBox();
-  const shots = [];
-  for (let i = 0; i < PHASES; i++) {
-    await p.evaluate((f) => {
-      window.__inner.forEach((a) => { a.currentTime = (a.effect.getTiming().duration * f) % a.effect.getTiming().duration; });
-    }, i / PHASES);
-    await p.waitForTimeout(90);
-    shots.push(PNG.sync.read(await p.screenshot({
-      clip: { x: box.x, y: box.y, width: box.width, height: box.height },
-    })));
-  }
+  const sweep = async (which) => {
+    const out = [];
+    for (let i = 0; i < PHASES; i++) {
+      await p.evaluate(([w, f]) => {
+        window[w].forEach((a) => { a.currentTime = a.effect.getTiming().duration * f; });
+      }, [which, i / PHASES]);
+      await p.waitForTimeout(90);
+      out.push(PNG.sync.read(await p.screenshot({
+        clip: { x: box.x, y: box.y, width: box.width, height: box.height },
+      })));
+    }
+    // Возвращаем эту группу в исходную фазу, чтобы следующий проход
+    // мерил только своё движение.
+    await p.evaluate((w) => { window[w].forEach((a) => { a.currentTime = 0; }); }, which);
+    return out;
+  };
+  const shots = await sweep('__spark');
+  const shapes = await sweep('__shape');
   await c.close();
 
   const W = shots[0].width, H = shots[0].height;
@@ -92,22 +110,37 @@ for (const theme of ['light', 'dark']) {
     if (s < sMin) sMin = s; if (s > sMax) sMax = s;
     if (l < lMin) lMin = l; if (l > lMax) lMax = l;
   }
+  // Разброс тона считается ПО КРУГУ: тон замкнут, и у сливового с
+  // янтарным разность концов через ноль давала 343° вместо 70°.
+  // Берём наибольший пустой сектор и вычитаем его из полного круга.
   hues.sort((a, z) => a - z);
-  const span = hues.length ? hues[Math.floor(hues.length * 0.97)] - hues[Math.floor(hues.length * 0.03)] : 0;
-
-  // Насколько меняется картинка внутри капли от фазы к фазе.
-  let moveSum = 0, moveMax = 0;
-  for (let i = 1; i < shots.length; i++) {
-    let d = 0;
-    for (const o of inside) d += Math.abs(shots[i].data[o] - shots[i - 1].data[o]) +
-      Math.abs(shots[i].data[o + 1] - shots[i - 1].data[o + 1]) +
-      Math.abs(shots[i].data[o + 2] - shots[i - 1].data[o + 2]);
-    d /= inside.length * 3;
-    moveSum += d; if (d > moveMax) moveMax = d;
+  let span = 0;
+  if (hues.length > 1) {
+    let gap = 0;
+    for (let i = 1; i < hues.length; i++) gap = Math.max(gap, hues[i] - hues[i - 1]);
+    gap = Math.max(gap, hues[0] + 360 - hues[hues.length - 1]);
+    span = 360 - gap;
   }
 
-  // Силуэт: сколько пикселей кадра занимает сама капля (контур дышит).
-  const areas = shots.map((png) => {
+  // Размах каждого пикселя за цикл, усреднённый по сердцевине.
+  // Мера не зависит от числа фаз: с ростом фаз она сходится, а не
+  // падает, как средняя разница между соседними кадрами.
+  let swingSum = 0, swingMax = 0;
+  for (const o of inside) {
+    let s = 0;
+    for (let ch = 0; ch < 3; ch++) {
+      let mn = 255, mx = 0;
+      for (const png of shots) { const v = png.data[o + ch]; if (v < mn) mn = v; if (v > mx) mx = v; }
+      s += mx - mn;
+    }
+    s /= 3;
+    swingSum += s; if (s > swingMax) swingMax = s;
+  }
+  const swing = swingSum / inside.length;
+
+  // Силуэт: сколько пикселей кадра занимает сама капля. Считается по
+  // ВТОРОМУ проходу, где крутится контур, а градиент стоит.
+  const areas = shapes.map((png) => {
     const bg = [png.data[0], png.data[1], png.data[2]];
     let n = 0;
     for (let i = 0; i < W * H; i++) {
@@ -117,19 +150,22 @@ for (const theme of ['light', 'dark']) {
     return n;
   });
   const aMin = Math.min(...areas), aMax = Math.max(...areas);
+  const wobble = (aMax - aMin) / aMin * 100;
 
   // Порог по числу цветов невысок намеренно: капля 12 css-px, и
   // при пятибитном квантовании даже насыщенный градиент даёт
   // меньше сотни различимых оттенков. Главное — что их много
-  // больше одного и что картинка от фазы к фазе меняется.
-  const ok = bins.size >= 60 && span >= 25 && moveSum / (shots.length - 1) >= 3;
+  // больше одного, что цвета разные и что внутри капли за цикл
+  // действительно ходит краска, а не колышется её контур.
+  const ok = bins.size >= 60 && span >= 25 && swing >= 20 && wobble >= 2;
   if (!ok) bad++;
   console.log(`  ${ok ? 'ok ' : 'НЕТ'} ${theme === 'dark' ? 'тёмная' : 'светлая'}: капля ${(W / SCALE).toFixed(0)}x${(H / SCALE).toFixed(0)} css-px, ${PHASES} фаз, ${inside.length} пикселей сердцевины`);
-  console.log(`      периоды внутри: ${periods.map((q) => `${q.n} ${(q.d / 1000).toFixed(1)} с`).join(', ')}`);
+  console.log(`      перелив: ${periods.spark.map((q) => `${q.n} ${(q.d / 1000).toFixed(1)} с`).join(', ')}`);
+  console.log(`      контур:  ${periods.shape.map((q) => `${q.n} ${(q.d / 1000).toFixed(1)} с`).join(', ')}`);
   console.log(`      различных цветов в сердцевине ${bins.size}, разброс тона ${span.toFixed(0)}°`);
   console.log(`      насыщенность ${sMin.toFixed(2)}–${sMax.toFixed(2)}, светлота ${lMin.toFixed(2)}–${lMax.toFixed(2)}`);
-  console.log(`      сдвиг картинки между соседними фазами: ${(moveSum / (shots.length - 1)).toFixed(2)} уровня в среднем, ${moveMax.toFixed(2)} наибольший`);
-  console.log(`      площадь силуэта ${(aMin / SCALE / SCALE).toFixed(0)}–${(aMax / SCALE / SCALE).toFixed(0)} css-px², колебание ${((aMax - aMin) / aMin * 100).toFixed(1)} %`);
+  console.log(`      размах пикселя сердцевины за цикл перелива: ${swing.toFixed(1)} уровня в среднем, ${swingMax.toFixed(1)} наибольший`);
+  console.log(`      площадь силуэта при неподвижном градиенте ${(aMin / SCALE / SCALE).toFixed(0)}–${(aMax / SCALE / SCALE).toFixed(0)} css-px², колебание контура ${wobble.toFixed(1)} %`);
 }
 
 await b.close();
