@@ -14,12 +14,21 @@
 }
 
 /* ─── Дорожка со светодиодом ────────────────────────────────────
-   Точка бежит от первого кружка к последнему и оставляет за собой
-   подсвеченный участок. Когда она равняется с кружком, вокруг номера
-   разгорается кольцо, а сам номер набирает акцентный цвет.
+   Одна нить: линия, по которой бежит капля света и зажигает узлы.
+   Кружки, дорожка и точка нарисованы одним весом (1px по --c-line),
+   чтобы читаться как один механизм, а не как три разных элемента.
 
-   Всё движение — transform и opacity. Кольцо и точка не содержат
-   текста, поэтому масштаб им разрешён; номер только перекрашивается.
+   Всё движение — translate, transform и opacity, кроме перекраски
+   узла: у него меняются цвет фона, обводки и цифры внутри. Ни один
+   текст не масштабируется.
+
+   Цикл поделён на две части. Доля --run — бег точки от первого
+   кружка к последнему, остаток — догорание последнего узла и общее
+   затухание. Заливка и точка описаны одними и теми же ключевыми
+   кадрами с одной и той же линейной функцией, поэтому край заливки
+   в любой момент совпадает с центром точки. Раньше заливка
+   доезжала до конца за 92 % цикла, а точка за 100 %, и заливка
+   обгоняла точку на 7,8 % длины дорожки — 39,7 px на 1512.
 
    Геометрию дорожки считает useStepTrack и раздаёт переменными:
    на телефоне она вертикальная, на широком экране горизонтальная,
@@ -32,6 +41,7 @@
   display: grid;
   gap: var(--sp-5);
   --cycle: 5.6s;
+  --run: 0.78;
 }
 
 .steps__track {
@@ -73,25 +83,52 @@
   animation-name: track-fill-x;
 }
 
-/* Сама точка со свечением. */
+/* Капля света. Идеального круга нет: две одинаковые по цвету
+   эллиптические доли крутятся с разной скоростью, и их общий силуэт
+   всё время немного меняется. Обе доли — только transform, поэтому
+   перерисовки формы не происходит, слой просто трансформируется. */
 .steps__led {
   left: 50%;
   top: 0;
-  width: 0.5rem;
-  height: 0.5rem;
-  margin: -0.25rem 0 0 -0.25rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin: -0.3125rem 0 0 -0.3125rem;
   border-radius: 50%;
   background: var(--c-brand);
-  box-shadow: 0 0 0.5rem 0.125rem var(--c-brand);
   animation:
     led-move-y var(--cycle) linear infinite,
-    led-fade var(--cycle) linear infinite;
+    led-fade var(--cycle) linear infinite,
+    led-wobble-a 3.1s ease-in-out infinite;
+}
+
+.steps__led::before,
+.steps__led::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Вторая доля капли. */
+.steps__led::before {
+  inset: 0;
+  background: var(--c-brand);
+  animation: led-wobble-b 4.3s ease-in-out infinite;
+}
+
+/* Мягкое свечение вокруг капли: дышит отдельно от формы, поэтому
+   пульс и колыхание контура не попадают в такт друг другу. */
+.steps__led::after {
+  inset: -0.6875rem;
+  background: radial-gradient(circle, var(--c-brand) 0%, transparent 68%);
+  opacity: 0.5;
+  animation: led-breathe 2.3s ease-in-out infinite;
 }
 
 .steps__thread[data-track-dir='horizontal'] .steps__led {
   left: 0;
   top: 50%;
-  animation-name: led-move-x, led-fade;
+  animation-name: led-move-x, led-fade, led-wobble-a;
 }
 
 @keyframes track-fill {
@@ -99,7 +136,11 @@
     transform: scaleY(0);
     opacity: 1;
   }
-  92% {
+  78% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+  88% {
     transform: scaleY(1);
     opacity: 1;
   }
@@ -114,7 +155,11 @@
     transform: scaleX(0);
     opacity: 1;
   }
-  92% {
+  78% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  88% {
     transform: scaleX(1);
     opacity: 1;
   }
@@ -125,31 +170,78 @@
 }
 
 @keyframes led-move-y {
-  from {
+  0% {
     translate: 0 0;
   }
-  to {
+  78% {
+    translate: 0 var(--track-len, 0);
+  }
+  100% {
     translate: 0 var(--track-len, 0);
   }
 }
 
 @keyframes led-move-x {
-  from {
+  0% {
     translate: 0 0;
   }
-  to {
+  78% {
+    translate: var(--track-len, 0) 0;
+  }
+  100% {
     translate: var(--track-len, 0) 0;
   }
 }
 
+/* Гаснет вместе с дорожкой, а разгорается за 2 % цикла — к этому
+   моменту заливка выросла на те же 2 %, то есть на длину меньше
+   самой капли, и разрыва не видно. */
 @keyframes led-fade {
-  0%,
+  0% {
+    opacity: 0;
+  }
+  2%,
+  88% {
+    opacity: 1;
+  }
   100% {
     opacity: 0;
   }
-  7%,
-  90% {
-    opacity: 1;
+}
+
+@keyframes led-wobble-a {
+  0% {
+    transform: rotate(0deg) scale(1.14, 0.88);
+  }
+  50% {
+    transform: rotate(180deg) scale(0.9, 1.12);
+  }
+  100% {
+    transform: rotate(360deg) scale(1.14, 0.88);
+  }
+}
+
+@keyframes led-wobble-b {
+  0% {
+    transform: rotate(60deg) scale(0.92, 1.1);
+  }
+  50% {
+    transform: rotate(-120deg) scale(1.1, 0.9);
+  }
+  100% {
+    transform: rotate(-300deg) scale(0.92, 1.1);
+  }
+}
+
+@keyframes led-breathe {
+  0%,
+  100% {
+    transform: scale(0.88);
+    opacity: 0.42;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.62;
   }
 }
 
@@ -161,11 +253,20 @@
   align-items: start;
 }
 
+/* Узел загорается целиком: заливка, обводка и цифра внутри. Раньше
+   светилось только внешнее кольцо, и узел оставался тёмным.
 
-/* Без isolation: кружок не должен создавать свой контекст наложения,
-   иначе кольцо с z-index -1 окажется НАД его фоном и номер будет
-   лежать прямо на акцентном цвете. Сейчас кольцо уходит под фон
-   и видно только его свечение по краю. */
+   Обводка тонкая и того же цвета, что дорожка: кружок читается
+   как утолщение линии, а не как отдельная деталь. Прежде здесь
+   стоял --c-line-strong, и кружки выглядели тяжелее нити.
+
+   Без isolation: узел не должен создавать свой контекст наложения,
+   иначе свечение с z-index -1 окажется НАД его фоном и цифра будет
+   лежать прямо на акцентном цвете.
+
+   Задержка равна доле пути до этого шага, умноженной на долю цикла,
+   которую занимает бег. Без множителя --run узлы загорались позже,
+   чем к ним подходила точка. */
 .step__node {
   position: relative;
   width: 2rem;
@@ -174,71 +275,105 @@
   display: grid;
   place-items: center;
   background: var(--c-surface);
-  border: 1px solid var(--c-line-strong);
+  border: 1px solid var(--c-line);
   color: var(--c-text);
+  animation:
+    step-fill var(--cycle, 5.6s) linear infinite,
+    step-edge var(--cycle, 5.6s) linear infinite;
+  animation-delay: calc(var(--at, 0) * var(--run, 0.78) * var(--cycle, 5.6s));
 }
 
-/* Кольцо разгорается, когда точка равняется с этим шагом.
-   Задержка равна доле пути, на которой шаг стоит. */
+/* Свечение вокруг узла — отдельный слой без текста: масштаб и
+   прозрачность ему разрешены, цифру он не трогает. */
 .step__halo {
   position: absolute;
-  inset: -0.3125rem;
+  inset: -0.5rem;
   z-index: -1;
   border-radius: 50%;
-  background: var(--c-brand);
+  background: radial-gradient(circle, var(--c-brand) 0%, transparent 70%);
   opacity: 0;
-  transform: scale(0.55);
-  animation: step-lit var(--cycle, 5.6s) linear infinite;
-  animation-delay: calc(var(--at, 0) * var(--cycle, 5.6s));
+  transform: scale(0.6);
+  animation: step-glow var(--cycle, 5.6s) linear infinite;
+  animation-delay: calc(var(--at, 0) * var(--run, 0.78) * var(--cycle, 5.6s));
 }
 
+/* Цифра не масштабируется и своей анимации не имеет: цвет она
+   наследует от узла, поэтому загорается ровно вместе с ним. */
 .step__num {
   position: relative;
-  transition: color 0.3s var(--ease-out);
-  animation: step-num var(--cycle, 5.6s) linear infinite;
-  animation-delay: calc(var(--at, 0) * var(--cycle, 5.6s));
-}
-
-@keyframes step-lit {
-  0% {
-    opacity: 0;
-    transform: scale(0.55);
-  }
-  5% {
-    opacity: 0.55;
-    transform: scale(1);
-  }
-  18% {
-    opacity: 0;
-    transform: scale(1.45);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.45);
-  }
-}
-
-/* Номер не масштабируется: у него меняется только цвет. */
-@keyframes step-num {
-  0%,
-  100% {
-    color: var(--c-text);
-  }
-  5%,
-  14% {
-    color: var(--c-brand);
-  }
-  26% {
-    color: var(--c-text);
-  }
-}
-
-.step__num {
   font-size: var(--t-label);
   font-weight: 600;
+  color: inherit;
 }
 
-/* Движение выключено — точка стоит в начале, все шаги подсвечены
+/* Разгорание стоит в конце цикла, а не в начале: тогда полная
+   яркость приходится ровно на 0 % — на тот момент, когда капля
+   подошла к узлу. Если ставить разгорание после нуля, узел вспыхивает
+   уже вдогонку ушедшей капле: замер показывал отставание в 26 px
+   на 1512 и 13 px на 390.
+
+   Заливка и цифра переключаются шагом, без промежуточных цветов.
+   Плавный переход здесь недопустим: заливка идёт от тёмно-зелёного
+   к кремовому, цифра навстречу, и на середине они сходятся в один
+   тон — замер показывал 1,10:1 в светлой теме и 1,02:1 в тёмной,
+   то есть цифра на полкадра пропадала. Ни один цвет цифры не
+   вытягивает 4,5:1 разом на обеих заливках, так что промежутка
+   между состояниями просто нет.
+
+   Мягкость даёт не заливка, а обводка и свечение: они гаснут
+   плавно и держат послесвечение вокруг уже погасшего узла. */
+@keyframes step-fill {
+  0% {
+    background-color: var(--c-brand);
+    color: var(--c-on-brand);
+    animation-timing-function: steps(1, end);
+  }
+  14% {
+    background-color: var(--c-surface);
+    color: var(--c-text);
+    animation-timing-function: steps(1, end);
+  }
+  100% {
+    background-color: var(--c-brand);
+    color: var(--c-on-brand);
+  }
+}
+
+@keyframes step-edge {
+  0%,
+  8% {
+    border-color: var(--c-brand);
+  }
+  20%,
+  96% {
+    border-color: var(--c-line);
+  }
+  100% {
+    border-color: var(--c-brand);
+  }
+}
+
+@keyframes step-glow {
+  0% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  8% {
+    opacity: 0.34;
+    transform: scale(1.08);
+  }
+  20%,
+  96% {
+    opacity: 0;
+    transform: scale(1.3);
+  }
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+}
+
+/* Движение выключено — капля стоит в начале, все шаги подсвечены
    одинаково: иначе схлопнутые в один кадр анимации оставили бы
    их погашенными. */
 @media (prefers-reduced-motion: reduce) {
@@ -248,19 +383,20 @@
     opacity: 0.5;
   }
 
-  .steps__led {
+  .steps__led,
+  .steps__led::before,
+  .steps__led::after {
+    animation: none !important;
+  }
+
+  .step__node {
     animation: none !important;
   }
 
   .step__halo {
     animation: none !important;
-    opacity: 0.4 !important;
+    opacity: 0.3 !important;
     transform: scale(1) !important;
-  }
-
-  .step__num {
-    animation: none !important;
-    color: var(--c-text) !important;
   }
 }
 
