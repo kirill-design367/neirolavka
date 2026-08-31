@@ -1,12 +1,12 @@
 /**
- * Четыре разрешения: не вылезает ли что-нибудь за ширину экрана
+ * Пять разрешений: не вылезает ли что-нибудь за ширину экрана
  * и не появляется ли горизонтальная прокрутка.
  */
 import { chromium } from 'playwright';
 const URL = process.argv[2];
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 let bad = 0;
-for (const [w, h] of [[1920, 1080], [1512, 820], [1366, 768], [390, 844]]) {
+for (const [w, h] of [[2560, 1440], [1920, 1080], [1512, 820], [1366, 768], [390, 844]]) {
   for (const theme of ['light', 'dark']) {
     const c = await b.newContext({ viewport: { width: w, height: h }, locale: 'ru-RU',
                                    isMobile: w < 500, hasTouch: w < 500 });

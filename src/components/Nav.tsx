@@ -1,8 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { useCountUp } from '@/lib/motion';
 
 const LINKS = [
   { href: '#magazin', label: 'Магазин' },
@@ -13,9 +12,9 @@ const LINKS = [
 const formatCount = (n: number) => n.toLocaleString('ru-RU');
 
 export function Nav({ subscribers }: { subscribers: number }) {
-  // Счётчик добегает от заниженного значения — видно, что число живое,
-  // но прыжка вёрстки нет: цифры табличные и ширина зарезервирована.
-  const countRef = useCountUp(subscribers, useCallback(formatCount, []));
+  // Счётчик стоит числом и никуда не добегает. Разбег от заниженного
+  // значения изображал рост прямо сейчас: вместе с маячком это была
+  // не подпись, а подгонялка. Факт остаётся, спектакль вокруг — нет.
 
   // Капсула проявляется по ходу прокрутки, а не по порогу.
   // Пишем одну переменную на самой шапке: пересчёт стиля задевает
@@ -42,13 +41,13 @@ export function Nav({ subscribers }: { subscribers: number }) {
   return (
     <header className="nav" ref={navRef}>
       <div className="nav__inner page">
+        {/* Маячка рядом со счётчиком нет намеренно: пульсирующая точка
+            изображает происходящее прямо сейчас движение и работает как
+            подгонялка. Число само по себе — факт, мигание — давление. */}
         <p className="nav__counter">
-          <span className="nav__pulse" aria-hidden="true" />
           <span className="nav__counter-text">
             Уже{' '}
-            <span ref={countRef} className="tnum nav__counter-number">
-              {formatCount(subscribers)}
-            </span>{' '}
+            <span className="tnum nav__counter-number">{formatCount(subscribers)}</span>{' '}
             <span className="nav__counter-tail">пользователей оформили подписки</span>
             <span className="nav__counter-short">подписок оформлено</span>
           </span>

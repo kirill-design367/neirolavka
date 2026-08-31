@@ -23,10 +23,18 @@
   letter-spacing: -0.015em;
 }
 
+/* Оговорка про отзывы работает на доверие только пока её видно.
+   Кеглем сноски она читалась как отписка снизу мелким шрифтом —
+   ровно то, из-за чего мелкому шрифту и не верят. Плашка ставит её
+   рядом с заголовком блока как честную пометку. */
 .footer__disclaimer {
-  margin-top: var(--sp-2);
-  font-size: var(--t-micro);
-  color: var(--c-muted);
+  display: inline-block;
+  margin-top: var(--sp-3);
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  background: var(--c-surface);
+  font-size: var(--t-label);
+  color: var(--c-text);
 }
 
 .reviews {
@@ -149,8 +157,10 @@
   color: var(--c-text);
 }
 
+/* Что делает сайт и что делает бот — граница ответственности,
+   а не юридический хвост. Кегль подписи, а не сноски. */
 .footer__legal {
-  font-size: var(--t-micro);
+  font-size: var(--t-label);
   color: var(--c-muted);
   max-width: 46ch;
 }

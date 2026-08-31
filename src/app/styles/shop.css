@@ -251,6 +251,10 @@
   color: var(--c-brand);
 }
 
+/* Ярлык — подпись, а не зазывала. Акцентная заливка делала из него
+   ценник распродажи: два ярких пятна на полке тянули выбор за человека
+   раньше, чем он успевал сравнить цены. Тон утоплённой поверхности
+   оставляет надпись читаемой, но возвращает ей вес подписи. */
 .tariff__badge {
   position: absolute;
   top: calc(var(--sp-4) * -0.5);
@@ -258,8 +262,8 @@
   font-size: var(--t-micro);
   padding: 0.125rem 0.4375rem;
   border-radius: 999px;
-  background: var(--c-accent);
-  color: var(--c-on-accent);
+  background: var(--c-surface-2);
+  color: var(--c-muted);
   white-space: nowrap;
 }
 
