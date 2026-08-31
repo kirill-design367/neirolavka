@@ -40,6 +40,15 @@ import gsap from 'gsap';
 
 /** Угол обзора. От него зависит, на каком расстоянии единица мира равна пикселю. */
 const FOV = 45;
+/** Насколько радиусов пузырь держится от кромки холста.
+ *
+ *  Единица — это «оболочка касается края». Здесь заметно больше:
+ *  оболочка ещё и отжимается курсором наружу примерно на 0,4 радиуса,
+ *  и при запасе 1,4 краска доходила до самой кромки — на замере
+ *  0 px слева и справа. Пузырь должен разворачиваться ЗАДОЛГО до
+ *  края, иначе под блоками условий видна прямая линия, на которой
+ *  он срезается. Граница обязана не читаться вовсе. */
+const EDGE = 1.8;
 const POP_MS = 760;
 const RESPAWN_MIN = 700;
 const RESPAWN_MAX = 1300;
@@ -141,10 +150,19 @@ const vert = (count: number) => /* glsl */ `
     // ровно там, где вмятина раздаёт её наружу, и две силы гасили бы
     // друг друга. Замер это и показал: отклик в середине просел
     // с 24 % до 10 %.
-    float k    = reach * uPress * 0.38 * smoothstep(0.15, 1.0, dc);
+    // 0.14, а не 0.38. Сжатие вдоль оси — это ровно то, что делает
+    // из шара эллипсоид, и при 0.38 пузыри читались эллипсами всё
+    // время, пока курсор на первом экране: хвост reach длинный,
+    // и сжатие доставало до всех разом.
+    //
+    // Сила отклика перенесена в ВМЯТИНУ. Она радиальная: когда курсор
+    // внутри пузыря, оболочка раздаётся во все стороны одинаково
+    // и остаётся шаром, а когда снаружи — проминается с одной стороны.
+    // Так отклик заметен, а форма не врёт.
+    float k    = reach * uPress * 0.14 * smoothstep(0.15, 1.0, dc);
     vec3  perp = unit - axis * side;
     world += axis * (-side * k * rr) + perp * (k * 0.5 * rr);
-    world += normalize(toP + vec3(1e-4)) * dent * uPress * rr * 0.7;
+    world += normalize(toP + vec3(1e-4)) * dent * uPress * rr * 0.6;
 
     // Разлёт при лопании: у каждой точки своё направление и своя длина,
     // в том числе по глубине.
@@ -413,8 +431,8 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
    *  предыдущий. */
   const place = (b: Bubble, avoid?: { x: number; y: number }) => {
     for (let i = 0; i < 24; i++) {
-      const x = rnd(vis.xmin + b.r, vis.xmax - b.r);
-      const y = rnd(vis.ymin + b.r, vis.ymax - b.r);
+      const x = rnd(vis.xmin + b.r * EDGE, vis.xmax - b.r * EDGE);
+      const y = rnd(vis.ymin + b.r * EDGE, vis.ymax - b.r * EDGE);
       if (inBand(x, y, b.r)) continue;
       if (avoid && Math.hypot(x - avoid.x, y - avoid.y) < 140) continue;
       // Не вплотную к уже стоящим: иначе десяток шаров ставится
@@ -430,7 +448,7 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
       b.z = rnd(-b.r * 0.5, b.r * 0.5);
       return;
     }
-    b.x = rnd(vis.xmin + b.r, vis.xmax - b.r);
+    b.x = rnd(vis.xmin + b.r * EDGE, vis.xmax - b.r * EDGE);
     b.y = vis.ymax - b.r;
     b.z = 0;
   };
@@ -471,8 +489,8 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     mat.uniforms.uSizeScale.value = dpr * camZ;
     mat.uniforms.uCamZ.value = camZ;
     for (const b of bubbles) {
-      b.x = Math.max(vis.xmin + b.r, Math.min(vis.xmax - b.r, b.x));
-      b.y = Math.max(vis.ymin + b.r, Math.min(vis.ymax - b.r, b.y));
+      b.x = Math.max(vis.xmin + b.r * EDGE, Math.min(vis.xmax - b.r * EDGE, b.x));
+      b.y = Math.max(vis.ymin + b.r * EDGE, Math.min(vis.ymax - b.r * EDGE, b.y));
     }
   };
 
@@ -482,8 +500,17 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   publish();
 
   // ─── Курсор ─────────────────────────────────────────────────
-  // Слой мышь не ловит (pointer-events: none), поэтому позиция курсора
-  // берётся со слушателя на самой секции, а попадание считаем сами.
+  // Слой мышь не ловит (pointer-events: none), поэтому положение
+  // курсора слушается НА ОКНЕ и переводится в координаты сцены,
+  // а попадание по пузырю считается вручную.
+  //
+  // Слушать окно, а не секцию, обязательно. Холст выходит из колонки
+  // ВЛЕВО до кромки окна, и та его часть лежит уже не над секцией:
+  // события туда не доходили вовсе, и примерно пятая часть поля была
+  // мёртвой — пузыри там не отзывались ни на что. Замер по сетке
+  // точек показывал 84 мёртвые пробы из 468. С окном мёртвых зон
+  // не бывает по построению: нет элемента, чьи границы могли бы
+  // не совпасть с границами поля.
   //
   // Курсоров ДВА, и это не дублирование.
   //
@@ -508,6 +535,13 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     return { x: e.clientX - rect.left - w / 2, y: h / 2 - (e.clientY - rect.top) };
   };
 
+  /** Курсор над самим полем — независимо от того, что лежит сверху. */
+  const inField = (e: PointerEvent) => {
+    const r = canvas.getBoundingClientRect();
+    return e.clientX >= r.left && e.clientX <= r.right
+        && e.clientY >= r.top && e.clientY <= r.bottom;
+  };
+
   const INTERACTIVE = 'a, button, input, label, summary, [role="button"], [data-lenis-scrollable]';
 
   const hitTest = (x: number, y: number) => {
@@ -522,6 +556,7 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   };
 
   const onMove = (e: PointerEvent) => {
+    if (!inField(e)) { onLeave(); return; }
     const { x, y } = toWorld(e);
     pointer.set(x, y, 0);
     if (pointerSoft.x > 5e4) pointerSoft.copy(pointer);
@@ -540,6 +575,7 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   };
 
   const onDown = (e: PointerEvent) => {
+    if (!inField(e)) return;
     const el = e.target as HTMLElement | null;
     if (el?.closest(INTERACTIVE)) return;
     const { x, y } = toWorld(e);
@@ -559,11 +595,12 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   // нажим, поднятый касанием, остался бы поднятым навсегда.
   const onUp = (e: PointerEvent) => { if (e.pointerType !== 'mouse') onLeave(); };
 
-  host.addEventListener('pointermove', onMove, { passive: true });
-  host.addEventListener('pointerdown', onDown, { passive: true });
-  host.addEventListener('pointerleave', onLeave, { passive: true });
-  host.addEventListener('pointerup', onUp, { passive: true });
-  host.addEventListener('pointercancel', onUp, { passive: true });
+  window.addEventListener('pointermove', onMove, { passive: true });
+  window.addEventListener('pointerdown', onDown, { passive: true });
+  window.addEventListener('pointerup', onUp, { passive: true });
+  window.addEventListener('pointercancel', onUp, { passive: true });
+  // Курсор ушёл из окна совсем — оболочка разглаживается.
+  document.addEventListener('pointerleave', onLeave, { passive: true });
 
   // ─── Такт ───────────────────────────────────────────────────
   let visible = true;
@@ -673,7 +710,12 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
         b.rx += b.wx * dt;
 
         // Мягкий отскок от кромок кадра.
-        const k6 = b.r * 0.6;
+        // Разворот происходит НА РАССТОЯНИИ от края, а не у самого
+        // края. Запас — радиус плюс то, на что оболочку отжимает
+        // курсор: иначе под блоками условий видна прямая линия,
+        // на которой пузыри срезаются кромкой холста. Кромка должна
+        // не читаться вовсе, а для этого до неё нельзя доходить.
+        const k6 = b.r * EDGE;
         if (b.x < vis.xmin + k6) { b.x = vis.xmin + k6; b.dir = Math.PI - b.dir; b.vx = Math.abs(b.vx); }
         if (b.x > vis.xmax - k6) { b.x = vis.xmax - k6; b.dir = Math.PI - b.dir; b.vx = -Math.abs(b.vx); }
         if (b.y < vis.ymin + k6) { b.y = vis.ymin + k6; b.dir = -b.dir; b.vy = Math.abs(b.vy); }
@@ -741,11 +783,11 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
 
   return () => {
     gsap.ticker.remove(step);
-    host.removeEventListener('pointermove', onMove);
-    host.removeEventListener('pointerdown', onDown);
-    host.removeEventListener('pointerleave', onLeave);
-    host.removeEventListener('pointerup', onUp);
-    host.removeEventListener('pointercancel', onUp);
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerdown', onDown);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    document.removeEventListener('pointerleave', onLeave);
     canvas.removeEventListener('webglcontextlost', onLost);
     ro.disconnect();
     io.disconnect();
