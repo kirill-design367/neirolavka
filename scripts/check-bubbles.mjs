@@ -134,8 +134,8 @@ function spread(m, W, H, cx0, cy0, box) {
 }
 
 for (const vp of [
-  { name: 'десктоп', w: 1512, h: 900, lo: 10, hi: 12, mobile: false },
-  { name: 'мобильная', w: 390, h: 844, lo: 6, hi: 7, mobile: true },
+  { name: 'десктоп', w: 1512, h: 900, lo: 14, hi: 15, mobile: false },
+  { name: 'мобильная', w: 390, h: 844, lo: 9, hi: 10, mobile: true },
 ]) {
   const ctx = await browser.newContext({
     viewport: { width: vp.w, height: vp.h },
@@ -268,6 +268,17 @@ for (const vp of [
   // Наибольший радиус — 34 px на десктопе и 28 на телефоне; краска
   // выходит за него на размер точки и на мягкий край, отсюда запас.
   const maxEdge = vp.mobile ? 40 : 48;
+  // Пятно должно лежать там, где курсор ДОСТАНЕТ до секции.
+  // Иначе замер выходит случайным: панель заказа непрозрачна и лежит
+  // поверх правой части первого экрана, мышь над ней до слушателя
+  // на секции не доходит, нажим остаётся нулевым — и отклик честно
+  // получается нулевым при исправном коде. На этом замер уже гулял
+  // от +28 % до +0 % на одной и той же сборке.
+  const reachable = (px, py) => page.evaluate(([x, y]) => {
+    const el = document.elementFromPoint(x, y);
+    return !!el && !!el.closest('.hero');
+  }, [px, py]);
+
   let spot = null;
   let png = await shot();
   // Пузыри плывут и временами наползают друг на друга. Если сейчас
@@ -277,7 +288,13 @@ for (const vp of [
     const pm = inkMask(png, bg);
     for (const cand of densestList(pm, png.width, png.height, 44)) {
       const st = spread(pm, png.width, png.height, cand.x, cand.y, BOX);
-      if (st.ink > 0 && st.edge > 6 && st.edge <= maxEdge) { spot = { x: st.cx, y: st.cy }; break; }
+      if (!(st.ink > 0 && st.edge > 6 && st.edge <= maxEdge)) continue;
+      await bare(false);
+      const good = await reachable(OX + st.cx, OY + st.cy);
+      await bare(true);
+      if (!good) continue;
+      spot = { x: st.cx, y: st.cy };
+      break;
     }
   }
   if (!spot) {
@@ -303,31 +320,121 @@ for (const vp of [
     return { r: r / n, edge: edge / n, x, y };
   };
 
-  const calm = await sample(5, spot.x, spot.y);
+  // ─── Отклик оболочки: сигнал против собственного дрейфа ────
+  //
+  // Две прежние меры не годятся, и обе — по делу.
+  //
+  // Средний радиус ОДНОГО пятна держался на одиннадцати пузырях,
+  // а на пятнадцати развалился: пятна наползают, окно уезжает
+  // на соседа, и на одной и той же сборке подряд выходило +37 %
+  // и −25 %. Общее количество краски не годится по другой причине:
+  // точек постоянное число, деформация их переставляет, но площадь
+  // почти не меняет — 0.4 % сигнала при 6.4 % шума.
+  //
+  // Работает третья: сравнивать КАРТИНКУ С КАРТИНКОЙ. Пузыри всё
+  // время плывут, поэтому два снимка подряд отличаются и сами по себе.
+  // Это и есть шум метода — его меряем при убранном курсоре. Потом
+  // те же два снимка, но между ними курсор заходит на холст. Если
+  // отклик есть, второе различие заметно крупнее первого. Дрейф
+  // в обеих парах одинаковый и сокращается.
+  const diffBox = (a, b, cx, cy, half) => {
+    const ma = inkMask(a, bg);
+    const mb = inkMask(b, bg);
+    const x0 = Math.max(0, Math.round(cx - half));
+    const x1 = Math.min(a.width, Math.round(cx + half));
+    const y0 = Math.max(0, Math.round(cy - half));
+    const y1 = Math.min(a.height, Math.round(cy + half));
+    let n = 0;
+    for (let y = y0; y < y1; y++) {
+      const row = y * a.width;
+      for (let x = x0; x < x1; x++) if ((ma[row + x] > 0) !== (mb[row + x] > 0)) n++;
+    }
+    return n;
+  };
 
-  await bare(false);
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.mouse.move(OX + calm.x, OY + calm.y);
-  await page.waitForTimeout(900);
+  // Точки, где курсор ДОСТАЁТ до секции: панель заказа непрозрачна
+  // и лежит поверх правой части первого экрана, мышь над ней до
+  // слушателя не доходит — нажим остаётся нулевым, и отклик честно
+  // выходит нулевым при исправном коде.
+  const reachableNear = async (fx, fy) => {
+    for (const [dx, dy] of [[0, 0], [0, -0.12], [0, 0.12], [-0.06, 0], [0.06, 0]]) {
+      const c = {
+        x: Math.round(OX + clip.width * Math.min(0.95, Math.max(0.05, fx + dx))),
+        y: Math.round(OY + clip.height * Math.min(0.95, Math.max(0.05, fy + dy))),
+      };
+      if (await reachable(c.x, c.y)) return c;
+    }
+    return null;
+  };
+  const A = (await reachableNear(0.2, 0.5)) ?? { x: OX + 20, y: OY + 20 };
+  const B = (await reachableNear(0.62, 0.5)) ?? { x: OX + clip.width - 20, y: OY + 20 };
+  const away = { x: 6, y: 6 }; // вне секции: там срабатывает pointerleave
 
-  // Прицеливаемся заново. Пузырь всё время плывёт, и за полторы
-  // секунды ожидания уходит из-под курсора: отжим тогда получается
-  // краевой, и замер гулял от 9 до 45 % на неизменной странице.
+  // Окно замера — не половина холста, а КОРОБКА. Рядом с курсором
+  // деформация крупная, а дрейф в маленькой коробке маленький;
+  // на половине холста сигнал тонул в дрейфе дальних пузырей
+  // (отношение 1.17 при том, что отклик заведомо есть).
+  const BOXR = vp.mobile ? 110 : 150;
+  // Дальняя коробка — посередине между A и B и подальше от обеих.
+  const farPt = { x: (A.x + B.x) / 2, y: Math.min(OY + clip.height - BOXR, A.y + BOXR * 1.6) };
+
+  let driftNear = 0; let respNear = 0;
+  let driftFar = 0; let respFar = 0;
+  let lag = 0;
   await bare(true);
-  const mid = await sample(2, calm.x, calm.y);
-  await bare(false);
-  await page.mouse.move(OX + mid.x, OY + mid.y);
-  await page.waitForTimeout(700);
-  await bare(true);
-  const pressed = await sample(5, mid.x, mid.y);
+  for (let i = 0; i < 3; i++) {
+    // Шум метода: два снимка подряд при неподвижном курсоре.
+    await page.mouse.move(away.x, away.y);
+    await page.waitForTimeout(700); // нажим спадает за 220 мс
+    const a1 = await shot();
+    const b1 = await shot();
+    driftNear += diffBox(a1, b1, A.x - OX, A.y - OY, BOXR);
+
+    // Сигнал у курсора: те же два снимка, но между ними курсор
+    // заходит на холст.
+    const a2 = await shot();
+    const t0 = Date.now();
+    await page.mouse.move(A.x, A.y);
+    const b2 = await shot();
+    lag = Math.max(lag, Date.now() - t0);
+    respNear += diffBox(a2, b2, A.x - OX, A.y - OY, BOXR);
+
+    // Дальняя коробка. Курсор не убирается, а ПЕРЕПРЫГИВАЕТ с одной
+    // стороны на другую: ось «курсор → центр» разворачивается, и если
+    // отклик доходит до дальних пузырей, картинка в коробке меняется
+    // заметно сильнее собственного дрейфа. Шум для неё считается так же:
+    // два снимка подряд при неподвижном курсоре.
+    await page.waitForTimeout(500);
+    const a3 = await shot();
+    const b3 = await shot();
+    driftFar += diffBox(a3, b3, farPt.x - OX, farPt.y - OY, BOXR);
+
+    const a4 = await shot();
+    await page.mouse.move(B.x, B.y);
+    const b4 = await shot();
+    respFar += diffBox(a4, b4, farPt.x - OX, farPt.y - OY, BOXR);
+  }
   await bare(false);
 
-  const grow = calm.r ? (pressed.r / calm.r - 1) * 100 : 0;
-  const how = vp.mobile
-    ? 'на указатель (на живом телефоне наведения нет, там это же движение запускает касание)'
-    : 'на курсор';
-  if (grow >= 12) ok(`оболочка отзывается ${how}: средний радиус краски ${calm.r.toFixed(1)} → ${pressed.r.toFixed(1)} px, +${grow.toFixed(0)} %`);
-  else fail(`отклика ${how} не видно: ${calm.r.toFixed(1)} → ${pressed.r.toFixed(1)} px, +${grow.toFixed(0)} % при пороге 12 %`);
+  const dist = Math.round(Math.min(Math.hypot(farPt.x - A.x, farPt.y - A.y), Math.hypot(farPt.x - B.x, farPt.y - B.y)));
+  for (const [dr, re, name, need] of [
+    [driftNear, respNear, 'под курсором', 1.6],
+    [driftFar, respFar, `в стороне (ближайший край окна замера в ${dist} px от курсора)`, 1.3],
+  ]) {
+    const ratio = dr > 0 ? re / dr : 0;
+    const txt = `${name}: между кадрами ${dr} px собственного дрейфа и ${re} px при движении курсора, отношение ${ratio.toFixed(2)} при пороге ${need}`;
+    if (ratio >= need) ok(`оболочка отзывается ${txt}`);
+    else fail(`отклика ${name} не видно — ${txt}`);
+  }
+  // Задержка метода печатается: всё, что быстрее неё, он не различает.
+  line.push(`  —   между движением мыши и снимком проходит до ${lag} мс — быстрее этого метод не различает`);
+
+  // Место пузыря для проверки курсора-указателя.
+  await page.mouse.move(A.x, A.y);
+  await page.waitForTimeout(300);
+  await bare(true);
+  const pressed = await sample(2, spot.x, spot.y);
+  await bare(false);
 
   // ─── Курсор-указатель над пузырём ─────────────────────────
   // Ищем точку внутри пятна, где под курсором именно секция: над

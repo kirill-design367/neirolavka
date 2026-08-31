@@ -102,13 +102,49 @@ const vert = (count: number) => /* glsl */ `
     vec3 unit = spin(position, R.y, R.x) * (1.0 + 0.03 * sin(uTime * 0.7 + aPhase));
     vec3 world = P.xyz + unit * radius;
 
-    // Реакция на курсор: точки рядом с ним отжимаются прочь по колоколу.
-    // Ближняя к курсору сторона проминается, дальняя выпирает — оболочку
-    // как будто продавливают пальцем.
-    vec3  away = world - uPointer;
-    float d    = length(away) / max(radius, 1.0);
-    float bell = exp(-d * d * 0.55);
-    world += normalize(away + vec3(1e-4)) * bell * uPress * radius * 0.6;
+    // ─── Реакция на курсор ─────────────────────────────────────
+    //
+    // Здесь ДВЕ разные силы, и разделены они намеренно.
+    //
+    // Первая — вмятина под самим курсором: точки рядом с ним
+    // расходятся прочь. Это то, что видно, когда курсор идёт
+    // по кромке оболочки, и то, что остаётся, когда он оказывается
+    // ровно в середине пузыря: там оболочку раздаёт во все стороны.
+    //
+    // Вторая — сжатие ВСЕЙ оболочки вдоль оси «курсор → центр»:
+    // ближняя сторона уходит внутрь, дальняя выпирает, поперёк шар
+    // раздаётся. У неё длинный хвост по расстоянию, поэтому далёкий
+    // пузырь тоже отзывается. Прежде здесь стоял один колокол
+    // exp(-d*d), он падает в ноль уже на паре радиусов — и это
+    // читалось как «часть пузырей не реагирует совсем».
+    //
+    // Обе силы идут за курсором БЕЗ инерции. Инерция оставлена
+    // только сдвигу пузыря целиком, и живёт она в JS.
+    float rr   = max(radius, 1.0);
+    vec3  toP  = world - uPointer;
+    float dp   = length(toP) / rr;
+    float dent = exp(-dp * dp * 0.6);
+
+    vec3  cToC = P.xyz - uPointer;
+    float lenC = length(cToC);
+    float dc   = lenC / rr;
+    // Хвост, а не колокол: 1 в середине пузыря, 0.6 на трёх радиусах,
+    // 0.14 на десяти. Мёртвых зон по расстоянию нет вовсе.
+    float reach = 1.0 / (1.0 + dc * dc * 0.045);
+    // При курсоре ровно в центре ось вырождается — и это не ошибка,
+    // а нужный случай: axis становится нулевым, side нулевым, и всё
+    // сжатие превращается в равномерную раздачу оболочки наружу.
+    vec3  axis = cToC / max(lenC, 0.001 * rr);
+    float side = dot(unit, axis);
+    // Внутри пузыря сжатие гасится: там ось «курсор → центр» почти
+    // вырождена, а главное — сжатие тянуло бы ближнюю сторону внутрь
+    // ровно там, где вмятина раздаёт её наружу, и две силы гасили бы
+    // друг друга. Замер это и показал: отклик в середине просел
+    // с 24 % до 10 %.
+    float k    = reach * uPress * 0.38 * smoothstep(0.15, 1.0, dc);
+    vec3  perp = unit - axis * side;
+    world += axis * (-side * k * rr) + perp * (k * 0.5 * rr);
+    world += normalize(toP + vec3(1e-4)) * dent * uPress * rr * 0.7;
 
     // Разлёт при лопании: у каждой точки своё направление и своя длина,
     // в том числе по глубине.
@@ -130,7 +166,7 @@ const vert = (count: number) => /* glsl */ `
     gl_PointSize = aSize * (0.5 + 0.85 * near) * uSizeScale / depth;
 
     vColor = aTint < 0.5 ? uColorA : (aTint < 1.5 ? uColorB : uColorC);
-    vAlpha = (0.09 + 0.40 * near) * uInk * fade * fade;
+    vAlpha = (0.14 + 0.42 * near) * uInk * fade * fade;
   }
 `;
 
@@ -202,7 +238,7 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   if (!renderer.getContext()) return null;
 
   const phone = window.matchMedia('(max-width: 640px)').matches;
-  const COUNT = phone ? 7 : 11;
+  const COUNT = phone ? 10 : 15;
 
   const scene = new Scene();
   const camera = new PerspectiveCamera(FOV, 1, 1, 4000);
@@ -448,10 +484,24 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   // ─── Курсор ─────────────────────────────────────────────────
   // Слой мышь не ловит (pointer-events: none), поэтому позиция курсора
   // берётся со слушателя на самой секции, а попадание считаем сами.
+  //
+  // Курсоров ДВА, и это не дублирование.
+  //
+  // `pointer` — сырой, без сглаживания вовсе: он уходит в шейдер,
+  // и оболочка обязана идти прямо за курсором. Прежде сюда шла
+  // сглаженная позиция с постоянной около 150 мс, и отклик заметно
+  // отставал от руки.
+  //
+  // `pointerSoft` — сглаженный, и только для сдвига пузыря ЦЕЛИКОМ.
+  // Эту силу дёргать нельзя: пузырь, скачками уезжающий от курсора,
+  // невозможно поймать.
   const pointer = new Vector3(1e5, 1e5, 0);
-  const pointerTo = new Vector3(1e5, 1e5, 0);
+  const pointerSoft = new Vector3(1e5, 1e5, 0);
   let press = 0;
   let pressTo = 0;
+  /** Экспоненциальное приближение с постоянной времени в секундах. */
+  const toward = (cur: number, aim: number, tau: number, dt: number) =>
+    cur + (aim - cur) * (1 - Math.exp(-dt / tau));
 
   const toWorld = (e: PointerEvent) => {
     const rect = canvas.getBoundingClientRect();
@@ -473,7 +523,8 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
 
   const onMove = (e: PointerEvent) => {
     const { x, y } = toWorld(e);
-    pointerTo.set(x, y, 0);
+    pointer.set(x, y, 0);
+    if (pointerSoft.x > 5e4) pointerSoft.copy(pointer);
     pressTo = 1;
     // Курсор меняем только над собственным фоном секции: над текстом
     // и ссылками свой курсор, и подменять его нечем и незачем.
@@ -481,8 +532,10 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   };
 
   const onLeave = () => {
+    // Позицию НЕ уводим в бесконечность сразу: оболочка должна
+    // разгладиться плавно, а не отпустить скачком. Курсор паркуется
+    // сам, когда нажим доедет до нуля.
     pressTo = 0;
-    pointerTo.set(1e5, 1e5, 0);
     host.style.cursor = '';
   };
 
@@ -492,7 +545,8 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     const { x, y } = toWorld(e);
     // На касании курсора нет, поэтому реакцию оболочки запускает само
     // касание: палец ведут — пузыри проминаются, как под мышью.
-    pointerTo.set(x, y, 0);
+    pointer.set(x, y, 0);
+    if (pointerSoft.x > 5e4) pointerSoft.copy(pointer);
     pressTo = 1;
     const hit = hitTest(x, y);
     if (!hit) return;
@@ -535,10 +589,22 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     if (t < colorWindow && (frames & 3) === 0) readColors();
     frames++;
 
-    // Курсор и сила реакции едут с инерцией: мгновенная реакция
-    // читается щелчком, а не живым откликом.
-    pointer.lerp(pointerTo, 1 - Math.pow(0.001, dt));
-    press += (pressTo - press) * (1 - Math.pow(0.02, dt));
+    // Нажим набирается почти мгновенно (35 мс) и отпускает медленно
+    // (220 мс): пока курсор рядом, оболочка держится промятой, ушёл —
+    // плавно возвращается. Раньше обе стороны шли по 250 мс, и вход
+    // в реакцию отставал от руки ровно настолько, чтобы это читалось
+    // запаздыванием.
+    press = toward(press, pressTo, pressTo > press ? 0.035 : 0.22, dt);
+    // Сглаженный курсор — только для сдвига пузыря целиком.
+    if (pressTo > 0) {
+      pointerSoft.x = toward(pointerSoft.x, pointer.x, 0.12, dt);
+      pointerSoft.y = toward(pointerSoft.y, pointer.y, 0.12, dt);
+    }
+    // Отпустили и разгладилось — курсор уходит с поля.
+    if (pressTo === 0 && press < 0.002) {
+      pointer.set(1e5, 1e5, 0);
+      pointerSoft.set(1e5, 1e5, 0);
+    }
     mat.uniforms.uTime.value = t / 1000;
     mat.uniforms.uPointer.value.copy(pointer);
     mat.uniforms.uPress.value = press;
@@ -568,8 +634,8 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
         // пузырь, а курсор, наведённый прямо на него, не выталкивает
         // его из-под себя — иначе по пузырю невозможно попасть, и вся
         // затея с «увидел отклик — щёлкнул» рассыпается.
-        const dx = b.x - pointer.x;
-        const dy = b.y - pointer.y;
+        const dx = b.x - pointerSoft.x;
+        const dy = b.y - pointerSoft.y;
         const dd = Math.hypot(dx, dy);
         if (dd < b.r * 3.2 && dd > 0.001) {
           const kk = Math.sin(Math.PI * (dd / (b.r * 3.2))) * press * 16;
@@ -654,7 +720,7 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
       const free = bubbles.find((b) => b.gone);
       if (!free) continue;
       spin(free);
-      place(free, { x: pointer.x, y: pointer.y });
+      place(free, { x: pointerSoft.x, y: pointerSoft.y });
     }
     publish();
 
