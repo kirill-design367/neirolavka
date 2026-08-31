@@ -8,6 +8,7 @@
 import { chromium } from 'playwright';
 const URL = process.argv[2];
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+let bad = 0;
 
 for (const theme of ['light', 'dark']) {
   const c = await b.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU', reducedMotion: 'reduce' });
@@ -26,8 +27,20 @@ for (const theme of ['light', 'dark']) {
     const near = (a, t) => Math.hypot(a[0]-t[0], a[1]-t[1], a[2]-t[2]) < 26;
     // --c-on-fill-muted намеренно нейтральный, в набор акцентов не входит.
     const accents = { brand: tok('--c-brand'), accentText: tok('--c-accent-text') };
-    // насыщенность: у нейтрали разброс каналов маленький
-    const chroma = (c) => Math.max(...c) - Math.min(...c);
+    // Насыщенность считается в OKLCH, а не размахом каналов RGB.
+    // Размах зависит от светлоты: у светлой кремовой и у тёмной
+    // почти чёрной одной и той же насыщенности он отличается втрое,
+    // и мера ловила не подкраску, а то, что цвет светлый.
+    const chroma = (c) => {
+      const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+      const [r, g, b] = c.map(f);
+      const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+      const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+      const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+      const A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+      const B = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+      return Math.hypot(A, B);
+    };
     const out = [];
     for (const el of document.querySelectorAll('body *')) {
       const txt = [...el.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim())
@@ -46,7 +59,13 @@ for (const theme of ['light', 'dark']) {
     // отдельно: насколько подкрашен текст на цветной заливке
     const onFill = [...document.querySelectorAll('.referral__text, .fact__label, .fact__value, .referral__soon')]
       .map((el) => ({ cls: el.className.toString().split(/\s+/)[0], chroma: chroma(rgb(getComputedStyle(el).color)) }));
-    return { out, onFill };
+    // Мерилом служит насыщенность собственного основного текста
+    // страницы: закон запрещает красить текст АКЦЕНТОМ, а не иметь
+    // тёплую нейтраль. В тёплой палитре нейтраль тёплая по
+    // определению, и требовать от неё нулевой насыщенности значит
+    // требовать чужеродного холодного серого.
+    return { out, onFill, textChroma: chroma(tok('--c-text')),
+             brandChroma: chroma(tok('--c-brand')) };
   });
   console.log(`\n── ${theme === 'dark' ? 'тёмная' : 'светлая'}: текст акцентным цветом (${r.out.length}) ──`);
   if (!r.out.length) console.log('  нет');
@@ -57,7 +76,13 @@ for (const theme of ['light', 'dark']) {
     console.log(`  ${x.name.padEnd(12)} .${x.cls.padEnd(28)} «${x.txt}»`);
   }
   const maxCh = Math.max(...r.onFill.map((x) => x.chroma));
-  console.log(`  насыщенность текста на цветной заливке: максимум ${maxCh} из 255 ${maxCh <= 12 ? '(нейтраль)' : '(ПОДКРАШЕН)'}`);
+  const limit = r.textChroma + 0.012;
+  console.log(`  насыщенность текста на цветной заливке: ${maxCh.toFixed(3)} по OKLCH ` +
+    `при ${r.textChroma.toFixed(3)} у основного текста и ${r.brandChroma.toFixed(3)} у акцента ` +
+    `${maxCh <= limit ? '(нейтраль этой палитры)' : '(ПОДКРАШЕН)'}`);
+  if (maxCh > limit) bad++;
   await c.close();
 }
 await b.close();
+console.log(bad ? '\nТЕКСТ НА ЗАЛИВКЕ ПОДКРАШЕН' : '\nОсновной текст нейтрален в обеих темах');
+process.exit(bad ? 1 : 0);
