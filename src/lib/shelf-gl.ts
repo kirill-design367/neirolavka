@@ -44,6 +44,26 @@ import gsap from 'gsap';
 
 const FOV = 26;
 
+/** Запас холста теней СВЕРХУ И СНИЗУ от блока, css-пиксели.
+
+    Холст лежал ровно по блоку (inset: 0), и тень ближней карточки —
+    самой высокой и приподнятой — в него не помещалась: она обрывалась
+    ровной прямой по нижней кромке. Перепад 3.4 уровня на пиксель,
+    растянутый на 736 px, — глаз ловит такую линию мгновенно, и вместе
+    с ней средняя карточка теряет опору под собой и читается наклейкой.
+
+    Запас решает обе половины сразу: тени есть куда сойти на нет.
+    Мировые координаты при этом не меняются — камера теней получает
+    свой угол и своё отношение сторон ровно так, чтобы единица мира
+    осталась css-пикселем.
+
+    Только по вертикали. Вбок холст расширять нельзя: он вылез бы
+    за поля страницы и на телефоне дал бы горизонтальную прокрутку
+    на пустом месте. Да там запас и не нужен — по бокам тень до
+    кромки не доходит (перепад 0.08 уровня на пиксель против 3.4
+    внизу). */
+const SHADOW_PAD = 72;
+
 /** Мягкое пятно тени: прямоугольник со скруглением и размытым краем. */
 const SHADOW_FRAG = /* glsl */ `
   precision mediump float;
@@ -53,6 +73,8 @@ const SHADOW_FRAG = /* glsl */ `
   uniform float uSoft;    // ширина размытия
   uniform vec3  uColor;
   uniform float uAlpha;
+  uniform vec2  uRes;     // размер холста в его же точках
+  uniform float uEdge;    // ширина затухания у кромки холста
 
   float roundedBox(vec2 p, vec2 b, float r) {
     vec2 q = abs(p) - b + r;
@@ -63,9 +85,19 @@ const SHADOW_FRAG = /* glsl */ `
     vec2 p = (vUv - 0.5) * 2.0 * uHalf;
     float d = roundedBox(p, max(uHalf - uSoft, vec2(1.0)), uRadius);
     float a = 1.0 - smoothstep(-uSoft, uSoft, d);
+
+    // Затухание у КРОМКИ ХОЛСТА. Без него тень обрывалась ровной
+    // прямой там, где кончается холст, и под витриной была видна
+    // горизонтальная линия: перепад 3.4 уровня на пиксель, растянутый
+    // на всю ширину блока, — глаз ловит такую линию мгновенно.
+    // Теперь тень обязана сойти на нет ВНУТРИ холста, чем бы она
+    // ни была обрезана снаружи.
+    vec2 fromEdge = min(gl_FragCoord.xy, uRes - gl_FragCoord.xy);
+    float edge = smoothstep(0.0, uEdge, min(fromEdge.x, fromEdge.y));
+
     // Квадрат — чтобы у пятна был плотный центр и длинный мягкий хвост,
     // как у настоящей тени, а не ровная заливка с каймой.
-    gl_FragColor = vec4(uColor, a * a * uAlpha);
+    gl_FragColor = vec4(uColor, a * a * uAlpha * edge);
   }
 `;
 
@@ -151,6 +183,11 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
   const scene = new Scene();
   const camera = new PerspectiveCamera(FOV, 1, 10, 6000);
   const tanHalf = Math.tan((FOV / 2) * (Math.PI / 180));
+  // Тени рисуются ТОЙ ЖЕ сценой, но в холст, который шире блока
+  // на SHADOW_PAD с каждой стороны. Поэтому у них своя камера: то же
+  // положение и то же расстояние, но шире поле зрения. Общий граф
+  // и общий вызов тикера остаются — рассинхрона на кадр не бывает.
+  const shadowCam = new PerspectiveCamera(FOV, 1, 10, 6000);
 
   const cameraEl = root.querySelector<HTMLElement>('.shelf3d__camera');
   if (!cameraEl) return null;
@@ -175,6 +212,8 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
         uSoft: { value: 46 },
         uColor: { value: new Vector3(0, 0, 0) },
         uAlpha: { value: 0.5 },
+        uRes: { value: [1, 1] },
+        uEdge: { value: 1 },
       },
     });
     const shadow = new Mesh(shadowGeo, mat);
@@ -419,10 +458,35 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
     camera.position.set(0, 0, camZ);
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
+
+    // Холст теней выше блока на SHADOW_PAD сверху и снизу и вынесен
+    // за его кромку отрицательным top. Камера теней стоит там же,
+    // где камера карточек, и на том же расстоянии; расширяется только
+    // поле зрения — ровно настолько, чтобы на плоскости z = 0 в кадр
+    // попадала высота gh. Значит единица мира по-прежнему css-пиксель,
+    // и тени ложатся туда же, куда ложились, — просто им есть куда
+    // сойти на нет.
+    const gw = w;
+    const gh = h + SHADOW_PAD * 2;
+    shadowCam.fov = 2 * Math.atan(gh / 2 / camZ) * (180 / Math.PI);
+    shadowCam.aspect = gw / gh;
+    shadowCam.position.set(0, 0, camZ);
+    shadowCam.updateProjectionMatrix();
+    shadowCam.updateMatrixWorld();
+
     renderer.setPixelRatio(dpr);
-    renderer.setSize(w, h, false);
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
+    renderer.setSize(gw, gh, false);
+    canvas.style.width = `${gw}px`;
+    canvas.style.height = `${gh}px`;
+    canvas.style.top = `${-SHADOW_PAD}px`;
+    // Кромка холста в его СОБСТВЕННЫХ точках: gl_FragCoord считает
+    // в них, а не в css-пикселях, и при плотности 0.6 это разные
+    // числа. Полоса затухания узкая: с запасом по краям тень до кромки
+    // почти не доходит, и широкая полоса съедала бы живое пятно.
+    for (const s of slots) {
+      s.mat.uniforms.uRes.value = [Math.round(gw * dpr), Math.round(gh * dpr)];
+      s.mat.uniforms.uEdge.value = 18;
+    }
 
     // Перспектива слоя HTML берётся из той же камеры: иначе объём
     // теней и объём карточек разошлись бы.
@@ -534,7 +598,7 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
     // они дороже всего остального вместе взятого. Как только движение
     // кончилось, последний кадр теней рисуется обязательно, иначе
     // пятно осталось бы на полпути.
-    if (!busy || (frames & 1) === 0) renderer.render(scene, camera);
+    if (!busy || (frames & 1) === 0) renderer.render(scene, shadowCam);
   };
 
   readColors();

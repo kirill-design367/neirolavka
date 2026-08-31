@@ -295,7 +295,11 @@
 .shelf3d[data-3d] .shelf3d__gl {
   display: block;
   position: absolute;
-  inset: 0;
+  /* Размеры и вынос за кромку блока ставит сцена: холст теней выше
+     блока, чтобы тени было куда сводить на нет. Здесь только начало
+     отсчёта. */
+  left: 0;
+  top: 0;
   pointer-events: none;
 }
 
