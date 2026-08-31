@@ -134,8 +134,8 @@ function spread(m, W, H, cx0, cy0, box) {
 }
 
 for (const vp of [
-  { name: 'десктоп', w: 1512, h: 900, lo: 7, hi: 9, mobile: false },
-  { name: 'мобильная', w: 390, h: 844, lo: 4, hi: 5, mobile: true },
+  { name: 'десктоп', w: 1512, h: 900, lo: 10, hi: 12, mobile: false },
+  { name: 'мобильная', w: 390, h: 844, lo: 6, hi: 7, mobile: true },
 ]) {
   const ctx = await browser.newContext({
     viewport: { width: vp.w, height: vp.h },
@@ -233,11 +233,17 @@ for (const vp of [
   // 29.9 → 30.0 на любом действии.
   const barBox = await page.locator('.bar').boundingBox().catch(() => null);
   const barH = barBox && barBox.y < vp.h ? vp.h - barBox.y + 8 : 0;
+  // Прямоугольник берём у ХОЛСТА, а не у секции: холст выходит из
+  // колонки влево до кромки окна, и по секции была бы видна только
+  // часть поля.
+  const cvBox = (await page.locator('.bubbles').boundingBox()) ?? heroBox;
+  const cvLeft = Math.max(0, cvBox.x);
+  const cvRight = Math.min(vp.w, cvBox.x + cvBox.width);
   const clip = {
-    x: heroBox.x,
-    y: heroBox.y + 4,
-    width: Math.min(heroBox.width, vp.w - heroBox.x),
-    height: Math.max(120, Math.min(heroBox.height, vp.h - heroBox.y - barH) - 8),
+    x: cvLeft,
+    y: cvBox.y + 4,
+    width: Math.max(80, cvRight - cvLeft),
+    height: Math.max(120, Math.min(cvBox.height, vp.h - cvBox.y - barH) - 8),
   };
   /** Сдвиг от начала снимка к странице. */
   const OX = clip.x;
@@ -256,19 +262,26 @@ for (const vp of [
   await page.waitForTimeout(1400);
   await bare(true);
 
-  const png = await shot();
   const BOX = 60;
   // Берём не самое плотное пятно, а самое плотное ОДИНОЧНОЕ: край
   // пятна должен укладываться в наибольший радиус пузыря с запасом.
-  const maxEdge = vp.mobile ? 34 : 42;
-  const pm = inkMask(png, bg);
+  // Наибольший радиус — 34 px на десктопе и 28 на телефоне; краска
+  // выходит за него на размер точки и на мягкий край, отсюда запас.
+  const maxEdge = vp.mobile ? 40 : 48;
   let spot = null;
-  for (const cand of densestList(pm, png.width, png.height, 44)) {
-    const st = spread(pm, png.width, png.height, cand.x, cand.y, BOX);
-    if (st.ink > 0 && st.edge > 6 && st.edge <= maxEdge) { spot = { x: st.cx, y: st.cy }; break; }
+  let png = await shot();
+  // Пузыри плывут и временами наползают друг на друга. Если сейчас
+  // одиночного нет — ждём и смотрим снова, а не объявляем поломку.
+  for (let attempt = 0; attempt < 4 && !spot; attempt++) {
+    if (attempt) { await page.waitForTimeout(1500); png = await shot(); }
+    const pm = inkMask(png, bg);
+    for (const cand of densestList(pm, png.width, png.height, 44)) {
+      const st = spread(pm, png.width, png.height, cand.x, cand.y, BOX);
+      if (st.ink > 0 && st.edge > 6 && st.edge <= maxEdge) { spot = { x: st.cx, y: st.cy }; break; }
+    }
   }
   if (!spot) {
-    fail('одиночного пузыря на первом экране не нашлось — мерить отклик не на чем');
+    fail('одиночного пузыря не нашлось за четыре попытки — либо их слишком много, либо они слиплись');
     spot = { x: png.width / 2, y: png.height / 2 };
   }
 
@@ -345,11 +358,15 @@ for (const vp of [
   let dirty = 0;
   const y0 = Math.max(0, Math.round(leadBox.y - OY));
   const y1 = Math.min(lp.height, Math.round(leadBox.y + leadBox.height - OY));
+  // Полоса — прямоугольник строк, а не вся ширина холста: холст шире
+  // колонки, и слева и справа от текста пузырям плавать можно.
+  const x0 = Math.max(0, Math.round(leadBox.x - OX));
+  const x1 = Math.min(lp.width, Math.round(leadBox.x + leadBox.width - OX));
   for (let y = y0; y < y1; y++) {
-    for (let x = 0; x < lp.width; x++) if (lm[y * lp.width + x] > 0) dirty++;
+    for (let x = x0; x < x1; x++) if (lm[y * lp.width + x] > 0) dirty++;
   }
   await bare(false);
-  const bandArea = (y1 - y0) * lp.width;
+  const bandArea = Math.max(0, y1 - y0) * Math.max(0, x1 - x0);
   if (dirty === 0) ok(`полоса подзаголовка чиста: 0 окрашенных пикселей из ${bandArea}`);
   else fail(`в полосе подзаголовка ${dirty} окрашенных пикселей из ${bandArea}`);
 
