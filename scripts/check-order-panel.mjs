@@ -45,7 +45,7 @@ for (const [w, h] of SIZES) {
     await probe('ничего не выбрано');
     // Тариф берётся с ВЫБРАННОЙ карточки: у остальных тарифы скрыты,
     // и это не поломка, а устройство витрины.
-    await page.locator('.pcard--active .tariff').first().click();
+    await page.locator('.pcard--active .tariff').first().click({ force: true });
     await page.waitForTimeout(800);
     await probe('выбран тариф');
     await page.getByRole('button', { name: 'СБП', exact: true }).click();

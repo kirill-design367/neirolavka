@@ -29,6 +29,20 @@ let bad = 0;
 const ok = (s) => console.log(`  ok   ${s}`);
 const no = (s) => { bad++; console.log(`  НЕТ  ${s}`); };
 
+/** Нажатие по плывущей карточке.
+ *
+ *  Карточки витрины микропарят, а actionability-проверки Playwright
+ *  ждут «стабильности» элемента, которой у плывущей карточки не бывает:
+ *  обычный click уходит в таймаут. force её пропускает, но заодно
+ *  пропускает и прокрутку к элементу — на телефоне карточка оказывалась
+ *  ниже окна, клик уходил в пустоту, и проверка показывала «нажали
+ *  на третью, выбрана первая». Поэтому прокрутку делаем сами. */
+const tap = async (page, loc) => {
+  await loc.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await page.waitForTimeout(250);
+  await loc.click({ force: true });
+};
+
 /** Разбудить отложенную загрузку: сцена ждёт первого действия человека. */
 const wake = async (page) => {
   await page.mouse.move(60, 200);
@@ -111,7 +125,14 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
     if (!phone) {
       const side = page.locator('.pcard').nth(2);
       const before = (await side.boundingBox()).width;
-      await side.hover();
+      // Наводимся мышью по координатам, а не locator.hover(): карточки
+      // микропарят, а hover ждёт «стабильности» элемента, которой
+      // у плывущей карточки не бывает, и уходит в таймаут.
+      const hoverAt = async (loc) => {
+        const b = await loc.boundingBox();
+        await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+      };
+      await hoverAt(side);
       await page.waitForTimeout(1100);
       const during = (await side.boundingBox()).width;
       await page.mouse.move(4, 4);
@@ -126,14 +147,14 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
     }
 
     // 4. Выбор: нажатие раскрывает тарифы своей карточки и закрывает чужие.
-    await page.locator('.pcard').nth(1).locator('.pcard__face').click();
+    await tap(page, page.locator('.pcard').nth(1).locator('.pcard__face'));
     await page.waitForTimeout(900);
     const open = await page.evaluate(() => [...document.querySelectorAll('.pcard')]
       .map((c) => !c.querySelector('.pcard__plans').hidden));
     if (open.filter(Boolean).length === 1 && open[1]) ok('раскрыта ровно одна карточка — та, по которой нажали');
     else no(`раскрыто карточек: ${JSON.stringify(open)}`);
 
-    await page.locator('.pcard--active .tariff').first().click();
+    await tap(page, page.locator('.pcard--active .tariff').first());
     await page.waitForTimeout(700);
     // Панель заказа на телефоне — полоса внизу, на широком экране —
     // чек справа. Берём обе и печатаем то, что нашлось: пустая строка
@@ -148,6 +169,86 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
     if (errors.length) no(`ошибок в консоли ${errors.length}: ${errors[0]}`); else ok('ошибок в консоли нет');
     await ctx.close();
   }
+}
+
+// ─── Микропарение карточек ─────────────────────────────────────────
+//
+// Витрина в покое не должна стоять намертво. Дыхание сделано
+// свойствами translate и rotate, а не transform: transform занят
+// матрицей от камеры, а отдельные свойства складываются с ним поверх
+// и ведутся браузером — сцене для этого не нужно ни одного кадра,
+// и она по-прежнему засыпает.
+//
+// Проверяем три вещи: движение ЕСТЬ, оно НЕ БОЛЬШЕ задуманного
+// (микропарение, а не качели) и карточки идут НЕ В ФАЗУ.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU' });
+  const page = await ctx.newPage();
+  await page.goto(URL, { waitUntil: 'networkidle' });
+  await wake(page);
+  console.log('\n── микропарение карточек ──');
+
+  if (!(await page.evaluate(() => document.querySelector('.shelf3d').hasAttribute('data-3d')))) {
+    no('сцена не поднялась — проверять нечего');
+  } else {
+    // Курсор убираем: наведение двигает карточки само, и его ход
+    // на порядок крупнее дыхания.
+    await page.mouse.move(4, 4);
+    await page.waitForTimeout(1400);
+    const series = [[], [], []];
+    for (let i = 0; i < 34; i++) {
+      const r = await page.evaluate(() => [...document.querySelectorAll('.pcard')]
+        .map((c) => { const b = c.getBoundingClientRect(); return [b.left, b.top]; }));
+      r.forEach((v, k) => series[k].push(v));
+      await page.waitForTimeout(120);
+    }
+    const amps = series.map((s) => {
+      const xs = s.map((v) => v[0]);
+      const ys = s.map((v) => v[1]);
+      return Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    });
+    const lo = Math.min(...amps);
+    const hi = Math.max(...amps);
+    // Нижняя граница обязательна: без неё «карточки стоят намертво»
+    // засчиталось бы за «движение в пределах допуска».
+    if (lo >= 1.2 && hi <= 12) ok(`карточки плывут: размах ${amps.map((a) => a.toFixed(1)).join(' / ')} px за 4 с, допуск 1.2–12`);
+    else no(`размах парения ${amps.map((a) => a.toFixed(1)).join(' / ')} px, допуск 1.2–12`);
+
+    // Фаза. Берём вертикальную составляющую и считаем корреляцию пар:
+    // синхронное покачивание трёх предметов читается механизмом.
+    const dev = series.map((s) => { const ys = s.map((v) => v[1]); const m = ys.reduce((a, b) => a + b, 0) / ys.length; return ys.map((y) => y - m); });
+    const corr = (a, b) => {
+      const sa = Math.sqrt(a.reduce((s, v) => s + v * v, 0));
+      const sb = Math.sqrt(b.reduce((s, v) => s + v * v, 0));
+      if (!sa || !sb) return 1;
+      return a.reduce((s, v, i) => s + v * b[i], 0) / (sa * sb);
+    };
+    const pairs = [[0, 1], [0, 2], [1, 2]].map(([i, j]) => corr(dev[i], dev[j]));
+    const worst = Math.max(...pairs.map(Math.abs));
+    if (worst <= 0.9) ok(`карточки идут не в фазу: наибольшая связь пары ${worst.toFixed(2)} при пороге 0.9`);
+    else no(`карточки качаются синхронно: связь пары ${worst.toFixed(2)} при пороге 0.9`);
+  }
+  await ctx.close();
+}
+
+{
+  // При выключенном движении парения быть не должно вовсе.
+  const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU', reducedMotion: 'reduce' });
+  const page = await ctx.newPage();
+  await page.goto(URL, { waitUntil: 'networkidle' });
+  await wake(page);
+  await page.mouse.move(4, 4);
+  await page.waitForTimeout(900);
+  const moved = await page.evaluate(async () => {
+    const card = document.querySelector('.pcard');
+    const a = card.getBoundingClientRect();
+    await new Promise((r) => setTimeout(r, 1500));
+    const b = card.getBoundingClientRect();
+    return Math.hypot(b.left - a.left, b.top - a.top);
+  });
+  if (moved < 0.6) ok(`при выключенном движении карточка стоит: сдвиг ${moved.toFixed(2)} px за 1.5 с`);
+  else no(`при выключенном движении карточка едет на ${moved.toFixed(2)} px за 1.5 с`);
+  await ctx.close();
 }
 
 // ─── Нажатие не должно разбирать сцену ─────────────────────────────
@@ -179,7 +280,7 @@ for (const [w, h, phone] of [[1512, 900, false], [390, 844, true]]) {
 
   // Выбираем тариф у текущей карточки: он должен уехать в чек,
   // а после смены продукта — смениться, но не из-за пересборки сцены.
-  await page.locator('.pcard--active .tariff').first().click();
+  await tap(page, page.locator('.pcard--active .tariff').first());
   await page.waitForTimeout(800);
 
   // Наблюдатель за data-3d: ловит и то, что происходит между пробами.
@@ -206,7 +307,7 @@ for (const [w, h, phone] of [[1512, 900, false], [390, 844, true]]) {
   });
 
   const target = 2;
-  await page.locator('.pcard').nth(target).locator('.pcard__face').click();
+  await tap(page, page.locator('.pcard').nth(target).locator('.pcard__face'));
 
   const probes = [];
   for (const at of [100, 1500]) {
@@ -264,9 +365,9 @@ for (const [label, opts, init] of [
   else ok('объёма нет — остаётся плоская витрина');
   if (g.cards.length === 3) ok('все три карточки на месте'); else no(`карточек ${g.cards.length}`);
 
-  await page.locator('.pcard').nth(2).locator('.pcard__face').click();
+  await tap(page, page.locator('.pcard').nth(2).locator('.pcard__face'));
   await page.waitForTimeout(500);
-  await page.locator('.pcard--active .tariff').first().click();
+  await tap(page, page.locator('.pcard--active .tariff').first());
   await page.waitForTimeout(500);
   const order = await page.evaluate(() => {
     const t = (sel) => document.querySelector(sel)?.innerText ?? '';

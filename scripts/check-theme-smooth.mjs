@@ -17,8 +17,8 @@ await page.goto(URL, { waitUntil: 'networkidle' });
 await page.waitForTimeout(600);
 
 // Выбираем тариф, чтобы панель заказа была в заполненном состоянии
-await page.locator('.pcard--active .tariff').first().click().catch(() => {});
-await page.getByRole('button', { name: /СБП/ }).first().click().catch(() => {});
+await page.locator('.pcard--active .tariff').first().click({ force: true });
+await page.getByRole('button', { name: /СБП/ }).first().click({ force: true });
 await page.waitForTimeout(500);
 
 const PROBES = [

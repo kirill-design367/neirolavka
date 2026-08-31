@@ -50,7 +50,7 @@ for (const vp of VIEWPORTS) {
     await shotBlock(page, '.shop', p(2, 'витрина'));
 
     // 3. Собранный заказ
-    await page.locator('.pcard--active .tariff').first().click();
+    await page.locator('.pcard--active .tariff').first().click({ force: true });
     await page.waitForTimeout(400);
     const pay = page.getByRole('button', { name: /СБП/ }).first();
     await pay.click();
@@ -60,7 +60,7 @@ for (const vp of VIEWPORTS) {
     await page.screenshot({ path: p(3, 'заказ-собран') });
 
     // 4. Выбран другой продукт: карточка вышла вперёд, тарифы раскрылись
-    await page.locator('.pcard').nth(1).locator('.pcard__face').click();
+    await page.locator('.pcard').nth(1).locator('.pcard__face').click({ force: true });
     await page.waitForTimeout(1100);
     await shotBlock(page, '.shop', p(4, 'витрина-chatgpt'));
 

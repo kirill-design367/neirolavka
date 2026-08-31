@@ -169,8 +169,8 @@ for (const theme of ['light', 'dark']) {
     // Собираем заказ, чтобы проверить и заполненные состояния.
     // Селекторы держим живыми: молча промахнувшийся клик оставил бы
     // половину состояний непроверенной, а отчёт — благополучным.
-    await page.locator('.pcard--active .tariff').first().click();
-    await page.getByRole('button', { name: /СБП/ }).first().click();
+    await page.locator('.pcard--active .tariff').first().click({ force: true });
+    await page.getByRole('button', { name: /СБП/ }).first().click({ force: true });
     await page.waitForTimeout(600);
 
     const { issues, checked, skipped, tightest, gradients } = await page.evaluate(AUDIT);
@@ -203,7 +203,12 @@ for (const theme of ['light', 'dark']) {
   await page.waitForTimeout(1800);
   const up = await page.evaluate(() => document.querySelector('.shelf3d').hasAttribute('data-3d'));
   if (!up) { console.log(`\n── ${theme} / витрина в объёме: сцена не поднялась, проверять нечего`); bad++; await ctx.close(); continue; }
-  await page.locator('.pcard').nth(2).hover();
+  // Наводимся по координатам: карточки микропарят, а hover ждёт
+  // «стабильности», которой у плывущей карточки не бывает.
+  {
+    const b = await page.locator('.pcard').nth(2).boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  }
   await page.waitForTimeout(1200);
 
   const { issues, checked, tightest } = await page.evaluate(AUDIT);
