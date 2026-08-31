@@ -105,6 +105,16 @@ export function Shop() {
 
   const activeIndex = Math.max(0, catalog.products.findIndex((p) => p.id === openProductId));
 
+  // Выбранная карточка живёт в ref, а не только в замыкании эффекта.
+  //
+  // Это не удобство, а условие: сцену поднимает эффект, и всё, что
+  // попадёт в его список зависимостей, будет РАЗБИРАТЬ И СОБИРАТЬ ЕЁ
+  // ЗАНОВО при каждом изменении. Пока в списке стоял activeIndex,
+  // нажатие по карточке снимало data-3d, показывало плоскую вёрстку
+  // всеми тремя карточками в ряд и поднимало сцену заново с нуля.
+  const activeRef = useRef(activeIndex);
+  activeRef.current = activeIndex;
+
   const setCard = useCallback(
     (i: number) => (el: HTMLElement | null) => {
       cardEls.current[i] = el;
@@ -133,7 +143,7 @@ export function Shop() {
         if (!shelf) return; // WebGL не поднялся — остаётся плоская витрина
         shelfRef.current = shelf;
         root.setAttribute('data-3d', '');
-        shelf.setActive(activeIndex);
+        shelf.setActive(activeRef.current);
       } catch {
         /* остаётся плоская витрина */
       }
@@ -174,7 +184,13 @@ export function Shop() {
       shelfRef.current = null;
       root.removeAttribute('data-3d');
     };
-  }, [activeIndex, catalog.products.length]);
+    // Список зависимостей здесь — часть устройства, а не формальность.
+    // Сцена поднимается ОДИН раз на жизнь компонента; всё, что меняется
+    // от нажатий (выбор продукта, наведение, раскрытые тарифы),
+    // доезжает до неё отдельными эффектами ниже, через ref на живой
+    // объект. Добавить сюда любое меняющееся значение — значит вернуть
+    // разбор и сборку сцены на каждое нажатие.
+  }, [catalog.products.length]);
 
   useEffect(() => { shelfRef.current?.setActive(activeIndex); }, [activeIndex]);
   useEffect(() => { shelfRef.current?.setHover(hover); }, [hover]);

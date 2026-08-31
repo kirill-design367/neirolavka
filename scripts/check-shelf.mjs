@@ -150,6 +150,101 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
   }
 }
 
+// ─── Нажатие не должно разбирать сцену ─────────────────────────────
+//
+// Отдельная проверка, потому что поломка была именно такой и её
+// не видно ни по геометрии, ни по контрасту, ни по разрешениям.
+// activeIndex стоял в списке зависимостей эффекта, поднимающего сцену,
+// и каждое нажатие по карточке разбирало её и собирало заново: на
+// мгновение показывалась плоская вёрстка — три одинаковые карточки
+// в ряд, — а сцена возвращалась только после следующего движения мыши.
+//
+// Смотрим не «стало ли в итоге хорошо», а весь промежуток: атрибут
+// data-3d слушается наблюдателем, поэтому мигание между пробами
+// тоже попадётся.
+for (const [w, h, phone] of [[1512, 900, false], [390, 844, true]]) {
+  const ctx = await browser.newContext({
+    viewport: { width: w, height: h }, locale: 'ru-RU', isMobile: phone, hasTouch: phone,
+  });
+  const page = await ctx.newPage();
+  await page.goto(URL, { waitUntil: 'networkidle' });
+  await wake(page);
+  console.log(`\n── нажатие по карточке, ${w}×${h} ──`);
+
+  if (!(await page.evaluate(() => document.querySelector('.shelf3d').hasAttribute('data-3d')))) {
+    no('сцена не поднялась — проверять нечего');
+    await ctx.close();
+    continue;
+  }
+
+  // Выбираем тариф у текущей карточки: он должен уехать в чек,
+  // а после смены продукта — смениться, но не из-за пересборки сцены.
+  await page.locator('.pcard--active .tariff').first().click();
+  await page.waitForTimeout(800);
+
+  // Наблюдатель за data-3d: ловит и то, что происходит между пробами.
+  await page.evaluate(() => {
+    window.__d3log = [];
+    const root = document.querySelector('.shelf3d');
+    new MutationObserver(() => window.__d3log.push(root.hasAttribute('data-3d')))
+      .observe(root, { attributes: true, attributeFilter: ['data-3d'] });
+  });
+
+  const state = () => page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.pcard')];
+    const wid = cards.map((c) => Math.round(c.getBoundingClientRect().width));
+    return {
+      d3: document.querySelector('.shelf3d').hasAttribute('data-3d'),
+      open: cards.map((c) => !c.querySelector('.pcard__plans').hidden),
+      active: cards.findIndex((c) => c.classList.contains('pcard--active')),
+      // Плоская вёрстка выдаёт себя одинаковой шириной всех трёх
+      // карточек: в сцене они на разной глубине и равными быть не могут.
+      flat: new Set(wid).size === 1,
+      matrix: cards.every((c) => c.style.transform.includes('matrix3d')),
+      wid,
+    };
+  });
+
+  const target = 2;
+  await page.locator('.pcard').nth(target).locator('.pcard__face').click();
+
+  const probes = [];
+  for (const at of [100, 1500]) {
+    await page.waitForTimeout(at - (probes.at(-1)?.at ?? 0));
+    probes.push({ at, ...(await state()) });
+  }
+  // Мышь после нажатия — в поломанной версии именно она поднимала
+  // сцену заново, и без неё блок так и оставался плоским.
+  await page.mouse.move(w / 2, h / 2);
+  await page.mouse.move(w / 2 + 6, h / 2 + 4);
+  await page.waitForTimeout(1200);
+  probes.push({ at: 2700, ...(await state()) });
+
+  for (const s of probes) {
+    const beda = [];
+    if (!s.d3) beda.push('сцены нет (data-3d снят)');
+    if (s.flat) beda.push(`плоская вёрстка: ширины ${s.wid.join('/')} одинаковы`);
+    if (!s.matrix) beda.push('карточкам не выставлена matrix3d');
+    if (s.open.filter(Boolean).length !== 1) beda.push(`раскрыто карточек ${s.open.filter(Boolean).length}`);
+    if (s.active !== target) beda.push(`выбрана карточка ${s.active + 1}, а нажимали ${target + 1}`);
+    if (beda.length) no(`+${s.at} мс: ${beda.join('; ')}`);
+    else ok(`+${s.at} мс: сцена жива, раскрыта одна карточка (${s.active + 1}), ширины ${s.wid.join('/')}`);
+  }
+
+  const log = await page.evaluate(() => window.__d3log);
+  if (log.length) no(`data-3d менялся ${log.length} раз(а) после нажатия: ${JSON.stringify(log)} — сцену пересобирают`);
+  else ok('data-3d за всё время не дрогнул — сцену не пересобирали');
+
+  const order = await page.evaluate(() => {
+    const t = (sel) => document.querySelector(sel)?.innerText ?? '';
+    return `${t('.order__paper')} ${t('.bar')}`.replace(/\s+/g, ' ').trim();
+  });
+  if (/Seedance/.test(order) || /Выберите|Пока пусто/.test(order)) ok('панель заказа в согласованном состоянии после смены продукта');
+  else no(`панель заказа показывает чужое: ${JSON.stringify(order.slice(0, 120))}`);
+
+  await ctx.close();
+}
+
 // ─── Плоская витрина: без WebGL и при выключенном движении ─────────
 for (const [label, opts, init] of [
   ['без WebGL', {}, () => {
