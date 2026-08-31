@@ -141,6 +141,23 @@ export function Shop() {
     let cancelled = false;
     let io: IntersectionObserver | null = null;
 
+    // Переход от плоской вёрстки к сцене человек видеть не должен.
+    //
+    // Сам по себе он выглядит как «страница догружается заново»:
+    // сначала три карточки стоят в ряд, потом их разом переставляет
+    // по дуге. Прятать блок с самого начала нельзя — тогда на его
+    // месте будет дыра всё время, пока едет кусок со сценой, а без
+    // скрипта дыра останется навсегда. Поэтому блок гаснет ровно
+    // на момент подмены: кусок уже здесь, гашение — один вдох,
+    // сцена встаёт, блок возвращается. Плоская вёрстка при этом
+    // видна с первого кадра и никуда не пропадает, если сцены
+    // не будет вовсе.
+    let swapTimer = 0;
+    const show = () => {
+      if (swapTimer) { clearTimeout(swapTimer); swapTimer = 0; }
+      root.removeAttribute('data-swap');
+    };
+
     const start = async () => {
       if (cancelled) return;
       try {
@@ -148,13 +165,20 @@ export function Shop() {
         if (cancelled) return;
         const cards = cardEls.current.filter(Boolean) as HTMLElement[];
         if (cards.length !== catalog.products.length) return;
+        // Гасим только теперь, когда сцена готова встать.
+        root.setAttribute('data-swap', '');
+        swapTimer = window.setTimeout(show, 900); // страховка
+        await new Promise((r) => setTimeout(r, 170));
+        if (cancelled) return;
         const shelf = mod.mount(root, canvas, cards);
-        if (!shelf) return; // WebGL не поднялся — остаётся плоская витрина
+        if (!shelf) { show(); return; } // WebGL не поднялся — плоская витрина
         shelfRef.current = shelf;
         root.setAttribute('data-3d', '');
         shelf.setActive(activeRef.current);
+        // Сцена уже расставила карточки — можно показывать.
+        requestAnimationFrame(show);
       } catch {
-        /* остаётся плоская витрина */
+        show(); /* остаётся плоская витрина */
       }
     };
 
@@ -179,15 +203,23 @@ export function Shop() {
           io = null;
           void start();
         },
-        { rootMargin: '300px' },
+        // Запас увеличен: сцена должна успеть встать ДО того, как блок
+        // покажется на глаза, иначе придержка обернётся пустым местом.
+        { rootMargin: '900px' },
       );
       io.observe(box);
     }
-    EVENTS.forEach((e) => window.addEventListener(e, armed, { passive: true }));
+
+    // Блок уже на экране в момент оживления страницы — ждать действия
+    // человека незачем: он на него смотрит. Поднимаем сразу.
+    const seen = box.getBoundingClientRect();
+    if (seen.top < window.innerHeight && seen.bottom > 0) void start();
+    else EVENTS.forEach((e) => window.addEventListener(e, armed, { passive: true }));
 
     return () => {
       cancelled = true;
       off();
+      show();
       io?.disconnect();
       shelfRef.current?.dispose();
       shelfRef.current = null;

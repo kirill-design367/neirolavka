@@ -36,6 +36,18 @@
 .shelf3d {
   display: grid;
   gap: var(--sp-4);
+  /* Гашение на момент подмены плоской вёрстки сценой — см. Shop.tsx.
+     Прозрачность, а не display: место под блок остаётся занятым,
+     и вёрстка не дёргается. Без атрибута data-swap блок виден всегда,
+     поэтому при выключенном скрипте ничего не прячется.
+     Возвращается медленнее, чем гаснет: так подмена читается вдохом,
+     а не морганием. */
+  transition: opacity 0.28s var(--ease-out);
+}
+
+.shelf3d[data-swap] {
+  opacity: 0;
+  transition-duration: 0.16s;
 }
 
 .shelf3d__gl {
@@ -327,7 +339,9 @@
   /* Микропарение. Периоды некратные и у каждой карточки свой сдвиг
      фазы: синхронное покачивание трёх предметов читается механизмом,
      а не невесомостью. */
-  animation: pcard-float 9.3s var(--ease-inout) infinite;
+  animation:
+    pcard-move 8.1s var(--ease-inout) infinite,
+    pcard-tilt 5.2s var(--ease-inout) infinite;
 }
 
 /* Парение живёт в СВОЙСТВАХ translate и rotate, а не в transform,
@@ -344,42 +358,88 @@
 
    Масштаба здесь нет намеренно: в карточке текст, а масштабирование
    текста тянет готовый растр и мылит буквы. */
-@keyframes pcard-float {
+/* Покачивание собрано из ДВУХ независимых движений с разными
+   периодами: сдвиг и наклон. Одного мало — на отрезке в несколько
+   секунд две гладкие кривые близких периодов идут в ногу, как бы
+   ни различались ключевые кадры, и витрина читается механизмом
+   (замер связи пары давал 0.91–0.95 при пороге 0.9). Сумма двух
+   несоизмеримых колебаний такого совпадения не даёт: у каждой
+   карточки свой рисунок, который не повторяется. */
+@keyframes pcard-move {
   0%,
   100% {
     translate: 0 0;
-    rotate: 0deg;
   }
   25% {
     translate: 1.5px -3px;
-    rotate: 0.28deg;
   }
   50% {
     translate: 0 -1px;
-    rotate: 0deg;
   }
   75% {
     translate: -1.5px 2.5px;
+  }
+}
+
+@keyframes pcard-move-b {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  30% {
+    translate: -1.8px 2.4px;
+  }
+  55% {
+    translate: -0.4px 0.6px;
+  }
+  80% {
+    translate: 1.2px -2.6px;
+  }
+}
+
+@keyframes pcard-move-c {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  20% {
+    translate: -1.2px -1.4px;
+  }
+  45% {
+    translate: 1.6px 2.8px;
+  }
+  70% {
+    translate: 0.6px -2.2px;
+  }
+}
+
+@keyframes pcard-tilt {
+  0%,
+  100% {
+    rotate: 0deg;
+  }
+  35% {
+    rotate: 0.28deg;
+  }
+  70% {
     rotate: -0.24deg;
   }
 }
 
-/* Под курсором витрина замирает. Это не оптимизация, а вежливость:
-   цель, за которой человек тянется, не должна продолжать уплывать.
-   Пауза берётся с текущей фазы, поэтому ни при остановке,
-   ни при возврате скачка нет. */
 .shelf3d[data-3d]:hover .pcard {
   animation-play-state: paused;
 }
 
 .shelf3d[data-3d] .pcard:nth-child(2) {
-  animation-duration: 11.7s;
-  animation-delay: -4.1s;
+  animation-name: pcard-move-b, pcard-tilt;
+  animation-duration: 13.9s, 7.3s;
+  animation-delay: -5.5s, -3.1s;
 }
 
 .shelf3d[data-3d] .pcard:nth-child(3) {
-  animation-duration: 10.4s;
-  animation-delay: -7.6s;
+  animation-name: pcard-move-c, pcard-tilt;
+  animation-duration: 6.3s, 10.9s;
+  animation-delay: -2.1s, -8.2s;
 }
 
 /* Выключенное движение: сцена и так не поднимается, но правило
