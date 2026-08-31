@@ -63,6 +63,22 @@ const AUDIT = () => {
     return acc ? over(acc, body) : body;
   };
 
+  // Что лежит ЗА группой с прозрачностью. Стеком точек это не взять:
+  // держатель камеры не ловит мышь, elementsFromPoint его пропускает,
+  // и «фоном за карточкой» оказывалась сама карточка. Здесь нужен
+  // именно обход предков.
+  const bgAncestor = (el) => {
+    let acc = null;
+    let p = el;
+    while (p) {
+      const c = parse(getComputedStyle(p).backgroundColor);
+      if (c.a > 0) acc = acc ? over(acc, c) : c;
+      if (acc && acc.a >= 1) return acc;
+      p = p.parentElement;
+    }
+    return acc ?? parse(getComputedStyle(document.body).backgroundColor);
+  };
+
   const out = [];
   const all = [];
   let skippedCount = 0;
@@ -73,22 +89,44 @@ const AUDIT = () => {
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none') continue;
     if (!el.getClientRects().length) continue;
-    // Накопленная прозрачность: у скрытого предка текст не виден вовсе,
-    // и мерить его контраст бессмысленно.
+    // Накопленная прозрачность. Полупрозрачный текст НЕ пропускается:
+    // приглушённая карточка витрины — это новая пара «текст/фон»,
+    // и порог 4.5:1 она обязана держать наравне с остальными.
+    // Пропускаем только то, чего не видно совсем.
+    //
+    // Раньше здесь стоял `continue`, и всё приглушённое уходило
+    // из-под проверки молча — считалось лишь число пропущенных.
     let eff = Number(cs.opacity);
+    let group = Number(cs.opacity) < 1 ? el : null;
     let p = el;
-    while ((p = p.parentElement)) eff *= Number(getComputedStyle(p).opacity);
-    if (eff < 0.99) { skippedCount++; continue; }
-    targets.push({ el, text });
+    while ((p = p.parentElement)) {
+      const o = Number(getComputedStyle(p).opacity);
+      eff *= o;
+      if (o < 1) group = p;
+    }
+    if (eff < 0.06) { skippedCount++; continue; }
+    targets.push({ el, text, eff, group });
   }
 
-  for (const { el, text } of targets) {
+  for (const { el, text, eff, group } of targets) {
     el.scrollIntoView({ block: 'center', behavior: 'instant' });
     const rect = el.getBoundingClientRect();
     const x = Math.min(Math.max(rect.left + Math.min(rect.width / 2, 40), 1), innerWidth - 1);
     const y = Math.min(Math.max(rect.top + rect.height / 2, 1), innerHeight - 1);
     const cs = getComputedStyle(el);
-    const bg = bgOf(el, x, y);
+    let bg = bgOf(el, x, y);
+    // Группа с прозрачностью рисуется целиком, а потом смешивается
+    // с тем, что за ней. Значит и текст, и его подложка приходят
+    // к глазу приглушёнными — меряем то, что видно, а не то,
+    // что объявлено.
+    const backdrop = eff < 0.99 && group
+      ? bgAncestor(group.parentElement ?? document.body)
+      : null;
+    const flatten = (c) => backdrop
+      ? { r: c.r * eff + backdrop.r * (1 - eff), g: c.g * eff + backdrop.g * (1 - eff),
+          b: c.b * eff + backdrop.b * (1 - eff), a: 1 }
+      : c;
+    if (backdrop) bg = flatten(bg);
 
     // Текст, залитый градиентом через background-clip, имеет
     // прозрачный цвет: браузер рисует его фоном. Сравнивать прозрачное
@@ -96,9 +134,9 @@ const AUDIT = () => {
     // и проверяем худшую из них.
     const clipped = (cs.webkitBackgroundClip === 'text' || cs.backgroundClip === 'text')
       && parse(cs.color).a < 0.05;
-    const fgs = clipped
+    const fgs = (clipped
       ? (cs.backgroundImage.match(/rgba?\([^)]+\)|#[0-9a-f]{3,8}/gi) || []).map((c) => over(parse(c), bg))
-      : [over(parse(cs.color), bg)];
+      : [over(parse(cs.color), bg)]).map(flatten);
     const fg = fgs[0];
 
     const px = parseFloat(cs.fontSize);
@@ -107,6 +145,7 @@ const AUDIT = () => {
     const need = large ? 3 : 4.5;
     const r = fgs.length ? Math.min(...fgs.map((f) => ratio(f, bg))) : ratio(fg, bg);
     const row = { text: text.slice(0, 46), cls: el.className?.toString().slice(0, 34), px, weight, r: +r.toFixed(2), need,
+                  eff: +eff.toFixed(2),
                   fg: clipped ? `градиент из ${fgs.length} точек` : cs.color,
                   bg: `rgb(${Math.round(bg.r)}, ${Math.round(bg.g)}, ${Math.round(bg.b)})` };
     all.push(row);
@@ -127,9 +166,11 @@ for (const theme of ['light', 'dark']) {
     const page = await ctx.newPage();
     await page.goto(URL, { waitUntil: 'networkidle' });
     await page.waitForTimeout(500);
-    // Собираем заказ, чтобы проверить и заполненные состояния
-    await page.getByRole('button', { name: /6 месяцев/ }).first().click().catch(() => {});
-    await page.getByRole('button', { name: /СБП/ }).first().click().catch(() => {});
+    // Собираем заказ, чтобы проверить и заполненные состояния.
+    // Селекторы держим живыми: молча промахнувшийся клик оставил бы
+    // половину состояний непроверенной, а отчёт — благополучным.
+    await page.locator('.pcard--active .tariff').first().click();
+    await page.getByRole('button', { name: /СБП/ }).first().click();
     await page.waitForTimeout(600);
 
     const { issues, checked, skipped, tightest, gradients } = await page.evaluate(AUDIT);
@@ -146,6 +187,38 @@ for (const theme of ['light', 'dark']) {
     await ctx.close();
   }
 }
+// ─── Витрина в объёме ──────────────────────────────────────────────
+// Отдельный проход: у сцены боковые карточки приглушены, а под
+// курсором соседи притухают ещё раз. Это новые пары «текст/фон»,
+// и они обязаны держать тот же порог. Обычные проходы идут
+// с выключенным движением и сцену не поднимают вовсе.
+for (const theme of ['light', 'dark']) {
+  const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU' });
+  await ctx.addInitScript((t) => localStorage.setItem('neirolavka-theme', t), theme);
+  const page = await ctx.newPage();
+  await page.goto(URL, { waitUntil: 'networkidle' });
+  await page.mouse.move(60, 200);
+  await page.mouse.move(64, 204);
+  await page.evaluate(() => document.querySelector('.shop').scrollIntoView({ block: 'center' }));
+  await page.waitForTimeout(1800);
+  const up = await page.evaluate(() => document.querySelector('.shelf3d').hasAttribute('data-3d'));
+  if (!up) { console.log(`\n── ${theme} / витрина в объёме: сцена не поднялась, проверять нечего`); bad++; await ctx.close(); continue; }
+  await page.locator('.pcard').nth(2).hover();
+  await page.waitForTimeout(1200);
+
+  const { issues, checked, tightest } = await page.evaluate(AUDIT);
+  const cards = tightest.filter((t) => /pcard|tariff/.test(t.cls ?? ''));
+  console.log(`\n── ${theme} / витрина в объёме, курсор на боковой карточке — проверено узлов: ${checked}`);
+  if (!issues.length) console.log('  нарушений нет');
+  for (const i of issues) {
+    console.log(`  ${i.r}:1 (нужно ${i.need}) плотность ${i.eff} «${i.text}» .${i.cls}  ${i.fg} на ${i.bg}`);
+    bad++;
+  }
+  for (const t of (cards.length ? cards : tightest).slice(0, 3))
+    console.log(`    ${t.r}:1 при пороге ${t.need}, плотность ${t.eff} — «${t.text}» .${t.cls}`);
+  await ctx.close();
+}
+
 await browser.close();
 console.log(bad ? `\nВсего нарушений: ${bad}` : '\nКонтраст в порядке во всех сочетаниях');
 process.exit(bad ? 1 : 0);

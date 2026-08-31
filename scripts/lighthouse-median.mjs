@@ -36,6 +36,7 @@ for (let i = 0; i < RUNS; i++) {
     tbt: a['total-blocking-time'].numericValue,
     cls: a['cumulative-layout-shift'].numericValue,
     si: a['speed-index'].numericValue,
+    bench: res.lhr.environment.benchmarkIndex,
   });
   process.stdout.write(`прогон ${i + 1}/${RUNS}: ${rows.at(-1).perf}\n`);
 }
@@ -58,3 +59,9 @@ console.log(`  TBT  ${med('tbt').toFixed(0)} мс`);
 console.log(`  CLS  ${med('cls').toFixed(4)}`);
 console.log(`  Speed Index ${(med('si') / 1000).toFixed(2)} с`);
 console.log(`  Разброс производительности: ${Math.min(...rows.map(r=>r.perf))}–${Math.max(...rows.map(r=>r.perf))}`);
+// Оценка скорости самой машины. Lighthouse считает время не по часам,
+// а моделью, откалиброванной по этому числу: на медленной машине один
+// и тот же код честно получает меньше баллов. Без него «стало хуже»
+// и «машина сегодня медленнее» неотличимы — а это разные диагнозы,
+// и половина дня уходит на поиск регрессии, которой нет.
+console.log(`  Скорость машины (benchmarkIndex): ${med('bench').toFixed(0)}`);

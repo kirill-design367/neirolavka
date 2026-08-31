@@ -40,24 +40,29 @@ for (const vp of VIEWPORTS) {
     // 1. Первый экран: навигация, шапка, условия, пустой чек
     await page.screenshot({ path: p(1, 'первый-экран') });
 
-    // 2. Тарифы Claude (раскрыты сразу)
-    await shotBlock(page, '.shelf', p(2, 'тарифы-claude'));
+    // Сцена витрины ждёт первого действия человека — будим её,
+    // иначе на снимках останется плоская раскладка.
+    await page.mouse.move(60, 200);
+    await page.mouse.move(64, 204);
+    await page.waitForTimeout(300);
+
+    // 2. Витрина: три продукта, у выбранного раскрыты тарифы
+    await shotBlock(page, '.shop', p(2, 'витрина'));
 
     // 3. Собранный заказ
-    await page.getByRole('button', { name: /6 месяцев/ }).first().click();
+    await page.locator('.pcard--active .tariff').first().click();
     await page.waitForTimeout(400);
-    const pay = vp.mobile ? page.getByRole('button', { name: 'СБП', exact: true })
-                          : page.getByRole('button', { name: /СБП/ }).first();
+    const pay = page.getByRole('button', { name: /СБП/ }).first();
     await pay.click();
     await page.waitForTimeout(900);
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(500);
     await page.screenshot({ path: p(3, 'заказ-собран') });
 
-    // 4. ChatGPT со «скоро» — переключаем полку, попутно видно механику
-    await page.getByRole('button', { name: /Claude/ }).first().click();
-    await page.waitForTimeout(900);
-    await shotBlock(page, '.shelf--soon', p(4, 'chatgpt-скоро'));
+    // 4. Выбран другой продукт: карточка вышла вперёд, тарифы раскрылись
+    await page.locator('.pcard').nth(1).locator('.pcard__face').click();
+    await page.waitForTimeout(1100);
+    await shotBlock(page, '.shop', p(4, 'витрина-chatgpt'));
 
     // 5. Шаги
     await shotBlock(page, '.steps', p(5, 'как-устроено'));

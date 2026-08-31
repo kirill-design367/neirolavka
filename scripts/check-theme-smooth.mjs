@@ -17,7 +17,7 @@ await page.goto(URL, { waitUntil: 'networkidle' });
 await page.waitForTimeout(600);
 
 // Выбираем тариф, чтобы панель заказа была в заполненном состоянии
-await page.getByRole('button', { name: /6 месяцев/ }).first().click().catch(() => {});
+await page.locator('.pcard--active .tariff').first().click().catch(() => {});
 await page.getByRole('button', { name: /СБП/ }).first().click().catch(() => {});
 await page.waitForTimeout(500);
 
@@ -27,9 +27,9 @@ const PROBES = [
   // У заголовка меряем градиент, а не color: он выводится обрезкой
   // фона по тексту и цвет текста у него всегда прозрачный.
   ['заголовок (градиент)', '.hero__title', 'backgroundImage'],
-  ['подложка полки', '.shelf__plate', 'backgroundColor'],
-  ['граница подложки полки', '.shelf__plate', 'borderTopColor'],
-  ['тень подложки полки', '.shelf__plate', 'boxShadow'],
+  ['карточка витрины', '.pcard', 'backgroundColor'],
+  ['граница карточки витрины', '.pcard', 'borderTopColor'],
+  ['имя продукта', '.pcard__name', 'color'],
   ['карточка тарифа', '.tariff', 'backgroundColor'],
   ['выбранный тариф (color-mix)', '.tariff--active', 'backgroundColor'],
   ['бумага чека', '.order__paper', 'backgroundColor'],
