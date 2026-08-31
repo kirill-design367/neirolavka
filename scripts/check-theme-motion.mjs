@@ -48,7 +48,11 @@ for (const theme of ['light', 'dark']) {
   const page = await ctx.newPage();
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
   const first = await page.evaluate(() => window.__first);
-  const expect = theme === 'dark' ? '25,28,26' : '242,238,231';
+  // Ожидаемый фон вписан числом намеренно: проверка сверяет то, что
+  // блокирующий скрипт поставил на первом кадре, с палитрой, а не
+  // палитру с самой собой. Меняя --c-bg, поправьте и эти два числа.
+  // Сейчас: светлая Dry Creek #e0bfa2, тёмная сумерки #0c2223.
+  const expect = theme === 'dark' ? '12,34,35' : '224,191,162';
   const ok = first?.theme === theme && first?.bg === expect;
   console.log(`  тема «${theme}»: на первом кадре data-theme=${first?.theme}, --c-bg=${first?.raw} (${first?.bg}), color-scheme=${first?.scheme} → ${ok ? 'вспышки нет' : 'ВСПЫШКА'}`);
   if (!ok) bad++;

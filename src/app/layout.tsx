@@ -23,8 +23,8 @@ export const viewport: Viewport = {
   // Цвет строки браузера совпадает с фоном темы, чтобы на телефоне
   // не было светлой полосы над тёмной страницей.
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f2eee7' },
-    { media: '(prefers-color-scheme: dark)', color: '#191c1a' },
+    { media: '(prefers-color-scheme: light)', color: '#e0bfa2' },
+    { media: '(prefers-color-scheme: dark)', color: '#0c2223' },
   ],
 };
 

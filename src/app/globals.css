@@ -22,37 +22,37 @@
 @property --c-bg {
   syntax: '<color>';
   inherits: true;
-  initial-value: #f2eee7;
+  initial-value: #e0bfa2;
 }
 
 @property --c-surface {
   syntax: '<color>';
   inherits: true;
-  initial-value: #fbf9f5;
+  initial-value: #f3dbc7;
 }
 
 @property --c-surface-2 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #eae5db;
+  initial-value: #d6b79d;
 }
 
 @property --c-text {
   syntax: '<color>';
   inherits: true;
-  initial-value: #1b211c;
+  initial-value: #1a2518;
 }
 
 @property --c-muted {
   syntax: '<color>';
   inherits: true;
-  initial-value: #5a6159;
+  initial-value: #414e3f;
 }
 
 @property --c-line {
   syntax: '<color>';
   inherits: true;
-  initial-value: #d9d2c5;
+  initial-value: #c2a78f;
 }
 
 @property --c-hover {
@@ -64,103 +64,103 @@
 @property --c-line-strong {
   syntax: '<color>';
   inherits: true;
-  initial-value: #b9b0a0;
+  initial-value: #7f654e;
 }
 
 @property --c-brand {
   syntax: '<color>';
   inherits: true;
-  initial-value: #14452f;
+  initial-value: #2e5428;
 }
 
 @property --c-on-brand {
   syntax: '<color>';
   inherits: true;
-  initial-value: #fbf9f5;
+  initial-value: #f7e4d4;
 }
 
 @property --c-fill {
   syntax: '<color>';
   inherits: true;
-  initial-value: #14452f;
+  initial-value: #1d3d18;
 }
 
 @property --c-on-fill {
   syntax: '<color>';
   inherits: true;
-  initial-value: #fbf9f5;
+  initial-value: #f7e4d4;
 }
 
 @property --c-on-fill-muted {
   syntax: '<color>';
   inherits: true;
-  initial-value: #c9dccf;
+  initial-value: #c8bbb0;
 }
 
 @property --c-fill-btn {
   syntax: '<color>';
   inherits: true;
-  initial-value: #fbf9f5;
+  initial-value: #f3dbc7;
 }
 
 @property --c-on-fill-btn {
   syntax: '<color>';
   inherits: true;
-  initial-value: #14452f;
+  initial-value: #1d3d18;
 }
 
 @property --c-accent {
   syntax: '<color>';
   inherits: true;
-  initial-value: #c9862a;
+  initial-value: #d29661;
 }
 
 @property --c-on-accent {
   syntax: '<color>';
   inherits: true;
-  initial-value: #1b211c;
+  initial-value: #1a2518;
 }
 
 @property --c-accent-text {
   syntax: '<color>';
   inherits: true;
-  initial-value: #7a5314;
+  initial-value: #753c0a;
 }
 
 @property --c-shadow-1 {
   syntax: '<color>';
   inherits: true;
-  initial-value: rgb(27 33 28 / 0.06);
+  initial-value: rgb(46 34 20 / 0.08);
 }
 
 @property --c-shadow-2 {
   syntax: '<color>';
   inherits: true;
-  initial-value: rgb(27 33 28 / 0.09);
+  initial-value: rgb(46 34 20 / 0.12);
 }
 
 @property --c-shadow-3 {
   syntax: '<color>';
   inherits: true;
-  initial-value: rgb(27 33 28 / 0.10);
+  initial-value: rgb(46 34 20 / 0.14);
 }
 
 @property --c-fill-1 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #14452f;
+  initial-value: #1d3d18;
 }
 
 @property --c-fill-2 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #14452f;
+  initial-value: #1d3d18;
 }
 
 @property --c-fill-3 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #14452f;
+  initial-value: #1d3d18;
 }
 
 @property --c-fill-glow {
@@ -172,61 +172,61 @@
 @property --c-scroll-thumb {
   syntax: '<color>';
   inherits: true;
-  initial-value: #877d6d;
+  initial-value: #775e47;
 }
 
 @property --c-scroll-track {
   syntax: '<color>';
   inherits: true;
-  initial-value: #e9e3d8;
+  initial-value: #d6b79d;
 }
 
 @property --c-spark-1 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #14452f;
+  initial-value: #2e5428;
 }
 
 @property --c-spark-2 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #d99a34;
+  initial-value: #d89354;
 }
 
 @property --c-spark-3 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #6fc79a;
+  initial-value: #98c690;
 }
 
 @property --c-title-edge {
   syntax: '<color>';
   inherits: true;
-  initial-value: #14452f;
+  initial-value: #2e5428;
 }
 
 @property --c-title-mid {
   syntax: '<color>';
   inherits: true;
-  initial-value: #14452f;
+  initial-value: #2e5428;
 }
 
 @property --c-lava-1 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #f6eee6;
+  initial-value: #f6dfcc;
 }
 
 @property --c-lava-2 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #eaf0e8;
+  initial-value: #e6e3cc;
 }
 
 @property --c-lava-3 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #f0ece0;
+  initial-value: #f3d9c2;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -327,9 +327,9 @@
   --c-line-strong: #5b6e6e; /* 3.07:1 на фоне */
   --c-scroll-thumb: #627475; /* 3.05:1 на дорожке полосы */
   --c-scroll-track: #162a2b;
-  --c-spark-1: #92af8d;
-  --c-spark-2: #d4a780;
-  --c-spark-3: #dbe1cb;
+  --c-spark-1: #6f9a78;
+  --c-spark-2: #dfa86d;
+  --c-spark-3: #b9dee0;
   --c-brand: #92af8d;       /* тот же зелёный, приглушённый: 6.45:1 на фоне */
   --c-hover: #afcfaa;
   --c-on-brand: #152013;    /* 15.87:1 на зелёном */

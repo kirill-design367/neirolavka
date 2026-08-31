@@ -29,6 +29,9 @@ for (const SCALE of SCALES) {
     await p.evaluate((t) => {
       document.documentElement.dataset.theme = t;
       document.documentElement.style.colorScheme = t;
+      let st = document.getElementById('probe');
+      if (!st) { st = document.createElement('style'); st.id = 'probe'; document.head.appendChild(st); }
+      st.textContent = '.bubbles{display:none}';
     }, theme);
     await p.waitForTimeout(400);
     return PNG.sync.read(await p.locator('.hero__title').screenshot());
@@ -40,7 +43,14 @@ for (const SCALE of SCALES) {
       document.documentElement.style.colorScheme = t;
       let st = document.getElementById('probe');
       if (!st) { st = document.createElement('style'); st.id = 'probe'; document.head.appendChild(st); }
-      st.textContent = cc ? `.hero__title{--c-title-edge:${cc[0]};--c-title-mid:${cc[1]}}` : '';
+      // Холст пузырей лежит прямо за названием. Точки полупрозрачные
+      // и на каждой загрузке стоят в новом месте, поэтому с фоном
+      // светлой и тёмной темы они складываются по-разному и попадают
+      // в снимок как «сдвиг штриха»: наибольший сдвиг скакал до
+      // 3,8 css-px и менялся от прогона к прогону. Здесь мерится
+      // геометрия букв, а не фон под ними — холст убираем.
+      const hide = '.bubbles{display:none}';
+      st.textContent = hide + (cc ? `.hero__title{--c-title-edge:${cc[0]};--c-title-mid:${cc[1]}}` : '');
     }, [theme, colors]);
     await p.waitForTimeout(400);
     return PNG.sync.read(await p.locator('.hero__title').screenshot());
@@ -49,7 +59,7 @@ for (const SCALE of SCALES) {
   const light = await shot('light');
   const dark = await shot('dark');
 
-  const compare = (a, bImg, tag, limitShift) => {
+  const compare = (a, bImg, tag, limitAvg, limitShift = 1.0) => {
     const W = Math.min(a.width, bImg.width), H = Math.min(a.height, bImg.height);
     if (a.width !== bImg.width || a.height !== bImg.height) {
       console.log(`      НЕТ размер снимков разный: ${a.width}x${a.height} и ${bImg.width}x${bImg.height}`);
@@ -121,7 +131,18 @@ for (const SCALE of SCALES) {
 
     const shift = worst / SCALE, avg = (sum / (cnt || 1)) / SCALE;
     const dBody = Math.abs(ib - ia) / ia * 100;
-    const ok = shift <= limitShift && Math.abs(la - lb) === 0 && dBody <= 0.1;
+    // Вердикт по СРЕДНЕМУ сдвигу, а не по наибольшему. Наибольший —
+    // максимум по паре тысяч точек, он растёт с числом точек и не
+    // сходится: на прежней палитре контрольная пара давала по нему
+    // 0.694 css-px при пороге 0.35, то есть шум метода уже был выше
+    // порога и проверка проходила по везению. Средний сходится.
+    //
+    // Ловится этой проверкой смена СПОСОБА отрисовки: когда одна тема
+    // красила текст напрямую, а другая обрезанным фоном, средний сдвиг
+    // был 0.225 css-px, тело штрихов худело на 0.3 %, а хвост «р» менял
+    // длину. Сейчас способ один, и остаётся только разница сглаживания
+    // от разного цвета краски — она на два порядка меньше.
+    const ok = avg <= limitAvg && shift <= limitShift && Math.abs(la - lb) === 0 && dBody <= 0.1;
     console.log(`    ${ok ? 'ok ' : 'НЕТ'} ${tag}: снимок ${W}x${H}`);
     console.log(`        тело штрихов ${ia} и ${ib} px, разница ${dBody.toFixed(3)} %`);
     console.log(`        сдвиг границ (${cnt} точек): наибольший ${shift.toFixed(3)} css-px, средний ${avg.toFixed(3)} css-px`);
@@ -133,12 +154,16 @@ for (const SCALE of SCALES) {
   // краски. Всё, что тут намерялось, — шум округления сглаживания
   // до восьми бит, ниже него измерение опуститься не может.
   const ctlA = await shotColored('light', null);
-  const ctlB = await shotColored('light', ['#cf9ee2', '#e3c8ea']);
+  // Цвет подменяется на РАВНЫЙ ПО СВЕТЛОТЕ (0.0708 против 0.0707
+  // у #2e5428), просто другого тона. Пара разной светлоты
+  // обесценивает контроль: покрытие краской считается порогом,
+  // и бледный цвет на бежевом даёт меньше «краски» сам по себе.
+  const ctlB = await shotColored('light', ['#71385a', '#71385a']);
   console.log(`  dpr ${SCALE}, контроль — один способ отрисовки, разный цвет:`);
-  const floor = compare(ctlA, ctlB, 'шум цвета', 99);
+  const floor = compare(ctlA, ctlB, 'шум цвета', 99, 99);
 
   console.log(`  dpr ${SCALE}, светлая против тёмной:`);
-  if (!compare(light, dark, 'темы', 0.35)) bad++;
+  if (!compare(light, dark, 'темы', 0.05)) bad++;
   await c.close();
 }
 
