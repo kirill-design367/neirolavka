@@ -8,7 +8,7 @@ SHOTS, OUT = sys.argv[1], sys.argv[2]
 FONT = sys.argv[3] if len(sys.argv) > 3 else '.fontcache/golos-text.ttf'
 os.makedirs(OUT, exist_ok=True)
 
-BG = {'светлая': (224, 191, 162), 'тёмная': (12, 34, 35)}
+BG = {'светлая': (244, 219, 197), 'тёмная': (12, 34, 35)}
 FG = {'светлая': (27, 33, 28), 'тёмная': (232, 230, 224)}
 
 ORDER = ['1-первый-экран', '2-тарифы-claude', '3-заказ-собран', '4-chatgpt-скоро',

@@ -22,19 +22,19 @@
 @property --c-bg {
   syntax: '<color>';
   inherits: true;
-  initial-value: #e0bfa2;
+  initial-value: #f4dbc5;
 }
 
 @property --c-surface {
   syntax: '<color>';
   inherits: true;
-  initial-value: #f3dbc7;
+  initial-value: #feead9;
 }
 
 @property --c-surface-2 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #d6b79d;
+  initial-value: #e8c8ac;
 }
 
 @property --c-text {
@@ -46,73 +46,73 @@
 @property --c-muted {
   syntax: '<color>';
   inherits: true;
-  initial-value: #414e3f;
+  initial-value: #4a5848;
 }
 
 @property --c-line {
   syntax: '<color>';
   inherits: true;
-  initial-value: #c2a78f;
+  initial-value: #dec0a5;
 }
 
 @property --c-hover {
   syntax: '<color>';
   inherits: true;
-  initial-value: #1b3f15;
+  initial-value: #23471d;
 }
 
 @property --c-line-strong {
   syntax: '<color>';
   inherits: true;
-  initial-value: #7f654e;
+  initial-value: #927760;
 }
 
 @property --c-brand {
   syntax: '<color>';
   inherits: true;
-  initial-value: #2e5428;
+  initial-value: #365c30;
 }
 
 @property --c-on-brand {
   syntax: '<color>';
   inherits: true;
-  initial-value: #f7e4d4;
+  initial-value: #feead9;
 }
 
 @property --c-fill {
   syntax: '<color>';
   inherits: true;
-  initial-value: #1d3d18;
+  initial-value: #22421d;
 }
 
 @property --c-on-fill {
   syntax: '<color>';
   inherits: true;
-  initial-value: #f7e4d4;
+  initial-value: #feead9;
 }
 
 @property --c-on-fill-muted {
   syntax: '<color>';
   inherits: true;
-  initial-value: #c8bbb0;
+  initial-value: #ccbfb4;
 }
 
 @property --c-fill-btn {
   syntax: '<color>';
   inherits: true;
-  initial-value: #f3dbc7;
+  initial-value: #feead9;
 }
 
 @property --c-on-fill-btn {
   syntax: '<color>';
   inherits: true;
-  initial-value: #1d3d18;
+  initial-value: #22421d;
 }
 
 @property --c-accent {
   syntax: '<color>';
   inherits: true;
-  initial-value: #d29661;
+  initial-value: #d79b66;
 }
 
 @property --c-on-accent {
@@ -124,43 +124,43 @@
 @property --c-accent-text {
   syntax: '<color>';
   inherits: true;
-  initial-value: #753c0a;
+  initial-value: #8e5327;
 }
 
 @property --c-shadow-1 {
   syntax: '<color>';
   inherits: true;
-  initial-value: rgb(46 34 20 / 0.08);
+  initial-value: rgb(46 34 20 / 0.09);
 }
 
 @property --c-shadow-2 {
   syntax: '<color>';
   inherits: true;
-  initial-value: rgb(46 34 20 / 0.12);
+  initial-value: rgb(46 34 20 / 0.14);
 }
 
 @property --c-shadow-3 {
   syntax: '<color>';
   inherits: true;
-  initial-value: rgb(46 34 20 / 0.14);
+  initial-value: rgb(46 34 20 / 0.16);
 }
 
 @property --c-fill-1 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #1d3d18;
+  initial-value: #22421d;
 }
 
 @property --c-fill-2 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #1d3d18;
+  initial-value: #22421d;
 }
 
 @property --c-fill-3 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #1d3d18;
+  initial-value: #22421d;
 }
 
 @property --c-fill-glow {
@@ -172,19 +172,19 @@
 @property --c-scroll-thumb {
   syntax: '<color>';
   inherits: true;
-  initial-value: #775e47;
+  initial-value: #876d57;
 }
 
 @property --c-scroll-track {
   syntax: '<color>';
   inherits: true;
-  initial-value: #d6b79d;
+  initial-value: #e8c8ac;
 }
 
 @property --c-spark-1 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #2e5428;
+  initial-value: #365c30;
 }
 
 @property --c-spark-2 {
@@ -196,37 +196,37 @@
 @property --c-spark-3 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #98c690;
+  initial-value: #9bc993;
 }
 
 @property --c-title-edge {
   syntax: '<color>';
   inherits: true;
-  initial-value: #2e5428;
+  initial-value: #365c30;
 }
 
 @property --c-title-mid {
   syntax: '<color>';
   inherits: true;
-  initial-value: #2e5428;
+  initial-value: #365c30;
 }
 
 @property --c-lava-1 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #f6dfcc;
+  initial-value: #fdede1;
 }
 
 @property --c-lava-2 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #e6e3cc;
+  initial-value: #f2f0d9;
 }
 
 @property --c-lava-3 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #f3d9c2;
+  initial-value: #fee4cd;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -250,64 +250,77 @@
 
 :root,
 [data-theme='light'] {
-  --c-bg: #e0bfa2;          /* Dry Creek — образец, фон страницы */
-  --c-surface: #f3dbc7;     /* прилавок: то, что лежит поверх фона */
-  --c-surface-2: #d6b79d;   /* утопленные плашки, дорожки, полки */
-  --c-text: #1a2518;        /* 9.19:1 на фоне, 11.93:1 на поверхности */
-  --c-muted: #414e3f;       /* 5.09:1 на фоне, 4.66:1 на утопленной */
-  --c-line: #c2a78f;        /* мягкая кромка между родственными плоскостями */
-  --c-line-strong: #7f654e; /* 3.13:1 на фоне */
+  /* Шкала светлот сдвинута на ступень вверх: прежний фон Dry Creek
+     #e0bfa2 на всю страницу читался плотно и тяжело. Теперь фоном
+     работает тон, который раньше был поверхностью, поверхность
+     поднялась ещё на ступень, а утопленная встала примерно туда,
+     где был фон. Тон при этом не выбелен: насыщенность по OKLCH
+     0.031–0.052 против 0.038–0.054 прежних — это тот же тёплый
+     бежевый лавки, а не белая бумага. */
+  --c-bg: #f4dbc5;          /* L 0.906 — прежняя поверхность */
+  --c-surface: #feead9;     /* L 0.949 — прилавок, ещё на ступень светлее */
+  --c-surface-2: #e8c8ac;   /* L 0.853 — утопленные плашки, дорожки, полки */
+  --c-text: #1a2518;        /* 11.94:1 на фоне, 13.61:1 на поверхности */
+  --c-muted: #4a5848;       /* 5.68 / 6.47 / 4.78:1 — мягче прежнего, светлее фон это позволяет */
+  --c-line: #dec0a5;        /* мягкая кромка между родственными плоскостями */
+  --c-line-strong: #927760; /* 3.14:1 на фоне */
   /* Полоса прокрутки — такие же токены, как всё остальное. Иначе
      её красит системная тема через color-scheme, и она меняет цвет
      мгновенно, пока страница перекрашивается 380 мс. */
-  --c-scroll-thumb: #775e47; /* 3.20:1 на дорожке полосы */
-  --c-scroll-track: #d6b79d;
+  --c-scroll-thumb: #876d57; /* 3.05:1 на дорожке полосы */
+  --c-scroll-track: #e8c8ac;
   /* Цвета сердцевины капли света в блоке шагов. Тут не нужен
      контраст с фоном: это не текст, а свет. Нужна разница МЕЖДУ
      ними — иначе перелива не увидеть. */
-  --c-spark-1: #2e5428;
+  --c-spark-1: #365c30;
   --c-spark-2: #d89354;
-  --c-spark-3: #98c690;
-  --c-brand: #2e5428;       /* зелень образца, углублённая до 5.03:1 на фоне */
-  --c-hover: #1b3f15;       /* та же зелень под курсором, на ступень глубже */
+  --c-spark-3: #9bc993;
+  /* Зелень образца, поднятая на три сотых светлоты вслед за фоном:
+     тон и насыщенность те же (H 141, C 0.082), но на палевом
+     основании прежняя глубина читалась чернильным пятном. */
+  --c-brand: #365c30;       /* 5.78:1 на фоне, 6.59 на поверхности */
+  --c-hover: #23471d;       /* та же зелень под курсором, на ступень глубже */
   /* Точки градиента названия. В светлой теме обе одного цвета:
      заголовок выглядит сплошным, но выводится тем же способом,
      что и в тёмной, — через обрезку фона по тексту. */
-  --c-title-edge: #2e5428;
-  --c-title-mid: #2e5428;
-  --c-on-brand: #f7e4d4;    /* 7.04:1 на зелёном */
+  --c-title-edge: #365c30;
+  --c-title-mid: #365c30;
+  --c-on-brand: #feead9;    /* 6.59:1 на зелёном */
   /* Заливка больших плоскостей — отдельный токен. Акцентный цвет
      годится для текста, но не для целого блока. */
-  --c-fill: #1d3d18;
+  --c-fill: #22421d;
   /* Точки градиента плашки. В светлой теме все три одного цвета,
      а свечение прозрачное: плашка остаётся ровной заливкой.
      Способ отрисовки при этом один и тот же в обеих темах,
      поэтому смена темы не подменяет слои, а только перекрашивает. */
-  --c-fill-1: #1d3d18;
-  --c-fill-2: #1d3d18;
-  --c-fill-3: #1d3d18;
+  --c-fill-1: #22421d;
+  --c-fill-2: #22421d;
+  --c-fill-3: #22421d;
   --c-fill-glow: rgb(0 0 0 / 0);
-  --c-on-fill: #f7e4d4;     /* 9.81:1 на заливке */
-  --c-on-fill-muted: #c8bbb0; /* 6.46:1 на заливке */
-  --c-fill-btn: #f3dbc7;
-  --c-on-fill-btn: #1d3d18; /* 9.10:1 */
-  --c-accent: #d29661;      /* тёплая охра из бежевого ряда: фон кнопки */
-  --c-on-accent: #1a2518;   /* 6.26:1 на охре */
-  --c-accent-text: #753c0a; /* охра, пригодная как текст: 5.04:1 на фоне */
+  --c-on-fill: #feead9;     /* 9.64:1 на заливке */
+  --c-on-fill-muted: #ccbfb4; /* 6.26:1 на заливке */
+  --c-fill-btn: #feead9;
+  --c-on-fill-btn: #22421d; /* 9.64:1 */
+  --c-accent: #d79b66;      /* охра, поднятая вслед за шкалой: фон кнопки */
+  --c-on-accent: #1a2518;   /* 6.64:1 на охре */
+  --c-accent-text: #8e5327; /* охра, пригодная как текст: 4.62:1 на фоне */
   /* Оттенки лавы в карточках преимуществ: соседние с поверхностью,
      чтобы движение читалось, а текст не терял контраст. */
-  --c-lava-1: #f6dfcc;
-  --c-lava-2: #e6e3cc;
-  --c-lava-3: #f3d9c2;
+  --c-lava-1: #fdede1;
+  --c-lava-2: #f2f0d9;
+  --c-lava-3: #fee4cd;
   /* Плотность пузырей. На светлом камне точки видны сами по себе,
      на сумеречной земле тот же цвет уходит в фон — множитель
      выравнивает их заметность, а не яркость. Это число, а не цвет:
      в переход между темами оно не входит и не должно. */
   --bubbles-ink: 1;
-  --c-shadow-1: rgb(46 34 20 / 0.08);  /* мягкая тень карточки */
-  --c-shadow-2: rgb(46 34 20 / 0.12);  /* подъём над фоном */
-  --c-shadow-3: rgb(46 34 20 / 0.14);  /* нижняя полоса заказа */
+  /* Тени чуть плотнее прежних: на палевом основании прежние
+     0.08/0.12/0.14 переставали читаться, и карточки теряли подъём. */
+  --c-shadow-1: rgb(46 34 20 / 0.09);  /* мягкая тень карточки */
+  --c-shadow-2: rgb(46 34 20 / 0.14);  /* подъём над фоном */
+  --c-shadow-3: rgb(46 34 20 / 0.16);  /* нижняя полоса заказа */
 }
+
 
 [data-theme='dark'] {
   /* Сумерки, а не ночь и не закатный градиент: тот же природный мир
