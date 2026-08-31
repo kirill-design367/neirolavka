@@ -26,17 +26,12 @@
  *   — цвета берутся из токенов палитры и едут вместе со сменой темы;
  *   — при prefers-reduced-motion модуль вообще не загружается.
  */
-import {
-  BufferAttribute,
-  BufferGeometry,
-  PerspectiveCamera,
-  Points,
-  Scene,
-  ShaderMaterial,
-  Vector3,
-  WebGLRenderer,
-} from 'three';
+import { makeGL, makeProgram, perspective, staticAttrib, viewAt } from './mini-gl';
 import gsap from 'gsap';
+
+/** Точка на плоскости. Три числа и два действия — больше не нужно. */
+type Vec = { x: number; y: number; z: number };
+const vec = (x = 0, y = 0, z = 0): Vec => ({ x, y, z });
 
 /** Угол обзора. От него зависит, на каком расстоянии единица мира равна пикселю. */
 const FOV = 45;
@@ -69,6 +64,11 @@ const readRgb = (css: string): [number, number, number] => {
 
 const vert = (count: number) => /* glsl */ `
   #define N ${count}
+
+  // Матрицы и позицию точки библиотека прежде объявляла сама.
+  uniform mat4 projectionMatrix;
+  uniform mat4 viewMatrix;
+  attribute vec3 position;
 
   uniform float uSizeScale;   // множитель gl_PointSize: dpr * расстояние камеры
   uniform float uCamZ;        // расстояние камеры, оно же глубина плоскости z = 0
@@ -242,25 +242,15 @@ type Bubble = {
 type Rect = { top: number; bottom: number; left: number; right: number };
 
 export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void) | null {
-  let renderer: WebGLRenderer;
-  try {
-    renderer = new WebGLRenderer({
-      canvas,
-      alpha: true,
-      antialias: false,
-      powerPreference: 'low-power',
-    });
-  } catch {
-    return null; // WebGL нет — просто ничего не показываем
-  }
-  if (!renderer.getContext()) return null;
+  const gl = makeGL(canvas);
+  if (!gl) return null; // WebGL нет — просто ничего не показываем
 
   const phone = window.matchMedia('(max-width: 640px)').matches;
   const COUNT = phone ? 10 : 15;
 
-  const scene = new Scene();
-  const camera = new PerspectiveCamera(FOV, 1, 1, 4000);
   const tanHalf = Math.tan((FOV / 2) * (Math.PI / 180));
+  let proj = perspective(FOV, 1, 1, 4000);
+  let view = viewAt(1);
 
   let w = 1;
   let h = 1;
@@ -345,50 +335,52 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     }
   });
 
-  const geo = new BufferGeometry();
-  geo.setAttribute('position', new BufferAttribute(pos, 3));
-  geo.setAttribute('aVel', new BufferAttribute(vel, 3));
-  geo.setAttribute('aSize', new BufferAttribute(size, 1));
-  geo.setAttribute('aTint', new BufferAttribute(tint, 1));
-  geo.setAttribute('aPhase', new BufferAttribute(phase, 1));
-  geo.setAttribute('aBubble', new BufferAttribute(who, 1));
+  const program = makeProgram(gl, vert(COUNT), FRAG);
+  if (!program) return null;
+  gl.useProgram(program);
 
-  const posArr: number[] = new Array(COUNT * 4).fill(0);
-  const rotArr: number[] = new Array(COUNT * 4).fill(0);
+  const buffers = [
+    staticAttrib(gl, program, 'position', pos, 3),
+    staticAttrib(gl, program, 'aVel', vel, 3),
+    staticAttrib(gl, program, 'aSize', size, 1),
+    staticAttrib(gl, program, 'aTint', tint, 1),
+    staticAttrib(gl, program, 'aPhase', phase, 1),
+    staticAttrib(gl, program, 'aBubble', who, 1),
+  ];
 
-  const mat = new ShaderMaterial({
-    vertexShader: vert(COUNT),
-    fragmentShader: FRAG,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
-    uniforms: {
-      uSizeScale: { value: 1 },
-      uCamZ: { value: 1 },
-      uPointer: { value: new Vector3(1e5, 1e5, 0) },
-      uPress: { value: 0 },
-      uTime: { value: 0 },
-      uInk: { value: 1 },
-      uColorA: { value: new Vector3() },
-      uColorB: { value: new Vector3() },
-      uColorC: { value: new Vector3() },
-      uPos: { value: posArr },
-      uRot: { value: rotArr },
-    },
-  });
+  const U = (name: string) => gl.getUniformLocation(program, name);
+  const uSizeScale = U('uSizeScale');
+  const uCamZ = U('uCamZ');
+  const uPointerU = U('uPointer');
+  const uPress = U('uPress');
+  const uTime = U('uTime');
+  const uInk = U('uInk');
+  const uColorA = U('uColorA');
+  const uColorB = U('uColorB');
+  const uColorC = U('uColorC');
+  const uPosU = U('uPos[0]');
+  const uRotU = U('uRot[0]');
+  const uProj = U('projectionMatrix');
+  const uView = U('viewMatrix');
 
-  const cloud = new Points(geo, mat);
-  cloud.frustumCulled = false;
-  scene.add(cloud);
+  // Точки полупрозрачны и лежат друг за другом: глубина не нужна,
+  // смешивание — обычное «поверх».
+  gl.disable(gl.DEPTH_TEST);
+  gl.enable(gl.BLEND);
+  gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+  const posArr = new Float32Array(COUNT * 4);
+  const rotArr = new Float32Array(COUNT * 4);
 
   // ─── Цвета из токенов ───────────────────────────────────────
   const readColors = () => {
     const cs = getComputedStyle(document.documentElement);
-    mat.uniforms.uInk.value = parseFloat(cs.getPropertyValue('--bubbles-ink')) || 1;
+    gl.useProgram(program);
+    gl.uniform1f(uInk, parseFloat(cs.getPropertyValue('--bubbles-ink')) || 1);
     const c = TOKENS.map((t) => readRgb(cs.getPropertyValue(t)));
-    mat.uniforms.uColorA.value.set(...c[0]);
-    mat.uniforms.uColorB.value.set(...c[1]);
-    mat.uniforms.uColorC.value.set(...c[2]);
+    gl.uniform3fv(uColorA, c[0]);
+    gl.uniform3fv(uColorB, c[1]);
+    gl.uniform3fv(uColorC, c[2]);
   };
 
   /** Число целых пузырей — единственная наружная примета состояния:
@@ -470,11 +462,14 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     // ровно один css-пиксель. Тогда радиусы и размеры точек задаются
     // в пикселях и не зависят от размера окна.
     camZ = h / 2 / tanHalf;
-    camera.aspect = w / h;
-    camera.position.z = camZ;
-    camera.updateProjectionMatrix();
-    renderer.setPixelRatio(dpr);
-    renderer.setSize(w, h, false);
+    proj = perspective(FOV, w / h, 1, 4000);
+    view = viewAt(camZ);
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.useProgram(program);
+    gl.uniformMatrix4fv(uProj, false, proj);
+    gl.uniformMatrix4fv(uView, false, view);
     measureBand();
     // Видимая часть холста в мировых координатах. По ширине он теперь
     // ровно от кромки окна до правого края колонки, а вот по высоте
@@ -486,8 +481,8 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
       ymin: h / 2 - Math.min(h, vh - hb.top),
       ymax: h / 2 - Math.max(0, -hb.top),
     };
-    mat.uniforms.uSizeScale.value = dpr * camZ;
-    mat.uniforms.uCamZ.value = camZ;
+    gl.uniform1f(uSizeScale, dpr * camZ);
+    gl.uniform1f(uCamZ, camZ);
     for (const b of bubbles) {
       b.x = Math.max(vis.xmin + b.r * EDGE, Math.min(vis.xmax - b.r * EDGE, b.x));
       b.y = Math.max(vis.ymin + b.r * EDGE, Math.min(vis.ymax - b.r * EDGE, b.y));
@@ -522,8 +517,8 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   // `pointerSoft` — сглаженный, и только для сдвига пузыря ЦЕЛИКОМ.
   // Эту силу дёргать нельзя: пузырь, скачками уезжающий от курсора,
   // невозможно поймать.
-  const pointer = new Vector3(1e5, 1e5, 0);
-  const pointerSoft = new Vector3(1e5, 1e5, 0);
+  const pointer = vec(1e5, 1e5, 0);
+  const pointerSoft = vec(1e5, 1e5, 0);
   let press = 0;
   let pressTo = 0;
   /** Экспоненциальное приближение с постоянной времени в секундах. */
@@ -558,8 +553,8 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   const onMove = (e: PointerEvent) => {
     if (!inField(e)) { onLeave(); return; }
     const { x, y } = toWorld(e);
-    pointer.set(x, y, 0);
-    if (pointerSoft.x > 5e4) pointerSoft.copy(pointer);
+    pointer.x = x; pointer.y = y;
+    if (pointerSoft.x > 5e4) { pointerSoft.x = pointer.x; pointerSoft.y = pointer.y; }
     pressTo = 1;
     // Курсор меняем только над собственным фоном секции: над текстом
     // и ссылками свой курсор, и подменять его нечем и незачем.
@@ -581,8 +576,8 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     const { x, y } = toWorld(e);
     // На касании курсора нет, поэтому реакцию оболочки запускает само
     // касание: палец ведут — пузыри проминаются, как под мышью.
-    pointer.set(x, y, 0);
-    if (pointerSoft.x > 5e4) pointerSoft.copy(pointer);
+    pointer.x = x; pointer.y = y;
+    if (pointerSoft.x > 5e4) { pointerSoft.x = pointer.x; pointerSoft.y = pointer.y; }
     pressTo = 1;
     const hit = hitTest(x, y);
     if (!hit) return;
@@ -639,12 +634,13 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     }
     // Отпустили и разгладилось — курсор уходит с поля.
     if (pressTo === 0 && press < 0.002) {
-      pointer.set(1e5, 1e5, 0);
-      pointerSoft.set(1e5, 1e5, 0);
+      pointer.x = 1e5; pointer.y = 1e5;
+      pointerSoft.x = 1e5; pointerSoft.y = 1e5;
     }
-    mat.uniforms.uTime.value = t / 1000;
-    mat.uniforms.uPointer.value.copy(pointer);
-    mat.uniforms.uPress.value = press;
+    gl.useProgram(program);
+    gl.uniform1f(uTime, t / 1000);
+    gl.uniform3f(uPointerU, pointer.x, pointer.y, pointer.z);
+    gl.uniform1f(uPress, press);
 
     for (let i = 0; i < bubbles.length; i++) {
       const b = bubbles[i];
@@ -766,7 +762,11 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     }
     publish();
 
-    renderer.render(scene, camera);
+    gl.uniform4fv(uPosU, posArr);
+    gl.uniform4fv(uRotU, rotArr);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.POINTS, 0, total);
   };
 
   gsap.ticker.add(step);
@@ -793,9 +793,9 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     io.disconnect();
     mo.disconnect();
     host.style.cursor = '';
-    geo.dispose();
-    mat.dispose();
-    scene.clear();
-    renderer.dispose();
+    for (const b of buffers) if (b) gl.deleteBuffer(b);
+    gl.deleteProgram(program);
+    const lose = gl.getExtension('WEBGL_lose_context');
+    lose?.loseContext();
   };
 }
