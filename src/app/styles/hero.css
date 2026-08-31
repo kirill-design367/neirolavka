@@ -1,8 +1,24 @@
 /* Первый экран и условия лавки. */
 
 .hero {
+  position: relative;
+  isolation: isolate;
   padding-top: var(--sp-7);
   padding-bottom: var(--sp-6);
+}
+
+/* Пузыри. Слой лежит под всем содержимым первого экрана и не ловит
+   мышь: иначе он перекрыл бы ссылки и кнопки. Попадание по пузырю
+   ищется вручную по координатам — см. src/components/Bubbles.tsx.
+
+   isolation на .hero нужен, чтобы z-index -1 не провалился под фон
+   страницы: слой должен лежать над фоном, но под текстом. */
+.bubbles {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: block;
+  pointer-events: none;
 }
 
 /* Надзаголовок в плашке, которая парит над фоном.
