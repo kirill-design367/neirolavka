@@ -217,7 +217,7 @@
 }
 
 .tariff:hover {
-  border-color: var(--c-line-strong);
+  border-color: var(--c-hover);
 }
 
 .tariff--active {
