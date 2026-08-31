@@ -22,7 +22,14 @@ const cdp = await ctx.newCDPSession(page);
 if (SLOWDOWN > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: SLOWDOWN });
 
 await page.goto(URL, { waitUntil: 'networkidle' });
-await page.waitForTimeout(700);
+// Прогрев. Тяжёлое украшение первого экрана грузится по первому
+// действию человека, и без прогрева его разбор попадает в замер
+// прокрутки одним длинным кадром: на замедленном процессоре это
+// было 316 мс и 18 % просевших кадров вместо трёх. Мерить надо
+// установившуюся прокрутку, а цену загрузки — отдельно.
+await page.mouse.move(300, 200);
+await page.mouse.move(304, 204);
+await page.waitForTimeout(3500);
 
 await page.evaluate(() => {
   window.__frames = [];
