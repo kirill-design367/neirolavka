@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { THEME_STORAGE_KEY, THEME_TRANSITION_MS, type Theme } from '@/lib/theme';
+import { THEME_BAR, THEME_STORAGE_KEY, THEME_TRANSITION_MS, type Theme } from '@/lib/theme';
 
 /**
  * Переключатель темы.
@@ -27,6 +27,8 @@ export function ThemeToggle() {
     root.classList.add('theme-transition');
     root.dataset.theme = next;
     root.style.colorScheme = next;
+    // Строка браузера идёт за темой сайта, а не за системной.
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_BAR[next]);
     try {
       localStorage.setItem(THEME_STORAGE_KEY, next);
     } catch {

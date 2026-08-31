@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { akt, golos } from '@/lib/fonts';
-import { themeInitScript } from '@/lib/theme';
+import { THEME_BAR, themeInitScript } from '@/lib/theme';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -20,12 +20,15 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  // Цвет строки браузера совпадает с фоном темы, чтобы на телефоне
-  // не было светлой полосы над тёмной страницей.
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f4dbc5' },
-    { media: '(prefers-color-scheme: dark)', color: '#0c2223' },
-  ],
+  // Цвет строки браузера — ОДИН, под тему по умолчанию. Дальше его
+  // ведёт сама страница: блокирующий скрипт ставит цвет сохранённой
+  // темы до первой отрисовки, переключатель меняет вместе с темой.
+  //
+  // Media-запроса здесь быть не должно. Пока он стоял, на телефоне
+  // с тёмной системой строка браузера уходила в тёмный над светлой
+  // страницей, и сайт читался открывшимся тёмным. Системная тема
+  // на этом сайте не учитывается вовсе.
+  themeColor: THEME_BAR.light,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
