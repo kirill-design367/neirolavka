@@ -150,7 +150,11 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
     await tap(page, page.locator('.pcard').nth(1).locator('.pcard__face'));
     await page.waitForTimeout(900);
     const open = await page.evaluate(() => [...document.querySelectorAll('.pcard')]
-      .map((c) => !c.querySelector('.pcard__plans').hidden));
+      // Признак раскрытой створки — отсутствие inert, а не hidden:
+      // hidden выключает отрисовку, и створку с ним нельзя закрыть
+      // плавно. inert так же изымает содержимое из обхода и нажатий,
+      // но позволяет анимировать высоту.
+      .map((c) => !c.querySelector('.pcard__plans').hasAttribute('inert')));
     if (open.filter(Boolean).length === 1 && open[1]) ok('раскрыта ровно одна карточка — та, по которой нажали');
     else no(`раскрыто карточек: ${JSON.stringify(open)}`);
 
@@ -296,7 +300,7 @@ for (const [w, h, phone] of [[1512, 900, false], [390, 844, true]]) {
     const wid = cards.map((c) => Math.round(c.getBoundingClientRect().width));
     return {
       d3: document.querySelector('.shelf3d').hasAttribute('data-3d'),
-      open: cards.map((c) => !c.querySelector('.pcard__plans').hidden),
+      open: cards.map((c) => !c.querySelector('.pcard__plans').hasAttribute('inert')),
       active: cards.findIndex((c) => c.classList.contains('pcard--active')),
       // Плоская вёрстка выдаёт себя одинаковой шириной всех трёх
       // карточек: в сцене они на разной глубине и равными быть не могут.

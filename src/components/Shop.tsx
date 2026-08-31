@@ -59,34 +59,43 @@ function Card({
         <span className="pcard__name">{product.name}</span>
         <span className="pcard__tag">{product.tagline}</span>
         <span className="pcard__note">{product.note}</span>
-        {!active && (
-          <span className="pcard__from">
-            от <span className="tnum">{formatPrice(from)}</span>
+        {/* «от N ₽» и тарифы — две створки одного шкафа: одна
+            закрывается, вторая открывается. Обе ВСЕГДА в разметке
+            и обе сворачиваются высотой, а не пропадают: раскрытие
+            в один кадр читалось багом. */}
+        <span className="pcard__fold">
+          <span className="pcard__foldin">
+            <span className="pcard__from">
+              от <span className="tnum">{formatPrice(from)}</span>
+            </span>
           </span>
-        )}
+        </span>
       </button>
 
-      {/* Тарифы раскрыты только у выбранной карточки. У свёрнутых они
-          не просто спрятаны, а изъяты из обхода: иначе табуляция
-          уходила бы в невидимые кнопки. */}
-      <div className="pcard__plans" hidden={!active}>
-        {product.plans.map((plan) => (
-          <button
-            key={plan.id}
-            type="button"
-            className={`tariff${planId === plan.id ? ' tariff--active' : ''}`}
-            onClick={() => choosePlan(plan.id)}
-            aria-pressed={planId === plan.id}
-          >
-            <span className="tariff__short">{plan.short}</span>
-            <span className="tariff__note">{plan.note}</span>
-            <span className="tariff__price tnum">{formatPrice(plan.priceRub)}</span>
-            <span className="tariff__mark" aria-hidden="true" />
-          </button>
-        ))}
-        {product.plans.length === 1 && (
-          <p className="pcard__single">Годового тарифа у этого продукта нет.</p>
-        )}
+      {/* Тарифы свёрнутой карточки изъяты из обхода через inert:
+          он, в отличие от hidden, не выключает отрисовку, а значит
+          створку можно закрыть плавно. Заодно inert снимает
+          и нажатия, и фокус, и озвучивание. */}
+      <div className="pcard__plans" inert={!active} aria-hidden={!active}>
+        <div className="pcard__plansin">
+          {product.plans.map((plan) => (
+            <button
+              key={plan.id}
+              type="button"
+              className={`tariff${planId === plan.id ? ' tariff--active' : ''}`}
+              onClick={() => choosePlan(plan.id)}
+              aria-pressed={planId === plan.id}
+            >
+              <span className="tariff__short">{plan.short}</span>
+              <span className="tariff__note">{plan.note}</span>
+              <span className="tariff__price tnum">{formatPrice(plan.priceRub)}</span>
+              <span className="tariff__mark" aria-hidden="true" />
+            </button>
+          ))}
+          {product.plans.length === 1 && (
+            <p className="pcard__single">Годового тарифа у этого продукта нет.</p>
+          )}
+        </div>
       </div>
     </article>
   );

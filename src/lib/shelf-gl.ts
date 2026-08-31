@@ -88,6 +88,17 @@ const readRgb = (css: string): [number, number, number] => {
 type Target = { x: number; y: number; z: number; ry: number; s: number; o: number; lift: number };
 
 type Slot = {
+  /** Створки и их содержимое: по обёртке — текущая высота,
+   *  по содержимому — натуральная. */
+  plansEl: HTMLElement | null;
+  foldEl: HTMLElement | null;
+  plansIn: HTMLElement | null;
+  foldIn: HTMLElement | null;
+  /** Высота без створок: считается только в покое. */
+  base: number;
+  /** Куда высота приедет: со створкой тарифов и со створкой «от N ₽». */
+  hOpen: number;
+  hShut: number;
   el: HTMLElement;
   group: Group;
   shadow: Mesh;
@@ -174,6 +185,13 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
       group,
       shadow,
       mat,
+      plansEl: el.querySelector('.pcard__plans'),
+      foldEl: el.querySelector('.pcard__fold'),
+      plansIn: el.querySelector('.pcard__plansin'),
+      foldIn: el.querySelector('.pcard__foldin'),
+      base: 0,
+      hOpen: 0,
+      hShut: 0,
       now: { x: 0, y: 0, z: 0, ry: 0, s: 1, o: 1, lift: 0 },
       w: 300,
       h: 380,
@@ -218,11 +236,14 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
       // Смещение считается по НАКОПЛЕННЫМ высотам, а не по своей:
       // раскрытая карточка выше свёрнутых, и от равного шага соседи
       // наезжали бы друг на друга.
+      // Высоты берутся ЦЕЛЕВЫЕ, а не текущие: створки едут вместе
+      // с карточками, и если считать стопку по едущим высотам, цель
+      // твина смещается каждый кадр и он перестаёт сходиться.
       let above = 0;
-      for (let j = 0; j < i; j++) above += slots[j].h + 26;
+      for (let j = 0; j < i; j++) above += targetH(j) + 26;
       let all = -26;
-      for (const s of slots) all += s.h + 26;
-      const y = all / 2 - above - slots[i].h / 2;
+      for (let j = 0; j < slots.length; j++) all += targetH(j) + 26;
+      const y = all / 2 - above - targetH(i) / 2;
       return {
         x: 0,
         y,
@@ -322,24 +343,22 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
       gsap.to(s.now, {
         ...to,
         duration: 0.95,
-        // power2, а не power3. У «power3.out» скорость в начале втрое
-        // выше средней: первые кадры перехода дают по семьдесят
-        // пикселей на карточку, и начало читается рывком, а не
-        // разгоном. У power2 пик вдвое — переход остаётся коротким,
-        // но трогается мягко.
-        ease: 'power2.out',
+        // inOut, а не out. У «out» скорость максимальна в первый же
+        // кадр, и если браузер этот кадр пропустил — а сразу после
+        // нажатия он его пропускает, там перерисовка карточек, —
+        // движение начинается сразу с середины разгона и читается
+        // рывком. У inOut начальная скорость нулевая, и пропущенный
+        // кадр стоит единиц пикселей. Тот же ход, что у створок,
+        // поэтому высота и положение едут в одном характере.
+        ease: 'power2.inOut',
         overwrite: 'auto',
-        delay: i === (hover >= 0 ? hover : active) ? 0 : 0.05,
+        delay: i === (hover >= 0 ? hover : active) ? 0 : 0.03,
       });
     });
   };
 
-  const measure = () => {
-    for (const s of slots) {
-      s.w = Math.max(80, s.el.offsetWidth);
-      s.h = Math.max(80, s.el.offsetHeight);
-      s.mat.uniforms.uRadius.value = Math.min(s.w, s.h) * 0.22;
-    }
+  /** Высота контейнера по ТЕКУЩИМ высотам карточек. */
+  const layoutHeight = () => {
     // Высоту сцены задаёт содержимое: карточки вынуты из потока,
     // и сам по себе контейнер схлопнулся бы в ноль. Пишем только
     // при заметном изменении — иначе ResizeObserver зациклится.
@@ -354,6 +373,33 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
       root.style.height = `${need}px`;
     }
   };
+
+  const measure = () => {
+    for (const s of slots) {
+      s.w = Math.max(80, s.el.offsetWidth);
+      s.h = Math.max(80, s.el.offsetHeight);
+      s.mat.uniforms.uRadius.value = Math.min(s.w, s.h) * 0.22;
+
+      // Высоты створок берутся у их СОДЕРЖИМОГО через scrollHeight —
+      // оно не зависит от того, свёрнута створка сейчас или нет.
+      const plansH = s.plansIn?.scrollHeight ?? 0;
+      const foldH = s.foldIn?.scrollHeight ?? 0;
+      // Базовая высота — всё, кроме створок. Считается вычитанием
+      // ТЕКУЩИХ, анимируемых высот створок, а не натуральных: так
+      // формула верна в любой момент, в том числе посреди перехода.
+      // Считать по натуральным можно было бы только в покое, а measure()
+      // зовут как раз в момент смены выбора, когда створки уже поехали.
+      const usedPlans = s.plansEl?.offsetHeight ?? 0;
+      const usedFold = s.foldEl?.offsetHeight ?? 0;
+      s.base = Math.max(40, s.h - usedPlans - usedFold);
+      s.hOpen = s.base + plansH;
+      s.hShut = s.base + foldH;
+    }
+    layoutHeight();
+  };
+
+  /** Высота, к которой карточка приедет при заданном выборе. */
+  const targetH = (i: number) => (i === active ? slots[i].hOpen : slots[i].hShut);
 
   const resize = () => {
     const r = root.getBoundingClientRect();
@@ -440,6 +486,20 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
     if (busy) touch(120);
     if (t > dirtyUntil) return;
 
+    // Створки карточек едут своим ходом — их анимирует CSS. Сцена
+    // не задаёт им высоту и не пересчитывает от неё раскладку: она
+    // просто СЧИТЫВАЕТ высоту каждый кадр, пока что-то едет. Тень
+    // и высота контейнера следуют за карточкой точно, а твин никто
+    // не перенацеливает — именно из-за перенацеливания в прошлый раз
+    // от анимации высоты пришлось отказаться.
+    //
+    // Чтение идёт ДО записи трансформаций: иначе браузер считает
+    // раскладку дважды за кадр.
+    if (busy) {
+      for (const s of slots) s.h = Math.max(80, s.el.offsetHeight);
+      layoutHeight();
+    }
+
     for (const s of slots) {
       const n = s.now;
       // Карточка и её тень — один и тот же граф сцены. Матрица для CSS
@@ -481,9 +541,16 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
   resize();
   gsap.ticker.add(step);
 
-  const ro = new ResizeObserver(() => resize());
+  // Наблюдатель следит только за КОНТЕЙНЕРОМ и только за шириной.
+  // За карточками он больше не следит: их высота меняется по нашему же
+  // сценарию, и пересчёт сцены на каждый кадр створки — ровно то,
+  // что разваливало твин.
+  const ro = new ResizeObserver(() => {
+    const rw = Math.round(root.getBoundingClientRect().width);
+    if (rw === w && moving()) return;
+    resize();
+  });
   ro.observe(root);
-  for (const c of cards) ro.observe(c);
 
   const onLost = (e: Event) => {
     e.preventDefault();

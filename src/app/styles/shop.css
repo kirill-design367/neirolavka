@@ -51,7 +51,11 @@
 .pcard {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
+  /* Промежутка между лицом карточки и тарифами здесь нет: он живёт
+     внутри створки (padding-top у .pcard__plansin). Иначе свёрнутая
+     створка нулевой высоты всё равно съедала бы один gap, и у закрытой
+     карточки внизу оставался пустой пояс. */
+  gap: 0;
   padding: var(--sp-5);
   border-radius: var(--r-lg);
   background: var(--c-surface);
@@ -99,14 +103,65 @@
 }
 
 .pcard__from {
-  margin-top: var(--sp-2);
   font-size: var(--t-label);
   color: var(--c-muted);
 }
 
+/* ─── Створки ──────────────────────────────────────────────────
+   У карточки две створки, и они противоположны: «от N ₽» открыта,
+   пока карточка свёрнута, тарифы — пока раскрыта. Обе всегда
+   в разметке и меняют ВЫСОТУ, а не наличие: пропажа в один кадр
+   давала скачок в 174 px посреди перехода и читалась поломкой.
+
+   Механика — grid-template-rows от 0fr к 1fr с overflow: hidden
+   внутри. Это единственный способ анимировать высоту содержимого,
+   не зная её заранее.
+
+   Задержки разные и это главное в раскладке по времени. Закрывается
+   створка СРАЗУ — карточка сворачивается по ходу движения из середины.
+   Открывается с задержкой 0.35 с — к концу движения, когда карточка
+   уже почти на месте. Так это читается одним действием, а не двумя. */
+.pcard__fold {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.55s var(--ease-inout) 0.35s;
+}
+
+.pcard--active .pcard__fold {
+  grid-template-rows: 0fr;
+  transition-delay: 0s;
+}
+
+.pcard__foldin {
+  overflow: hidden;
+  padding-top: var(--sp-2);
+}
+
 .pcard__plans {
   display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.55s var(--ease-inout);
+}
+
+.pcard--active .pcard__plans {
+  grid-template-rows: 1fr;
+  transition-delay: 0.35s;
+}
+
+.pcard__plansin {
+  display: grid;
   gap: var(--sp-3);
+  /* Промежуток до лица карточки — внутри створки, чтобы свёрнутая
+     не занимала ничего вовсе. */
+  padding-top: var(--sp-4);
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pcard__fold,
+  .pcard__plans {
+    transition: none;
+  }
 }
 
 .pcard__single {
