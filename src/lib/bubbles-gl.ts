@@ -457,6 +457,10 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     canvas.style.left = `${-Math.round(hb.left)}px`;
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
+    // Геометрия задана — можно показывать. До этого момента холст
+    // скрыт, иначе его переезд из 300×150 в углу засчитывается
+    // сдвигом вёрстки.
+    canvas.style.visibility = 'visible';
     dpr = Math.min(1, window.devicePixelRatio || 1); // ПРОБА dpr 1
     // Камера отодвинута так, что на плоскости z = 0 единица мира —
     // ровно один css-пиксель. Тогда радиусы и размеры точек задаются
