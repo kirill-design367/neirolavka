@@ -294,11 +294,23 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
     return giveWay(side);
   };
 
+  /** Едет ли сейчас хоть одна карточка. */
+  const moving = () => slots.some((s) => gsap.isTweening(s.now));
+
   const apply = (instant = false) => {
+    // Мгновенная установка допустима ТОЛЬКО когда ничего не едет.
+    //
+    // Иначе выходит вот что: нажатие раскрывает тарифы, карточка
+    // становится выше, ResizeObserver зовёт resize(), тот ставит
+    // положения мгновенно — и переход, который в этот момент идёт,
+    // обрывается на первом же кадре. Человек видит рывок в сторону
+    // и застывшую витрину. Пока что-то едет, новая цель не ставится
+    // скачком, а перенацеливает уже идущий твин.
+    const jump = instant && !moving();
     slots.forEach((s, i) => {
       const t = targetOf(i);
       const to = { x: t.x, y: t.y, z: t.z, ry: t.ry, s: t.s, o: t.o, lift: t.lift };
-      if (instant) {
+      if (jump) {
         Object.assign(s.now, to);
         touch(200);
         return;
@@ -309,8 +321,13 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
       touch();
       gsap.to(s.now, {
         ...to,
-        duration: 0.9,
-        ease: 'power3.out',
+        duration: 0.95,
+        // power2, а не power3. У «power3.out» скорость в начале втрое
+        // выше средней: первые кадры перехода дают по семьдесят
+        // пикселей на карточку, и начало читается рывком, а не
+        // разгоном. У power2 пик вдвое — переход остаётся коротким,
+        // но трогается мягко.
+        ease: 'power2.out',
         overwrite: 'auto',
         delay: i === (hover >= 0 ? hover : active) ? 0 : 0.05,
       });
@@ -343,9 +360,14 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
     w = Math.max(1, Math.round(r.width));
     h = Math.max(1, Math.round(r.height));
     phone = window.matchMedia('(max-width: 767px)').matches;
-    // Плотность 1: тень размыта по построению, и удвоение точек
-    // ей ничего не добавляет, а стоит вчетверо.
-    const dpr = 1;
+    // Плотность 0.6, а не 1. Тень размыта по построению: лишние точки
+    // ей ничего не добавляют, а стоят ровно квадрату плотности. После
+    // того как сцена перестала засыпать посреди перехода, отрисовка
+    // теней пошла каждый кадр анимации, и на программном растеризаторе
+    // это давало 29–31 % кадров дольше 17 мс. Понижение плотности
+    // до 0.6 — это втрое меньше смешиваемых точек; на глаз у мягкого
+    // пятна разницы нет.
+    const dpr = 0.6;
     camZ = h / 2 / tanHalf;
     camera.aspect = w / h;
     camera.position.set(0, 0, camZ);
@@ -385,7 +407,14 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
   // пока что-то едет: после каждого изменения открывается окно чуть
   // длиннее самой анимации, и по его истечении сцена замирает.
   let dirtyUntil = 0;
-  const touch = (ms = 1300) => { dirtyUntil = gsap.ticker.time * 1000 + ms; };
+  // Окно ПРОДЛЕВАЕТСЯ, а не переписывается. Прежде здесь стояло
+  // присваивание, и короткий touch(200) от ResizeObserver обрубал
+  // окно, открытое на всю длину перехода: сцена засыпала посреди
+  // анимации, карточки застывали на полпути, а следующее действие
+  // одним кадром доставляло их в конечное положение.
+  const touch = (ms = 1300) => {
+    dirtyUntil = Math.max(dirtyUntil, gsap.ticker.time * 1000 + ms);
+  };
 
   let visible = true;
   const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { rootMargin: '120px' });
@@ -404,6 +433,11 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
       touch(200);
     }
     frames++;
+    // Спим только когда движения нет ВОВСЕ. Наличие движения берётся
+    // у самого GSAP, а не у таймера: окно фиксированной длины уже
+    // однажды закрылось раньше, чем доиграла анимация.
+    const busy = moving();
+    if (busy) touch(120);
     if (t > dirtyUntil) return;
 
     for (const s of slots) {
@@ -434,7 +468,13 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
       s.mat.uniforms.uRadius.value = Math.min(sw, sh) * 0.24;
     }
 
-    renderer.render(scene, camera);
+    // Карточки получают матрицу КАЖДЫЙ кадр — за ними следит глаз.
+    // Тени во время движения обновляются через кадр: это мягкие пятна
+    // под предметом, и половинная частота на них не читается, а стоят
+    // они дороже всего остального вместе взятого. Как только движение
+    // кончилось, последний кадр теней рисуется обязательно, иначе
+    // пятно осталось бы на полпути.
+    if (!busy || (frames & 1) === 0) renderer.render(scene, camera);
   };
 
   readColors();
