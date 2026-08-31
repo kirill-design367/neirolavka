@@ -6,7 +6,8 @@
  * достаточно заменить тело getCatalog() на запрос к API — типы и все
  * вызывающие компоненты остаются нетронутыми.
  *
- * Цены временные: везде 1 ₽ до появления настоящего прайса.
+ * Цены неполные: месяц стоит 1990 ₽, а всё, чего в прайсе ещё нет,
+ * стоит 1 ₽ — так по всему проекту помечено «цены пока нет».
  */
 
 /** Способ оплаты. Сайт его не обрабатывает — значение уезжает в бот. */
@@ -16,42 +17,31 @@ export type PaymentMethod = {
   caption: string;
 };
 
-/** Один тариф: либо срок подписки, либо пакет токенов. */
+/** Один тариф — срок подписки. */
 export type Plan = {
   id: string;
-  /** Короткая подпись на кнопке тарифа: «3 месяца», «5 млн токенов». */
+  /** Короткая подпись на кнопке тарифа: «1 месяц», «1 год». */
   short: string;
-  /** Полное название для панели заказа: «Claude Pro, 3 месяца». */
+  /** Полное название для панели заказа: «Claude Pro, 1 год». */
   title: string;
   /** Строка под названием: что именно человек получает. */
   note: string;
-  /** Цена в рублях. Временно 1 у всех тарифов. */
+  /** Цена в рублях. Там, где прайса ещё нет, стоит 1. */
   priceRub: number;
-  /** Отметка на карточке: «выгоднее всего» и подобное. */
-  badge?: string;
-  /** Срок подписки в месяцах. У пакетов токенов срока нет. */
-  months?: number;
-};
-
-export type PlanGroup = {
-  id: 'months' | 'tokens';
-  title: string;
-  caption: string;
-  plans: Plan[];
+  /** Срок подписки в месяцах. */
+  months: number;
 };
 
 export type Product = {
-  id: 'claude' | 'chatgpt';
-  /** Имя нейросети. Латиница здесь допустима: это имя бренда. */
+  id: 'claude' | 'chatgpt' | 'seedance';
+  /** Имя продукта. Латиница здесь допустима: это имя бренда. */
   name: string;
-  /** Название тарифного плана вендора. */
-  plan: string;
   /** Одна строка о том, что это и кому. */
   tagline: string;
-  status: 'available' | 'soon';
-  /** Подпись у недоступного продукта. */
-  soonNote?: string;
-  groups: PlanGroup[];
+  /** Что человек получает — одной строкой на карточке. */
+  note: string;
+  /** Тарифы. У Seedance годового нет вообще, и выдумывать его нельзя. */
+  plans: Plan[];
 };
 
 /** Отзыв. Пока это примеры оформления: настоящие приедут из бота. */
@@ -79,147 +69,33 @@ export type Catalog = {
   reviewsArePlaceholders: boolean;
 };
 
-const PRICE = 1;
+/** Цена, которой ещё нет. По всему проекту такие стоят рублём. */
+const NET_CENY = 1;
+const MESYAC = 1990;
 
-const claudeMonths: Plan[] = [
-  {
-    id: 'claude-pro-1m',
-    short: '1 месяц',
-    title: 'Claude Pro, 1 месяц',
-    note: 'Полный доступ к Sonnet и Opus, проекты, загрузка файлов',
-    priceRub: PRICE,
-    months: 1,
-  },
-  {
-    id: 'claude-pro-3m',
-    short: '3 месяца',
-    title: 'Claude Pro, 3 месяца',
-    note: 'То же самое, но продлевать втрое реже',
-    priceRub: PRICE,
-    months: 3,
-  },
-  {
-    id: 'claude-pro-6m',
-    short: '6 месяцев',
-    title: 'Claude Pro, 6 месяцев',
-    note: 'Полгода без продлений',
-    priceRub: PRICE,
-    months: 6,
-    badge: 'берут чаще всего',
-  },
-  {
-    id: 'claude-pro-12m',
-    short: '12 месяцев',
-    title: 'Claude Pro, 12 месяцев',
-    note: 'Год доступа, самая низкая цена месяца',
-    priceRub: PRICE,
-    months: 12,
-    badge: 'выгоднее всего',
-  },
-];
-
-const claudeTokens: Plan[] = [
-  {
-    id: 'claude-tok-1',
-    short: '1 млн токенов',
-    title: 'Пакет 1 млн токенов',
-    note: 'Попробовать API, хватает на пару небольших задач',
-    priceRub: PRICE,
-  },
-  {
-    id: 'claude-tok-5',
-    short: '5 млн токенов',
-    title: 'Пакет 5 млн токенов',
-    note: 'Рабочий объём для одного человека на месяц',
-    priceRub: PRICE,
-  },
-  {
-    id: 'claude-tok-20',
-    short: '20 млн токенов',
-    title: 'Пакет 20 млн токенов',
-    note: 'Небольшая команда или постоянная автоматизация',
-    priceRub: PRICE,
-    badge: 'берут чаще всего',
-  },
-  {
-    id: 'claude-tok-60',
-    short: '60 млн токенов',
-    title: 'Пакет 60 млн токенов',
-    note: 'Продакшен: обработка потока запросов без оглядки на лимит',
-    priceRub: PRICE,
-    badge: 'выгоднее всего',
-  },
-];
-
-const chatgptMonths: Plan[] = [
-  {
-    id: 'chatgpt-plus-1m',
-    short: '1 месяц',
-    title: 'ChatGPT Plus, 1 месяц',
-    note: 'Старшие модели, голосовой режим, работа с картинками',
-    priceRub: PRICE,
-    months: 1,
-  },
-  {
-    id: 'chatgpt-plus-3m',
-    short: '3 месяца',
-    title: 'ChatGPT Plus, 3 месяца',
-    note: 'Тот же доступ, продлевать втрое реже',
-    priceRub: PRICE,
-    months: 3,
-  },
-  {
-    id: 'chatgpt-plus-6m',
-    short: '6 месяцев',
-    title: 'ChatGPT Plus, 6 месяцев',
-    note: 'Полгода без продлений и без напоминаний',
-    priceRub: PRICE,
-    months: 6,
-    badge: 'берут чаще всего',
-  },
-  {
-    id: 'chatgpt-plus-12m',
-    short: '12 месяцев',
-    title: 'ChatGPT Plus, 12 месяцев',
-    note: 'Год доступа, самая низкая цена месяца',
-    priceRub: PRICE,
-    months: 12,
-    badge: 'выгоднее всего',
-  },
-];
-
-const chatgptTokens: Plan[] = [
-  {
-    id: 'chatgpt-tok-1',
-    short: '1 млн токенов',
-    title: 'Пакет 1 млн токенов',
-    note: 'Познакомиться с API и собрать первый прототип',
-    priceRub: PRICE,
-  },
-  {
-    id: 'chatgpt-tok-5',
-    short: '5 млн токенов',
-    title: 'Пакет 5 млн токенов',
-    note: 'Месяц работы одного человека без оглядки на счётчик',
-    priceRub: PRICE,
-  },
-  {
-    id: 'chatgpt-tok-20',
-    short: '20 млн токенов',
-    title: 'Пакет 20 млн токенов',
-    note: 'Постоянная автоматизация или небольшая команда',
-    priceRub: PRICE,
-    badge: 'берут чаще всего',
-  },
-  {
-    id: 'chatgpt-tok-60',
-    short: '60 млн токенов',
-    title: 'Пакет 60 млн токенов',
-    note: 'Поток запросов в продакшене, запас на пики нагрузки',
-    priceRub: PRICE,
-    badge: 'выгоднее всего',
-  },
-];
+const plans = (id: string, name: string, year: boolean): Plan[] => {
+  const list: Plan[] = [
+    {
+      id: `${id}-1m`,
+      short: '1 месяц',
+      title: `${name}, 1 месяц`,
+      note: 'Продлевать самому',
+      priceRub: MESYAC,
+      months: 1,
+    },
+  ];
+  if (year) {
+    list.push({
+      id: `${id}-1y`,
+      short: '1 год',
+      title: `${name}, 1 год`,
+      note: 'Сразу на год, без продлений',
+      priceRub: NET_CENY,
+      months: 12,
+    });
+  }
+  return list;
+};
 
 const REVIEWS: Review[] = [
   {
@@ -273,45 +149,24 @@ const CATALOG: Catalog = {
   products: [
     {
       id: 'claude',
-      name: 'Claude',
-      plan: 'Claude Pro',
+      name: 'Claude Pro',
       tagline: 'Полноценный ИИ-ассистент',
-      status: 'available',
-      groups: [
-        {
-          id: 'months',
-          title: 'По месяцам',
-          caption: 'Личный аккаунт, доступ открывается сразу после оплаты',
-          plans: claudeMonths,
-        },
-        {
-          id: 'tokens',
-          title: 'По токенам',
-          caption: 'Ключ к API, платите за объём, а не за время',
-          plans: claudeTokens,
-        },
-      ],
+      note: 'Sonnet и Opus, проекты, загрузка файлов',
+      plans: plans('claude-pro', 'Claude Pro', true),
     },
     {
       id: 'chatgpt',
-      name: 'ChatGPT',
-      plan: 'ChatGPT Plus',
+      name: 'ChatGPT Plus',
       tagline: 'Голос, картинки и привычный интерфейс',
-      status: 'available',
-      groups: [
-        {
-          id: 'months',
-          title: 'По месяцам',
-          caption: 'Личный аккаунт, доступ открывается сразу после оплаты',
-          plans: chatgptMonths,
-        },
-        {
-          id: 'tokens',
-          title: 'По токенам',
-          caption: 'Ключ к API, платите за объём, а не за время',
-          plans: chatgptTokens,
-        },
-      ],
+      note: 'Старшие модели, голосовой режим, работа с изображениями',
+      plans: plans('chatgpt-plus', 'ChatGPT Plus', true),
+    },
+    {
+      id: 'seedance',
+      name: 'Seedance 2.5',
+      tagline: 'Видео по тексту и по картинке',
+      note: 'Генерация роликов, продление сцен, свои референсы',
+      plans: plans('seedance-25', 'Seedance 2.5', false),
     },
   ],
 };
@@ -326,12 +181,10 @@ export function getCatalog(): Catalog {
 }
 
 /** Найти тариф по идентификатору во всём каталоге. */
-export function findPlan(planId: string): { product: Product; group: PlanGroup; plan: Plan } | null {
+export function findPlan(planId: string): { product: Product; plan: Plan } | null {
   for (const product of getCatalog().products) {
-    for (const group of product.groups) {
-      const plan = group.plans.find((p) => p.id === planId);
-      if (plan) return { product, group, plan };
-    }
+    const plan = product.plans.find((p) => p.id === planId);
+    if (plan) return { product, plan };
   }
   return null;
 }

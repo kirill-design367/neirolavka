@@ -1,92 +1,92 @@
 'use client';
 
-import { getCatalog, formatPrice, type Product } from '@/lib/catalog';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { formatPrice, getCatalog, type Product } from '@/lib/catalog';
 import { useOrder } from '@/lib/order';
-import { useExpand, useReveal } from '@/lib/motion';
+import { prefersReducedMotion, useReveal } from '@/lib/motion';
+import type { Shelf } from '@/lib/shelf-gl';
 
-function Shelf({ product }: { product: Product }) {
-  const { openProductId, planId, toggleProduct, choosePlan } = useOrder();
-  const soon = product.status === 'soon';
-  const open = openProductId === product.id;
-  const bodyRef = useExpand<HTMLDivElement>(open);
-  const panelId = `polka-${product.id}`;
+/**
+ * Витрина: три карточки продуктов.
+ *
+ * Разметка здесь ПЛОСКАЯ и рабочая сама по себе — обычные карточки
+ * с тарифами и кнопками. Объём добавляется поверх: когда блок
+ * подъезжает к экрану, подключается `@/lib/shelf-gl`, ставит на
+ * контейнер `data-3d` и начинает каждый кадр выдавать карточкам
+ * матрицу из общей с тенями камеры.
+ *
+ * Порядок именно такой, а не наоборот. Без WebGL, при выключенном
+ * движении или если сцена не поднялась — остаётся плоская витрина,
+ * на которой можно выбрать тариф. Возможность купить важнее эффекта.
+ */
+
+function Card({
+  product,
+  index,
+  active,
+  onSelect,
+  onHover,
+  cardRef,
+}: {
+  product: Product;
+  index: number;
+  active: boolean;
+  onSelect: () => void;
+  onHover: (i: number) => void;
+  cardRef: (el: HTMLElement | null) => void;
+}) {
+  const { planId, choosePlan } = useOrder();
+  const from = product.plans.reduce((a, p) => Math.min(a, p.priceRub), Infinity);
 
   return (
-    <article className={`shelf${open ? ' shelf--open' : ''}${soon ? ' shelf--soon' : ''}`}>
-      <span className="shelf__plate" data-reveal-plate aria-hidden="true" />
-
-      <h3 className="shelf__heading">
-        <button
-          type="button"
-          className="shelf__trigger"
-          onClick={() => !soon && toggleProduct(product.id)}
-          aria-expanded={open}
-          aria-controls={panelId}
-          disabled={soon}
-          data-reveal
-        >
-          <span className="shelf__name">{product.name}</span>
-          <span className="shelf__tagline">{product.tagline}</span>
-          <span className="shelf__meta">
-            {soon ? (
-              <span className="shelf__soon">скоро</span>
-            ) : (
-              <>
-                <span className="shelf__plan">{product.plan}</span>
-                <span className="shelf__sign" aria-hidden="true" />
-              </>
-            )}
-          </span>
-        </button>
-      </h3>
-
-      {soon && <p className="shelf__soon-note">{product.soonNote}</p>}
-
-      {/* Тарифы разворачиваются прямо из заголовка: высота едет с easing,
-          содержимое проявляется следом. */}
-      {/* inert на свёрнутой полке: высота ноль и прозрачность ноль прячут
-          её от глаз, но не от клавиатуры — без этого человек уходил
-          табуляцией в невидимые кнопки тарифов. */}
-      <div
-        className="shelf__body"
-        id={panelId}
-        ref={bodyRef}
-        role="region"
-        aria-label={`Тарифы ${product.name}`}
-        inert={!open}
+    <article
+      className={`pcard${active ? ' pcard--active' : ''}`}
+      ref={cardRef}
+      onPointerEnter={() => onHover(index)}
+      onPointerLeave={() => onHover(-1)}
+      onFocusCapture={() => onHover(index)}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) onHover(-1);
+      }}
+    >
+      <button
+        type="button"
+        className="pcard__face"
+        onClick={onSelect}
+        aria-pressed={active}
+        aria-label={`Выбрать ${product.name}`}
       >
-        <div className="shelf__body-inner">
-          {product.groups.map((group) => (
-            <div className="group" key={group.id} data-expand-item>
-              <div className="group__head">
-                <h4 className="group__title">{group.title}</h4>
-                <p className="group__caption">{group.caption}</p>
-              </div>
+        <span className="pcard__name">{product.name}</span>
+        <span className="pcard__tag">{product.tagline}</span>
+        <span className="pcard__note">{product.note}</span>
+        {!active && (
+          <span className="pcard__from">
+            от <span className="tnum">{formatPrice(from)}</span>
+          </span>
+        )}
+      </button>
 
-              <ul className="group__list">
-                {group.plans.map((plan) => {
-                  const active = planId === plan.id;
-                  return (
-                    <li key={plan.id}>
-                      <button
-                        type="button"
-                        className={`tariff${active ? ' tariff--active' : ''}`}
-                        onClick={() => choosePlan(plan.id)}
-                        aria-pressed={active}
-                      >
-                        <span className="tariff__short">{plan.short}</span>
-                        <span className="tariff__note">{plan.note}</span>
-                        <span className="tariff__price tnum">{formatPrice(plan.priceRub)}</span>
-                        {plan.badge && <span className="tariff__badge">{plan.badge}</span>}
-                        <span className="tariff__mark" aria-hidden="true" />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
-        </div>
+      {/* Тарифы раскрыты только у выбранной карточки. У свёрнутых они
+          не просто спрятаны, а изъяты из обхода: иначе табуляция
+          уходила бы в невидимые кнопки. */}
+      <div className="pcard__plans" hidden={!active}>
+        {product.plans.map((plan) => (
+          <button
+            key={plan.id}
+            type="button"
+            className={`tariff${planId === plan.id ? ' tariff--active' : ''}`}
+            onClick={() => choosePlan(plan.id)}
+            aria-pressed={planId === plan.id}
+          >
+            <span className="tariff__short">{plan.short}</span>
+            <span className="tariff__note">{plan.note}</span>
+            <span className="tariff__price tnum">{formatPrice(plan.priceRub)}</span>
+            <span className="tariff__mark" aria-hidden="true" />
+          </button>
+        ))}
+        {product.plans.length === 1 && (
+          <p className="pcard__single">Годового тарифа у этого продукта нет.</p>
+        )}
       </div>
     </article>
   );
@@ -94,23 +94,122 @@ function Shelf({ product }: { product: Product }) {
 
 export function Shop() {
   const catalog = getCatalog();
-  const ref = useReveal<HTMLElement>({ stagger: 0.08 });
+  const { openProductId, chooseProduct, planId } = useOrder();
+  const headRef = useReveal<HTMLDivElement>({ stagger: 0.08 });
+
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cardEls = useRef<(HTMLElement | null)[]>([]);
+  const shelfRef = useRef<Shelf | null>(null);
+  const [hover, setHover] = useState(-1);
+
+  const activeIndex = Math.max(0, catalog.products.findIndex((p) => p.id === openProductId));
+
+  const setCard = useCallback(
+    (i: number) => (el: HTMLElement | null) => {
+      cardEls.current[i] = el;
+    },
+    [],
+  );
+
+  // ─── Объём поверх плоской витрины ─────────────────────────────
+  useEffect(() => {
+    const root: HTMLDivElement | null = rootRef.current;
+    const canvas = canvasRef.current;
+    if (!root || !canvas || prefersReducedMotion()) return;
+    const box = root;
+
+    let cancelled = false;
+    let io: IntersectionObserver | null = null;
+
+    const start = async () => {
+      if (cancelled) return;
+      try {
+        const mod = await import('@/lib/shelf-gl');
+        if (cancelled) return;
+        const cards = cardEls.current.filter(Boolean) as HTMLElement[];
+        if (cards.length !== catalog.products.length) return;
+        const shelf = mod.mount(root, canvas, cards);
+        if (!shelf) return; // WebGL не поднялся — остаётся плоская витрина
+        shelfRef.current = shelf;
+        root.setAttribute('data-3d', '');
+        shelf.setActive(activeIndex);
+      } catch {
+        /* остаётся плоская витрина */
+      }
+    };
+
+    // Два условия, и оба обязательны.
+    //
+    // Первое — человек что-то сделал. Three.js весит 522 КБ разбора,
+    // и грузить его в тишине значит платить отзывчивостью за то, чего
+    // никто не смотрит. Это та же схема, что у пузырей, и кусок у них
+    // общий: к моменту, когда витрина понадобится, он обычно уже здесь.
+    //
+    // Второе — блок подъехал к экрану. Витрина лежит ниже сгиба,
+    // и поднимать сцену, пока до неё не долистали, незачем.
+    const EVENTS = ['pointermove', 'pointerdown', 'touchstart', 'wheel', 'keydown', 'scroll'];
+    const off = () => EVENTS.forEach((e) => window.removeEventListener(e, armed));
+    function armed() {
+      off();
+      if (cancelled) return;
+      io = new IntersectionObserver(
+        (entries) => {
+          if (!entries.some((e) => e.isIntersecting)) return;
+          io?.disconnect();
+          io = null;
+          void start();
+        },
+        { rootMargin: '300px' },
+      );
+      io.observe(box);
+    }
+    EVENTS.forEach((e) => window.addEventListener(e, armed, { passive: true }));
+
+    return () => {
+      cancelled = true;
+      off();
+      io?.disconnect();
+      shelfRef.current?.dispose();
+      shelfRef.current = null;
+      root.removeAttribute('data-3d');
+    };
+  }, [activeIndex, catalog.products.length]);
+
+  useEffect(() => { shelfRef.current?.setActive(activeIndex); }, [activeIndex]);
+  useEffect(() => { shelfRef.current?.setHover(hover); }, [hover]);
+  // Раскрытые тарифы меняют высоту карточки — сцене нужно пересчитать
+  // и тени, и раскладку.
+  useEffect(() => { shelfRef.current?.refresh(); }, [activeIndex, planId]);
 
   return (
-    <section className="shop" id="magazin" ref={ref}>
-      <div className="shop__head">
+    <section className="shop" id="magazin">
+      <div className="shop__head" ref={headRef}>
         <h2 className="shop__title" data-reveal>
           Что берём
         </h2>
         <p className="shop__hint" data-reveal>
-          Тарифы раскрыты сразу: цену видно без лишних нажатий. Нажатие на нейросеть сворачивает её и разворачивает соседнюю.
+          Три продукта на полке. Нажатие разворачивает карточку и показывает сроки
+          с ценами — цена видна до перехода в бот, а не после.
         </p>
       </div>
 
-      <div className="shop__shelves">
-        {catalog.products.map((product) => (
-          <Shelf key={product.id} product={product} />
-        ))}
+      <div className="shelf3d" ref={rootRef}>
+        {/* Тени сцены. Слой лежит под карточками и мышь не ловит. */}
+        <canvas className="shelf3d__gl" ref={canvasRef} aria-hidden="true" />
+        <div className="shelf3d__camera">
+          {catalog.products.map((product, i) => (
+            <Card
+              key={product.id}
+              product={product}
+              index={i}
+              active={i === activeIndex}
+              onSelect={() => chooseProduct(product.id)}
+              onHover={setHover}
+              cardRef={setCard(i)}
+            />
+          ))}
+        </div>
       </div>
     </section>
   );

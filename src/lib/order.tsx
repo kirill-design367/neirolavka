@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import { findPlan, getCatalog, type PaymentMethod, type Plan, type Product } from '@/lib/catalog';
 
 type OrderState = {
-  /** Раскрытая нейросеть. null — не выбрана ни одна. */
+  /** Выбранный продукт на витрине. null — не выбран ни один. */
   openProductId: string | null;
   planId: string | null;
   paymentId: PaymentMethod['id'] | null;
@@ -18,7 +18,7 @@ type OrderState = {
   botReady: boolean;
   /** Ссылка в бот с выбранным заказом в параметре, либо пусто. */
   botHref: string;
-  toggleProduct: (id: string) => void;
+  chooseProduct: (id: string) => void;
   choosePlan: (id: string) => void;
   choosePayment: (id: PaymentMethod['id']) => void;
   reset: () => void;
@@ -28,27 +28,29 @@ const OrderContext = createContext<OrderState | null>(null);
 
 export function OrderProvider({ children }: { children: React.ReactNode }) {
   const catalog = getCatalog();
-  // Первая доступная нейросеть раскрыта сразу. Механика разворачивания
-  // никуда не девается — она работает при переключении, — но человек
-  // видит цену, не совершая действий: на этом рынке спрятанная за клик
-  // цена читается как «скажу в личке».
+  // Первый продукт выбран сразу. Человек видит цену, не совершая
+  // действий: на этом рынке спрятанная за клик цена читается
+  // как «скажу в личке».
   const [openProductId, setOpenProductId] = useState<string | null>(
-    () => catalog.products.find((p) => p.status === 'available')?.id ?? null,
+    () => catalog.products[0]?.id ?? null,
   );
   const [planId, setPlanId] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<PaymentMethod['id'] | null>(null);
 
-  const toggleProduct = useCallback((id: string) => {
+  // Выбор ДЕРЖИТСЯ, пока не выбран другой продукт: повторное нажатие
+  // по выбранной карточке ничего не сворачивает. Витрина, с которой
+  // можно случайно снять выбор, заставляет выбирать дважды.
+  const chooseProduct = useCallback((id: string) => {
     setOpenProductId((current) => {
-      const next = current === id ? null : id;
-      // Свернули полку — снимаем выбор тарифа с неё же,
-      // иначе в панели остался бы товар, которого не видно.
+      if (current === id) return current;
+      // Сменили продукт — снимаем выбор тарифа с прежнего, иначе
+      // в панели остался бы товар с невидимой карточки.
       setPlanId((planCurrent) => {
         if (!planCurrent) return null;
         const found = findPlan(planCurrent);
-        return found && found.product.id === next ? planCurrent : null;
+        return found && found.product.id === id ? planCurrent : null;
       });
-      return next;
+      return id;
     });
   }, []);
 
@@ -95,12 +97,12 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       ready,
       botReady,
       botHref,
-      toggleProduct,
+      chooseProduct,
       choosePlan,
       choosePayment,
       reset,
     };
-  }, [catalog.botUrl, catalog.payments, openProductId, paymentId, planId, toggleProduct, choosePlan, choosePayment, reset]);
+  }, [catalog.botUrl, catalog.payments, openProductId, paymentId, planId, chooseProduct, choosePlan, choosePayment, reset]);
 
   return <OrderContext.Provider value={value}>{children}</OrderContext.Provider>;
 }

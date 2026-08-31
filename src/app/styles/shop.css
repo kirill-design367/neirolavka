@@ -1,4 +1,13 @@
-/* Магазин: полки нейросетей и тарифы, которые из них разворачиваются. */
+/* Витрина: три карточки продуктов.
+
+   Разметка плоская и работает сама по себе. Объём добавляется сверху:
+   src/lib/shelf-gl.ts ставит на контейнер data-3d и начинает каждый
+   кадр выдавать карточкам matrix3d из общей с тенями камеры. Всё, что
+   ниже помечено [data-3d], существует только когда сцена поднялась.
+
+   Без WebGL, при выключенном движении или если сцена не завелась,
+   остаётся ровно то, что в первой половине файла: рабочая витрина,
+   на которой можно выбрать тариф. Возможность купить важнее эффекта. */
 
 .shop {
   padding-top: var(--sp-6);
@@ -19,201 +28,111 @@
   margin-top: var(--sp-2);
   font-size: var(--t-label);
   color: var(--c-muted);
+  max-width: 52ch;
 }
 
-.shop__shelves {
+/* ─── Плоская витрина ─────────────────────────────────────────── */
+
+.shelf3d {
   display: grid;
   gap: var(--sp-4);
 }
 
-.shelf {
-  position: relative;
-  border-radius: var(--r-lg);
-  isolation: isolate;
+.shelf3d__gl {
+  display: none;
 }
 
-/* Подложка отдельным слоем: именно она получает масштаб при появлении,
-   поэтому текст поверх неё никогда не растягивается и не мылится. */
-.shelf__plate {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
+/* Контейнер камеры в плоском виде растворяется: карточки становятся
+   прямыми детьми сетки. */
+.shelf3d__camera {
+  display: contents;
+}
+
+.pcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  border-radius: var(--r-lg);
   background: var(--c-surface);
   border: 1px solid var(--c-line);
-  box-shadow: 0 1px 2px var(--c-shadow-1);
+  box-shadow:
+    0 1px 2px var(--c-shadow-1),
+    0 10px 26px -18px var(--c-shadow-2);
 }
 
-.shelf--open .shelf__plate {
+.pcard--active {
   border-color: color-mix(in oklab, var(--c-brand) 42%, var(--c-line));
-  box-shadow: 0 8px 24px -12px var(--c-shadow-2);
 }
 
-.shelf__heading {
-  font-size: inherit;
-  font-weight: inherit;
-}
-
-.shelf__trigger {
+.pcard__face {
   display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-areas:
-    'name meta'
-    'tag  meta';
-  align-items: center;
-  gap: 0.125rem var(--sp-4);
-  width: 100%;
-  padding: var(--sp-5);
+  gap: var(--sp-2);
   text-align: left;
-  border-radius: var(--r-lg);
+  width: 100%;
 }
 
-.shelf__trigger:disabled {
-  cursor: default;
-}
-
-.shelf__name {
-  grid-area: name;
+.pcard__name {
   font-family: var(--font-display);
   font-size: var(--t-title);
   font-weight: 600;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.012em;
+  /* Имя продукта — заголовок, а не акцент: три бренда, разом
+     покрашенные акцентом, читаются тремя зазывалами на полке.
+     Акцент достаётся ВЫБРАННОЙ карточке — это и есть состояние. */
   color: var(--c-text);
-  transition: color 0.25s var(--ease-out);
 }
 
-.shelf--open .shelf__name {
+.pcard--active .pcard__name {
   color: var(--c-brand);
 }
 
-.shelf__tagline {
-  grid-area: tag;
+.pcard__tag {
+  font-size: var(--t-label);
+  color: var(--c-text);
+}
+
+.pcard__note {
+  font-size: var(--t-label);
+  color: var(--c-muted);
+  line-height: 1.5;
+}
+
+.pcard__from {
+  margin-top: var(--sp-2);
   font-size: var(--t-label);
   color: var(--c-muted);
 }
 
-.shelf__meta {
-  grid-area: meta;
-  display: inline-flex;
-  align-items: center;
+.pcard__plans {
+  display: grid;
   gap: var(--sp-3);
 }
 
-.shelf__plan {
-  font-size: var(--t-micro);
-  color: var(--c-muted);
-  padding: 0.25rem 0.5rem;
-  border-radius: 999px;
-  background: var(--c-surface-2);
-  white-space: nowrap;
-}
-
-/* Плюс, который поворотом становится минусом. Только transform. */
-.shelf__sign {
-  position: relative;
-  width: 1.5rem;
-  height: 1.5rem;
-  flex: none;
-  border-radius: 50%;
-  border: 1px solid var(--c-line-strong);
-  transition: transform 0.35s var(--ease-out);
-}
-
-.shelf__sign::before,
-.shelf__sign::after {
-  content: '';
-  position: absolute;
-  inset: 50% 0.375rem;
-  height: 1px;
-  margin-top: -0.5px;
-  background: var(--c-text);
-  transition: transform 0.35s var(--ease-out);
-}
-
-.shelf__sign::after {
-  transform: rotate(90deg);
-}
-
-.shelf--open .shelf__sign {
-  transform: rotate(180deg);
-}
-
-.shelf--open .shelf__sign::after {
-  transform: rotate(0deg);
-}
-
-.shelf__soon {
-  font-size: var(--t-micro);
-  color: var(--c-accent-text);
-  padding: 0.25rem 0.5rem;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--c-accent) 16%, transparent);
-  white-space: nowrap;
-}
-
-.shelf--soon .shelf__name,
-.shelf--soon .shelf__tagline {
-  opacity: 0.62;
-}
-
-.shelf__soon-note {
-  padding: 0 var(--sp-5) var(--sp-5);
-  margin-top: calc(var(--sp-3) * -1);
-  font-size: var(--t-label);
-  color: var(--c-muted);
-}
-
-.shelf__body {
-  overflow: hidden;
-}
-
-.shelf__body-inner {
-  padding: 0 var(--sp-5) var(--sp-5);
-  display: grid;
-  gap: var(--sp-5);
-}
-
-.group__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--sp-2) var(--sp-3);
-  margin-bottom: var(--sp-4);
-}
-
-.group__title {
-  font-size: var(--t-body);
-  font-weight: 600;
-}
-
-.group__caption {
+.pcard__single {
   font-size: var(--t-micro);
   color: var(--c-muted);
 }
 
-.group__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--sp-3);
-}
-
+/* Тариф — строка со сроком, пояснением и ценой. */
 .tariff {
   position: relative;
   display: grid;
-  gap: 0.125rem;
-  width: 100%;
-  height: 100%;
-  padding: var(--sp-4);
-  text-align: left;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'short price'
+    'note  price';
+  align-items: baseline;
+  gap: 0.125rem var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  padding-right: calc(var(--sp-4) + 1.5rem);
   border-radius: var(--r-md);
-  border: 1px solid var(--c-line);
   background: var(--c-bg);
+  border: 1px solid transparent;
+  text-align: left;
   transition:
-    border-color 0.18s var(--ease-out),
-    background-color 0.18s var(--ease-out);
+    border-color 0.2s var(--ease-out),
+    background-color 0.2s var(--ease-out);
 }
 
 .tariff:hover {
@@ -221,106 +140,141 @@
 }
 
 .tariff--active {
+  background: color-mix(in oklab, var(--c-brand) 12%, var(--c-surface));
   border-color: var(--c-brand);
-  background: color-mix(in oklab, var(--c-brand) 8%, var(--c-surface));
 }
 
 .tariff__short {
+  grid-area: short;
   font-size: var(--t-body);
   font-weight: 600;
-  color: var(--c-text);
-  padding-right: 1.5rem;
 }
 
 .tariff__note {
+  grid-area: note;
   font-size: var(--t-micro);
   color: var(--c-muted);
-  line-height: 1.4;
 }
 
-/* Цена — обычный текст. Акцентом она становится только у выбранного
-   тарифа: акцент обязан значить «выбрано», а не «здесь цифра». */
 .tariff__price {
-  margin-top: var(--sp-2);
+  grid-area: price;
+  align-self: center;
   font-size: var(--t-body);
   font-weight: 600;
-  color: var(--c-text);
-}
-
-.tariff--active .tariff__price {
-  color: var(--c-brand);
-}
-
-/* Ярлык — подпись, а не зазывала. Акцентная заливка делала из него
-   ценник распродажи: два ярких пятна на полке тянули выбор за человека
-   раньше, чем он успевал сравнить цены. Тон утоплённой поверхности
-   оставляет надпись читаемой, но возвращает ей вес подписи. */
-.tariff__badge {
-  position: absolute;
-  top: calc(var(--sp-4) * -0.5);
-  right: var(--sp-3);
-  font-size: var(--t-micro);
-  padding: 0.125rem 0.4375rem;
-  border-radius: 999px;
-  background: var(--c-surface-2);
-  color: var(--c-muted);
   white-space: nowrap;
 }
 
+/* Галочка выбранного тарифа: рисуется двумя штрихами, без картинки. */
 .tariff__mark {
   position: absolute;
-  top: var(--sp-4);
+  top: 50%;
   right: var(--sp-4);
-  width: 1rem;
-  height: 1rem;
-  border-radius: 50%;
-  border: 1px solid var(--c-line-strong);
+  width: 0.875rem;
+  height: 0.875rem;
+  translate: 0 -50%;
   opacity: 0;
-  transform: scale(0.7);
+  scale: 0.7;
   transition:
     opacity 0.2s var(--ease-out),
-    transform 0.2s var(--ease-out);
+    scale 0.24s var(--ease-out);
+}
+
+.tariff__mark::before,
+.tariff__mark::after {
+  content: '';
+  position: absolute;
+  background: var(--c-brand);
+  border-radius: 1px;
+}
+
+.tariff__mark::before {
+  left: 0;
+  bottom: 0.22rem;
+  width: 0.34rem;
+  height: 2px;
+  rotate: 45deg;
+  transform-origin: left center;
+}
+
+.tariff__mark::after {
+  left: 0.2rem;
+  bottom: 0.34rem;
+  width: 0.62rem;
+  height: 2px;
+  rotate: -50deg;
+  transform-origin: left center;
 }
 
 .tariff--active .tariff__mark {
   opacity: 1;
-  transform: scale(1);
-  background: var(--c-brand);
-  border-color: var(--c-brand);
+  scale: 1;
 }
 
-.tariff--active .tariff__mark::after {
-  content: '';
+@media (min-width: 768px) {
+  .shelf3d {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ─── Объём ───────────────────────────────────────────────────── */
+
+.shelf3d[data-3d] {
+  display: block;
+  position: relative;
+  /* Высоту задаёт сцена: карточки вынуты из потока, и контейнер сам
+     по себе схлопнулся бы в ноль. */
+}
+
+.shelf3d[data-3d] .shelf3d__gl {
+  display: block;
   position: absolute;
-  left: 0.3125rem;
-  top: 0.125rem;
-  width: 0.25rem;
-  height: 0.5rem;
-  border: solid var(--c-on-brand);
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
+  inset: 0;
+  pointer-events: none;
 }
 
-@media (min-width: 640px) {
-  .group__list {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
+/* Держатель камеры — точка, а не прямоугольник.
+
+   Размера у него нет намеренно. Он несёт на себе матрицу камеры,
+   в конце которой стоит сдвиг в середину сцены; будь у него ширина
+   и высота, этот сдвиг увёз бы его собственную коробку вправо и вниз,
+   и страница получила бы горизонтальную прокрутку на пустом месте.
+   Так и случилось на телефоне: ширина прокрутки 537 при экране 390.
+   Карточки внутри позиционируются от его начала координат и от
+   нулевого размера не страдают. */
+.shelf3d[data-3d] .shelf3d__camera {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+  /* Ловят мышь только сами карточки: пустое место между ними должно
+     оставаться прозрачным для страницы. */
+  pointer-events: none;
 }
 
-@media (min-width: 1024px) {
-  .shop__shelves {
-    gap: var(--sp-5);
-  }
+.shelf3d[data-3d] .pcard {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 16.5rem;
+  pointer-events: auto;
+  /* preserve-3d карточке НЕ ставится. Она плоская, объём ей даёт
+     матрица от камеры, а вот её содержимое в трёхмерном контексте
+     перестаёт ловить нажатия: elementFromPoint над кнопкой тарифа
+     возвращал не кнопку, а её родителя, и выбор тарифа не работал
+     вовсе — при том что клик «проходил». */
+  transform-style: flat;
+  /* Тень рисует сцена — своей карточке не нужно. */
+  box-shadow: none;
+  will-change: transform;
+}
 
-  .shelf__trigger {
-    padding: var(--sp-6);
-  }
-
-  .shelf__body-inner {
-    padding: 0 var(--sp-6) var(--sp-6);
-  }
-
-  .shelf__soon-note {
-    padding: 0 var(--sp-6) var(--sp-6);
+@media (max-width: 767px) {
+  .shelf3d[data-3d] .pcard {
+    /* Ширина в rem и vw, а не в процентах: держатель камеры нулевого
+       размера, и процент от него дал бы ноль. */
+    width: min(20rem, 92vw);
   }
 }
