@@ -1,0 +1,248 @@
+name: Сборка и выкладка бота
+
+# Бот выкладывается ОТДЕЛЬНО от сайта, и это не прихоть.
+#
+# Сайт — папка файлов: залил рядом, подменил ссылку, готово. Бот —
+# работающий процесс со своей базой и с нативным модулем, собранным
+# под конкретный Node. Поэтому здесь три шага, которых у сайта нет:
+# зависимости ставятся НА СЕРВЕРЕ (нативный модуль обязан совпасть
+# с тамошним Node), после подмены ссылки службу нужно перезапустить,
+# и убедиться, что поднялся именно новый выпуск, можно только спросив
+# живой процесс.
+#
+# Перезапуск делает systemd, а не выкладка: у пользователя deploy нет
+# sudo и не будет. Выкладка кладёт файл-метку, за файлом следит
+# .path-юнит. Дверь односторонняя.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bot/**'
+      - 'src/lib/catalog.ts'      # общий каталог: цены бота и сайта
+      - 'deploy/systemd/**'
+      - 'scripts/bot-*.sh'
+      - '.github/workflows/deploy-bot.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: vykladka-bota
+  cancel-in-progress: false
+
+env:
+  HOST: ${{ vars.DEPLOY_HOST || '5.42.123.35' }}
+  USER: ${{ vars.DEPLOY_USER || 'deploy' }}
+  KOREN: /home/bot/neirolavka-bot
+  PORT: ${{ vars.BOT_PORT || '8080' }}
+  SAYT: ${{ vars.SITE_URL || 'https://neirolavka.ru' }}
+  HRANIT: 3
+
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: bot/package-lock.json
+
+      - name: Зависимости бота
+        working-directory: bot
+        run: npm ci
+
+      - name: Проверки бота
+        working-directory: bot
+        # npm test сначала собирает, потом гоняет node:test. Сборка
+        # здесь же и проверка типов: выкладывать непроверенный код,
+        # который принимает деньги, нельзя.
+        run: npm test
+
+      - name: Сборка
+        working-directory: bot
+        run: npm run build
+
+      - name: Есть ли доступ к серверу
+        id: dostup
+        env:
+          KLYUCH: ${{ secrets.SSH_PRIVATE_KEY }}
+          HOSTY: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          if [ -n "$KLYUCH" ] && [ -n "$HOSTY" ]; then
+            echo "est=да" >> "$GITHUB_OUTPUT"
+          else
+            echo "est=нет" >> "$GITHUB_OUTPUT"
+            echo "::notice::Секретов SSH нет — выкладка бота пропущена, сборка и проверки прошли."
+          fi
+
+      - name: Ключ и известный хост
+        if: steps.dostup.outputs.est == 'да'
+        env:
+          KLYUCH: ${{ secrets.SSH_PRIVATE_KEY }}
+          HOSTY: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KLYUCH" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$HOSTY" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host cel
+            HostName $HOST
+            User $USER
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ConnectTimeout 20
+          EOF
+          chmod 600 ~/.ssh/config
+          if ! ssh-keygen -F "$HOST" -f ~/.ssh/known_hosts > /dev/null 2>&1; then
+            echo "::error::В секрете SSH_KNOWN_HOSTS нет ключа для $HOST."
+            exit 1
+          fi
+          ssh cel 'echo подключение есть: $(whoami)@$(hostname)'
+
+      - name: Готов ли сервер принимать бота
+        if: steps.dostup.outputs.est == 'да'
+        id: gotov
+        run: |
+          # Папку и службы делает scripts/bot-setup.sh. Пока его
+          # не запускали, выкладывать некуда — и это не поломка кода.
+          if ssh cel "test -d $KOREN/releases && systemctl list-unit-files neirolavka-bot.service >/dev/null 2>&1"; then
+            echo "est=да" >> "$GITHUB_OUTPUT"
+          else
+            echo "est=нет" >> "$GITHUB_OUTPUT"
+            echo "::notice::На сервере ещё не запускали scripts/bot-setup.sh — выкладка бота пропущена."
+          fi
+
+      - name: Имя выпуска
+        if: steps.gotov.outputs.est == 'да'
+        id: vypusk
+        run: echo "imya=$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Заливка рядом с текущим
+        if: steps.gotov.outputs.est == 'да'
+        env:
+          VYPUSK: ${{ steps.vypusk.outputs.imya }}
+        run: |
+          # Отметка выпуска едет вместе с кодом: по ней выкладка потом
+          # спросит живой процесс, он ли поднялся.
+          printf '%s\n' "$VYPUSK" > bot/vypusk
+          ssh cel "mkdir -p $KOREN/releases/$VYPUSK"
+          # --delete здесь не нужен: имя выпуска содержит время и хеш,
+          # папка всегда новая. А с несколькими источниками он умеет
+          # вынести из назначения и то, чего в источниках просто нет.
+          rsync -az -e ssh \
+            bot/dist bot/package.json bot/package-lock.json bot/vypusk \
+            "cel:$KOREN/releases/$VYPUSK/"
+          echo "залито: $VYPUSK"
+
+      - name: Зависимости на сервере, подмена ссылки и перезапуск
+        if: steps.gotov.outputs.est == 'да'
+        id: podmena
+        env:
+          VYPUSK: ${{ steps.vypusk.outputs.imya }}
+        run: |
+          ssh cel bash -s -- "$VYPUSK" "$KOREN" "$PORT" <<'SH'
+          set -euo pipefail
+          VYPUSK="$1"; KOREN="$2"; PORT="$3"
+          NOV="$KOREN/releases/$VYPUSK"
+
+          # Нативный модуль better-sqlite3 обязан совпасть с Node
+          # на этой машине, поэтому зависимости ставятся здесь,
+          # а не привозятся с бегунка.
+          cd "$NOV"
+          npm ci --omit=dev --no-audit --no-fund
+
+          godny() {                       # папка выпуска → 0, если годен
+            [ -s "$1/dist/bot/src/index.js" ] \
+              && [ -d "$1/node_modules/better-sqlite3" ] \
+              && [ -s "$1/package.json" ]
+          }
+          godny "$NOV" || { echo "новый выпуск негоден — ссылку не трогаю"; exit 1; }
+
+          PRESHNY=""
+          [ -e "$KOREN/current" ] && PRESHNY="$(readlink -f "$KOREN/current")"
+          echo "было: ${PRESHNY:-ничего}"
+
+          ln -sfn "$NOV" "$KOREN/.current.novy"
+          mv -Tf "$KOREN/.current.novy" "$KOREN/current"
+
+          # Просьба к systemd перезапустить службу. Больше выкладка
+          # ничего сделать не может и не должна.
+          touch "$KOREN/perezapusk"
+
+          zhdat() {                       # ожидаемый выпуск → 0, если поднялся
+            local nuzhen="$1" i v
+            for i in $(seq 1 40); do
+              sleep 1
+              v="$(curl -fsS --max-time 2 "http://127.0.0.1:$PORT/vypusk" 2>/dev/null || true)"
+              [ "$v" = "$nuzhen" ] && return 0
+            done
+            return 1
+          }
+
+          if zhdat "$VYPUSK"; then
+            echo "поднялся выпуск $VYPUSK"
+            exit 0
+          fi
+
+          echo "новый выпуск не поднялся за 40 с — откатываюсь"
+          systemctl status neirolavka-bot --no-pager -n 20 2>/dev/null || true
+          if [ -n "$PRESHNY" ] && godny "$PRESHNY"; then
+            ln -sfn "$PRESHNY" "$KOREN/.current.novy"
+            mv -Tf "$KOREN/.current.novy" "$KOREN/current"
+            touch "$KOREN/perezapusk"
+            if zhdat "$(cat "$PRESHNY/vypusk" 2>/dev/null || echo неизвестен)"; then
+              echo "откат удался: снова $(cat "$PRESHNY/vypusk" 2>/dev/null)"
+            else
+              echo "ОТКАТ НЕ ПОМОГ — бот лежит, нужен человек"
+            fi
+          else
+            echo "откатываться некуда: годного прошлого выпуска нет"
+          fi
+          exit 1
+          SH
+
+      - name: Журнал бота, если что-то пошло не так
+        if: failure() && steps.gotov.outputs.est == 'да'
+        run: ssh cel 'journalctl -u neirolavka-bot -n 60 --no-pager' || true
+
+      - name: Проверка снаружи, через nginx
+        if: steps.gotov.outputs.est == 'да'
+        run: |
+          # Внутренняя проверка говорит «процесс жив». Эта — «вебхуки
+          # доезжают»: тот же путь, которым ходит Telegram.
+          KOD=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$SAYT/bot-health" || echo 000)
+          echo "$SAYT/bot-health → $KOD"
+          if [ "$KOD" != 200 ]; then
+            echo "::error::Через nginx бот не отвечает ($KOD). Вебхуки Telegram не дойдут."
+            exit 1
+          fi
+
+      - name: Уборка старых выпусков
+        if: always() && steps.gotov.outputs.est == 'да'
+        # Всегда, а не только на удачном прогоне: мусор от падения
+        # надо убирать именно после падения.
+        run: |
+          ssh cel bash -s -- "$KOREN" "$HRANIT" <<'SH'
+          set -euo pipefail
+          KOREN="$1"; HRANIT="$2"
+          TEK="$(readlink -f "$KOREN/current" 2>/dev/null || true)"
+          cd "$KOREN/releases"
+          OSTAVIT=0
+          for D in $(ls -1t); do
+            P="$KOREN/releases/$D"
+            [ "$P" = "$TEK" ] && continue
+            if [ -s "$P/dist/bot/src/index.js" ] && [ -d "$P/node_modules/better-sqlite3" ]; then
+              OSTAVIT=$((OSTAVIT + 1))
+              [ "$OSTAVIT" -le "$HRANIT" ] && continue
+            else
+              echo "негодный выпуск, убираю: $D"
+            fi
+            rm -rf "$P"
+          done
+          echo "осталось выпусков: $(ls -1 | wc -l)"
+          SH
