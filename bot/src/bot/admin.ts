@@ -88,8 +88,16 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     else await ctx.reply(text, { reply_markup: klav.sluzhebnoe(rl) });
   };
 
-  bot.hears(klav.KNOPKA_LAVKA, (ctx) => sluzhebnoe(ctx, false));
-  bot.command('lavka', (ctx) => sluzhebnoe(ctx, false));
+  // Не свой, набравший эти слова руками, не должен упереться в тишину:
+  // пропускаем дальше, и он получит обычный ответ на непонятое.
+  bot.hears(klav.KNOPKA_LAVKA, async (ctx, next) => {
+    if (!svoy(l, ctx)) return next();
+    await sluzhebnoe(ctx, false);
+  });
+  bot.command('lavka', async (ctx, next) => {
+    if (!svoy(l, ctx)) return next();
+    await sluzhebnoe(ctx, false);
+  });
   bot.callbackQuery('a', async (ctx) => {
     await ctx.answerCallbackQuery();
     await sluzhebnoe(ctx, true);

@@ -95,8 +95,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
       return pravit(ctx, t.TARIF_PROPAL, klav.tovary(tovary()));
     }
     const { product, plan } = nayden;
-    lyudi.zapomnit(l.db, tgId, ctx.from.first_name ?? '', ctx.from.username ?? null);
-
+    // Кто это, уже записано общим слоем в bot/index.ts.
     const { zakaz, novy } = zakazy.sozdatIliVernut(l.db, {
       tgId,
       produktId: product.id,
