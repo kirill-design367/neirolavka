@@ -168,8 +168,8 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
       await uvedom.cheloveku(
         l,
         z.tg_id,
-        `Заказ № ${z.id} отменён. Если это ошибка — напишите мне, разберёмся. ` +
-          'Оплаченные и невыданные заказы возвращаются деньгами.',
+        `Заказ № ${z.id} отменён. Если это неожиданность — напишите через «Помощь», ` +
+          'администратор объяснит и решит, что делать дальше.',
       );
     }
     await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, dostupy.est(l.db, z.id)));
@@ -374,6 +374,14 @@ export function podklyuchitDialogi(bot: Bot, l: Lavka): void {
     const d = dialogi.vzyat(l.db, tgId, l.n.klyuchDostupov);
     if (!d) return next();
     const text = ctx.message.text;
+
+    // Две команды выходят из разговора всегда. Иначе человек, начавший
+    // ввод и передумавший, остаётся заперт: его «/start» уходит в
+    // черновик как логин, и кнопок он больше не видит.
+    if (/^\/(start|otmena)(@\S+)?$/.test(text.trim())) {
+      dialogi.zabyt(l.db, tgId);
+      return next();
+    }
 
     if (d.shag === 'zhdem_vopros') {
       await prinyatVopros(l, tgId, text);

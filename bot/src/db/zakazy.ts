@@ -102,6 +102,26 @@ export function sozdatIliVernut(db: Baza, n: Novy): { zakaz: Zakaz; novy: boolea
   }
 }
 
+/**
+ * Завести платёж рядом с заказом.
+ *
+ * Пока поставщик — заглушка, сюда не попадает ничего. Функция есть
+ * затем, чтобы следующим заходом запись платежа не пришлось изобретать
+ * посреди обработчика нажатия.
+ */
+export function zavestiPlatezh(
+  db: Baza,
+  zakazId: number,
+  postavshchik: string,
+  vneshnyId: string | null,
+  summaKop: number,
+): void {
+  db.prepare(
+    `INSERT INTO platezhi (zakaz_id, postavshchik, vneshny_id, summa_kop, valyuta, status, sozdan)
+     VALUES (?, ?, ?, ?, 'RUB', 'sozdan', ?)`,
+  ).run(zakazId, postavshchik, vneshnyId, summaKop, seychasISO());
+}
+
 export function po(db: Baza, id: number): Zakaz | null {
   return (db.prepare('SELECT * FROM zakazy WHERE id = ?').get(id) as Zakaz | undefined) ?? null;
 }
@@ -171,8 +191,11 @@ export function otmetitVydannym(db: Baza, id: number, dostupDo: Date, kto: numbe
 }
 
 export function otmenit(db: Baza, id: number, kto: number | null, pochemu: string): boolean {
+  // Перечисляем статусы явно, а не «всё, кроме выданного»: с отрицанием
+  // повторная отмена проходила бы второй раз и слала бы человеку второе
+  // извинение за одно и то же.
   const r = db
-    .prepare("UPDATE zakazy SET status = 'otmenen' WHERE id = ? AND status != 'vydan'")
+    .prepare("UPDATE zakazy SET status = 'otmenen' WHERE id = ? AND status IN ('zhdet_oplaty','oplachen','v_rabote')")
     .run(id);
   if (r.changes === 0) return false;
   sobytie(db, id, 'заказ отменён', kto, pochemu);

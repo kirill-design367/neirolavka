@@ -13,7 +13,7 @@
  * Латиница — только в названиях продуктов и Telegram.
  */
 
-import { chasSlovami, dataSlovami, momentSlovami, sklonenie } from './vremya.js';
+import { chasSlovami, chasyMinuty, dataSlovami, momentSlovami, sklonenie } from './vremya.js';
 import type { Raspisanie, Srok } from './vremya.js';
 import { rubli } from './katalog.js';
 import type { Zakaz, StatusZakaza } from '../db/zakazy.js';
@@ -76,7 +76,7 @@ export function podtverzhdenie(
 /** Обещание по конкретному заказу. Верхняя граница, а не идеал. */
 export function kogdaPridet(srok: Srok, r: Raspisanie): string {
   if (!srok.utrom) {
-    return `сегодня, не позже ${momentSlovami(srok.do, r.poyas).split(', ')[1]}`;
+    return `сегодня, не позже ${chasyMinuty(srok.do, r.poyas)}`;
   }
   return `утром, после ${chasSlovami(r.rabotaS)} по Москве — сейчас лавка закрыта`;
 }
@@ -121,7 +121,7 @@ export function dostupVydan(zakaz: Zakaz, login: string, parol: string, zametka:
     `Доступ по заказу № ${zakaz.id} готов.`,
     '',
     `${zakaz.nazvanie}`,
-    zakaz.dostup_do ? `Действует до ${dataSlovami(new Date(zakaz.dostup_do), r.poyas)}` : '',
+    ...(zakaz.dostup_do ? [`Действует до ${dataSlovami(new Date(zakaz.dostup_do), r.poyas)}`] : []),
     '',
     `Логин: ${login}`,
     `Пароль: ${parol}`,
@@ -135,7 +135,7 @@ export function dostupVydan(zakaz: Zakaz, login: string, parol: string, zametka:
     '',
     'Эти же логин и пароль всегда лежат в разделе «Мои заказы».',
   );
-  return chasti.filter((s) => s !== '' || true).join('\n');
+  return chasti.join('\n');
 }
 
 export const NET_ZAKAZOV = [
@@ -195,8 +195,9 @@ export function pomoshch(r: Raspisanie, botUrl: string): string {
       'Заказ можно оформить в любое время суток, но выдаёт доступ человек, ' +
       'поэтому ночной заказ уходит в работу утром.',
     '',
-    'Доступ не пришёл в обещанный срок. Напишите сюда — я передам администратору. ' +
-      'Деньги за невыданный доступ возвращаются: доступ либо есть, либо возврат.',
+    'Доступ не пришёл в обещанный срок. Напишите сюда — я передам администратору, ' +
+      'и он ответит вам лично. Что делать дальше, решаете вы вдвоём: ' +
+      'придумывать за него правила я не буду.',
     '',
     'Как продлить. Оформите такой же заказ ещё раз, когда срок будет подходить к концу. ' +
       'Продление — это новый заказ на тот же срок; аккаунт по возможности оставляем прежний, ' +

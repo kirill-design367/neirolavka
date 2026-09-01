@@ -119,12 +119,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     const schet = await l.oplata.vystavit(zakaz);
     const srok = srokVydachi(new Date(), r());
     if (schet.vneshnyId || schet.adres) {
-      l.db
-        .prepare(
-          `INSERT INTO platezhi (zakaz_id, postavshchik, vneshny_id, summa_kop, valyuta, status, sozdan)
-           VALUES (?, ?, ?, ?, 'RUB', 'sozdan', ?)`,
-        )
-        .run(zakaz.id, l.oplata.imya, schet.vneshnyId, zakaz.cena_kop, new Date().toISOString());
+      zakazy.zavestiPlatezh(l.db, zakaz.id, l.oplata.imya, schet.vneshnyId, zakaz.cena_kop);
     }
 
     await pravit(ctx, t.zakazPrinyat(zakaz, srok, r(), l.oplata.rabotaet), klav.poslePokupki(zakaz.id));
@@ -138,14 +133,11 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
 
   const pokazatZakazy = async (ctx: Context, pravkoy: boolean) => {
     const spisok = zakazy.cheloveka(l.db, ctx.from!.id);
-    if (spisok.length === 0) {
-      const text = t.NET_ZAKAZOV;
-      return pravkoy ? pravit(ctx, text, klav.tovary(tovary())) : void (await ctx.reply(text, { reply_markup: klav.tovary(tovary()) }));
-    }
-    const shapka = 'Ваши заказы. Откройте любой, чтобы посмотреть подробности.';
-    const k = klav.moiZakazy(spisok);
-    if (pravkoy) await pravit(ctx, shapka, k);
-    else await ctx.reply(shapka, { reply_markup: k });
+    const pusto = spisok.length === 0;
+    const text = pusto ? t.NET_ZAKAZOV : 'Ваши заказы. Откройте любой, чтобы посмотреть подробности.';
+    const k = pusto ? klav.tovary(tovary()) : klav.moiZakazy(spisok);
+    if (pravkoy) await pravit(ctx, text, k);
+    else await ctx.reply(text, { reply_markup: k });
   };
 
   bot.hears(klav.KNOPKA_ZAKAZY, (ctx) => pokazatZakazy(ctx, false));

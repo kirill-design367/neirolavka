@@ -148,16 +148,20 @@ export function dataSlovami(d: Date, poyas: string): string {
   }).format(d);
 }
 
-/** «1 сентября, 14:35». */
-export function momentSlovami(d: Date, poyas: string): string {
-  const den = new Intl.DateTimeFormat('ru-RU', { timeZone: poyas, day: 'numeric', month: 'long' }).format(d);
-  const chas = new Intl.DateTimeFormat('ru-RU', {
+/** «14:35» в нужном поясе. */
+export function chasyMinuty(d: Date, poyas: string): string {
+  return new Intl.DateTimeFormat('ru-RU', {
     timeZone: poyas,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
   }).format(d);
-  return `${den}, ${chas}`;
+}
+
+/** «1 сентября, 14:35». */
+export function momentSlovami(d: Date, poyas: string): string {
+  const den = new Intl.DateTimeFormat('ru-RU', { timeZone: poyas, day: 'numeric', month: 'long' }).format(d);
+  return `${den}, ${chasyMinuty(d, poyas)}`;
 }
 
 /** Дата, до которой открыт доступ, если выдать сегодня. */
