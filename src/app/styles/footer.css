@@ -37,75 +37,113 @@
   color: var(--c-text);
 }
 
+/* ─── Бегущая строка отзывов ──────────────────────────────────
+ *
+ * Раньше это была сетка 2×3 почти во весь экран. Шесть отзывов
+ * подряд читать никто не станет, а места они занимали как целый
+ * раздел. Теперь одна полоса, которая едет сама, и высота блока
+ * упала со всей высоты экрана до высоты одной карточки.
+ *
+ * Устройство простое до скуки, и это достоинство. Дорожка набрана
+ * ДВУМЯ одинаковыми копиями отзывов и едет влево ровно на половину
+ * своей ширины, после чего анимация начинается заново. В этот миг
+ * вторая копия стоит там, где в начале стояла первая, — картинка
+ * совпадает сама с собой с точностью до пикселя, и стыка нет.
+ *
+ * Отсюда единственное жёсткое требование: половина дорожки обязана
+ * равняться одной копии ТОЧНО. Поэтому промежуток между карточками
+ * задан полем справа у каждой, а не свойством gap: при gap ширина
+ * дорожки равна 12 карточкам и 11 промежуткам, половина от неё —
+ * шесть карточек и пять с половиной промежутков, и на каждом обороте
+ * лента дёргалась бы на половину промежутка. С полем справа каждая
+ * карточка занимает ровно «ширина + промежуток», и половина дорожки
+ * равна копии по построению. */
 .reviews {
+  overflow: hidden;
+  /* Края ленты растворяются, а не срезаются. Это не разделитель:
+     карточка не обрывается линией, а уходит в фон — и оттого видно,
+     что полоса длиннее окна и продолжается за ним. */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 4.5rem, #000 calc(100% - 4.5rem), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 4.5rem, #000 calc(100% - 4.5rem), transparent);
+}
+
+.reviews__track {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  gap: var(--sp-4);
+  display: flex;
+  align-items: stretch;
+  /* Дорожка шире окна, и её ширину задаёт содержимое, а не колонка. */
+  width: max-content;
+  /* Ровно линейно: у бегущей строки не бывает разгона и торможения,
+     иначе на каждом обороте виден толчок. */
+  animation: reviews-run 78s linear infinite;
+  will-change: transform;
 }
 
-/* Карточки отзывов живут сами по себе, а не едут за прокруткой.
-   У каждой своя амплитуда, свой период и своя фаза: одна почти
-   стоит, другая ходит заметнее, и в такт они не попадают никогда,
-   потому что периоды взаимно не кратны.
+@keyframes reviews-run {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: -50% 0;
+  }
+}
 
-   Движение идёт по свойству translate, а не transform: transform
-   занят наведением, и анимация его бы перебила — карточка перестала
-   бы отзываться на курсор. */
+/* Под курсором лента встаёт. Отзыв, который нельзя дочитать, —
+   это не отзыв, а узор. Останавливается вся дорожка целиком, а не
+   одна карточка: остановка одной посреди едущих читалась бы поломкой.
+
+   Три состояния, и каждое отвечает за свой способ читать. :hover —
+   мышь. :active — палец: на телефоне наведения не бывает вовсе,
+   и без него лента была бы неостановима. :focus-within — на случай,
+   если внутри однажды появится ссылка: уезжающий из-под клавиатуры
+   фокус хуже, чем уезжающий текст. */
+.reviews:hover .reviews__track,
+.reviews:active .reviews__track,
+.reviews:focus-within .reviews__track {
+  animation-play-state: paused;
+}
+
 .review {
   position: relative;
+  flex: none;
+  /* Промежуток — полем справа, а не gap. Почему именно так,
+     написано выше: иначе половина дорожки не равна копии. */
+  width: 20.5rem;
+  margin-right: var(--sp-4);
+  display: flex;
+  flex-direction: column;
   padding: var(--sp-5);
   border-radius: var(--r-lg);
   isolation: isolate;
-  animation: review-drift 19s var(--ease-inout) infinite;
-  --drift-x: 2px;
-  --drift-y: -5px;
 }
 
-@keyframes review-drift {
-  0%,
-  100% {
-    translate: 0 0;
+/* Выключенное движение: лента стоит, и её листают жестом.
+   Дубли при этом прячутся — листать один и тот же отзыв дважды
+   незачем. */
+@media (prefers-reduced-motion: reduce) {
+  .reviews {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+    overscroll-behavior-x: contain;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
-  50% {
-    translate: var(--drift-x) var(--drift-y);
+
+  .reviews__track {
+    animation: none;
   }
-}
 
-.review:nth-child(2) {
-  animation-duration: 26s;
-  animation-delay: -7s;
-  --drift-x: -1px;
-  --drift-y: -2px;
-}
+  .review {
+    scroll-snap-align: start;
+  }
 
-.review:nth-child(3) {
-  animation-duration: 22s;
-  animation-delay: -13s;
-  --drift-x: -3px;
-  --drift-y: -7px;
-}
-
-.review:nth-child(4) {
-  animation-duration: 31s;
-  animation-delay: -4s;
-  --drift-x: 3px;
-  --drift-y: -4px;
-}
-
-.review:nth-child(5) {
-  animation-duration: 17s;
-  animation-delay: -11s;
-  --drift-x: -2px;
-  --drift-y: -6px;
-}
-
-.review:nth-child(6) {
-  animation-duration: 28s;
-  animation-delay: -19s;
-  --drift-x: 1px;
-  --drift-y: -2px;
+  .review[aria-hidden='true'] {
+    display: none;
+  }
 }
 
 .review__plate {
@@ -123,12 +161,15 @@
   line-height: 1.6;
 }
 
+/* Подпись прижата к низу: карточки в ряду одной высоты, и подписи
+   на разной высоте читались бы неровным краем. */
 .review__author {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--sp-2) var(--sp-3);
-  margin-top: var(--sp-4);
+  margin-top: auto;
+  padding-top: var(--sp-4);
 }
 
 .review__name {
@@ -166,18 +207,27 @@
 }
 
 
-@media (min-width: 640px) {
+@media (max-width: 639px) {
+  /* Узкий экран: карточка уже, лента едет быстрее — иначе на
+     телефоне тот же путь занимает столько же времени при вдвое
+     меньшем окне, и полоса кажется стоящей. */
+  .review {
+    width: min(19rem, 78vw);
+    margin-right: var(--sp-3);
+  }
+
+  .reviews__track {
+    animation-duration: 58s;
+  }
+
   .reviews {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent);
   }
 }
 
 @media (min-width: 1024px) {
   .footer {
     padding-bottom: var(--sp-7);
-  }
-
-  .reviews {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
