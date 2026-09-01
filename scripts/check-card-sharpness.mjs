@@ -2,16 +2,19 @@
  * Чёткость текста на карточках витрины.
  *
  * Карточки выводятся слоем HTML, которому каждый кадр выставляется
- * matrix3d от камеры сцены. Браузер растеризует такой слой ОДИН раз
- * в размере раскладки, а показывает — в размере, который задала
- * матрица. Ближняя карточка показывается КРУПНЕЕ раскладки, и её
- * готовый растр браузер растягивает: кромка буквы размывается ровно
- * во столько раз, во сколько слой увеличен.
+ * преобразование от камеры сцены. Пока это была matrix3d при
+ * `perspective` на контейнере, браузер растеризовал слой ОДИН раз
+ * в размере раскладки, а показывал в размере, который задала матрица:
+ * готовый растр растягивался, и кромка буквы размывалась. Сейчас
+ * у неповёрнутой карточки обычное двумерное преобразование, и растр
+ * считается сразу в нужном размере — эта проверка стережёт, чтобы
+ * так и осталось.
  *
  * Меряется это шириной ступеньки на кромке буквы — сколько точек
- * занимает переход от фона к краске. Вердикт — ОТНОШЕНИЕ ступеньки
- * ближней карточки к боковым: у одинаково растеризованных слоёв оно
- * около единицы, у растянутого — заметно больше.
+ * занимает переход от фона к краске. Вердикт — отношение мягкости
+ * ближней карточки В СЦЕНЕ к её же мягкости ВНЕ СЦЕНЫ при том же
+ * увеличении. Отношение к боковым печатается, но вердиктом быть
+ * не может: у боковых свой кегль, свой поворот и своя прозрачность.
  *
  * Почему среднее, а не наибольшее: наибольшая ступенька растёт вместе
  * с числом просмотренных точек, и вердикт начинает зависеть от размера
@@ -85,25 +88,57 @@ const meta = await page.evaluate(() => {
 const buf = await page.screenshot({ clip: { x: 0, y: 0, width: 1512, height: 900 } });
 
 // Вторая опора, и главная. Ближняя карточка сравнивается САМА С СОБОЙ
-// без сцены: у плоской раскладки нет ни матрицы, ни поворота, ни
-// приглушения — это и есть образец правильной растеризации. Сравнение
-// с боковыми карточками такой опорой быть не может: у них другой
-// кегль заголовка, свой поворот и своя прозрачность.
-await page.evaluate(() => {
+// без сцены: у плоской раскладки нет ни сцены, ни поворота, ни
+// приглушения. Сравнение с боковыми карточками такой опорой быть
+// не может: у них другой кегль заголовка, свой поворот и своя
+// прозрачность.
+//
+// Но опор надо ДВЕ, и вот почему. Ближняя карточка показывается
+// крупнее раскладки (около ×1.08): она ближе к зрителю, в этом весь
+// смысл витрины. Текст в нецелом масштабе браузер не может подогнать
+// штрихами под сетку точек, и на машине с сильным хинтингом он всегда
+// будет мягче того же текста без масштаба — независимо от того, есть
+// сцена или нет. В контейнере разработки хинтинг слабый и разницы
+// почти нет (0.115 против 0.117), на бегунке GitHub она заметна
+// (0.126 против 0.092), и проверка с одной опорой краснела там,
+// где всё исправно.
+//
+// Поэтому вердикт ставится по опоре В ТОМ ЖЕ МАСШТАБЕ: карточка вне
+// сцены, но увеличенная ровно так же. Что останется — то и есть цена
+// сцены. Вторая опора, в масштабе 1, печатается для сведения: она
+// показывает цену самого увеличения, а её платит любая витрина
+// с глубиной.
+const masshtabBlizhney = meta.reduce((a, b) => (a.z > b.z ? a : b)).masshtab;
+const snyatSCenu = () => page.evaluate(() => {
   const root = document.querySelector('[data-3d]');
   if (root) root.removeAttribute('data-3d');
-  for (const el of document.querySelectorAll('.pcard')) el.style.transform = 'none';
+  for (const el of document.querySelectorAll('.pcard')) {
+    el.style.transform = 'none';
+    el.style.animation = 'none';
+    el.style.translate = 'none';
+    el.style.rotate = 'none';
+  }
 });
-await page.waitForTimeout(500);
-const ploskieMeta = await page.evaluate(() => {
-  const el = document.querySelector('.pcard--active') ?? document.querySelectorAll('.pcard')[0];
-  const r = el.querySelector('.pcard__name').getBoundingClientRect();
-  return { x: r.x, y: r.y, w: r.width, h: r.height };
-});
-const bufPloskie = await page.screenshot({ clip: { x: 0, y: 0, width: 1512, height: 900 } });
+const ploskijZamer = async (k) => {
+  await snyatSCenu();
+  await page.evaluate((kk) => {
+    const el = document.querySelector('.pcard--active') ?? document.querySelectorAll('.pcard')[0];
+    el.style.transformOrigin = '50% 50%';
+    el.style.transform = kk === 1 ? 'none' : `scale(${kk})`;
+  }, k);
+  await page.waitForTimeout(500);
+  const box = await page.evaluate(() => {
+    const el = document.querySelector('.pcard--active') ?? document.querySelectorAll('.pcard')[0];
+    const r = el.querySelector('.pcard__name').getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+  const b = await page.screenshot({ clip: { x: 0, y: 0, width: 1512, height: 900 } });
+  return { box, png: PNG.sync.read(b) };
+};
+const vMasshtabe = await ploskijZamer(masshtabBlizhney);
+const vEdinice = await ploskijZamer(1);
 await browser.close();
 const png = PNG.sync.read(buf);
-const pngPloskie = PNG.sync.read(bufPloskie);
 const DPR = png.width / 1512;
 
 const yarkIz = (img) => (x, y) => {
@@ -181,7 +216,8 @@ function stupenka(box, img = png) {
 const zamery = meta
   .map((m) => ({ ...m, ...stupenka(m) }))
   .sort((a, b) => b.z - a.z);
-const ploskaya = stupenka(ploskieMeta, pngPloskie);
+const ploskaya = stupenka(vMasshtabe.box, vMasshtabe.png);
+const ploskayaOdin = stupenka(vEdinice.box, vEdinice.png);
 
 console.log(`\n── чёткость текста на карточках витрины (${THEME}) ──`);
 for (const z of zamery) {
@@ -202,17 +238,28 @@ const otnBok = blizhnyaya.myagkost / bok;
 const otnPlosk = ploskaya.myagkost ? blizhnyaya.myagkost / ploskaya.myagkost : 0;
 
 console.log(
-  `  та же карточка ПЛОСКОЙ: ступенька ${ploskaya.srednyaya.toFixed(2)} px, ` +
+  `  та же карточка ВНЕ СЦЕНЫ, ×${masshtabBlizhney.toFixed(3)}: ступенька ${ploskaya.srednyaya.toFixed(2)} px, ` +
     `штрих ${ploskaya.shtrih.toFixed(2)} px, мягкость ${ploskaya.myagkost.toFixed(3)} по ${ploskaya.kromok} кромкам`,
 );
-console.log(`\n  мягкость: ближняя в сцене ${blizhnyaya.myagkost.toFixed(3)}, боковые ${bok.toFixed(3)}, плоская ${ploskaya.myagkost.toFixed(3)}`);
+console.log(
+  `  она же ВНЕ СЦЕНЫ и без увеличения: ступенька ${ploskayaOdin.srednyaya.toFixed(2)} px, ` +
+    `штрих ${ploskayaOdin.shtrih.toFixed(2)} px, мягкость ${ploskayaOdin.myagkost.toFixed(3)} по ${ploskayaOdin.kromok} кромкам`,
+);
+console.log(`\n  мягкость: ближняя в сцене ${blizhnyaya.myagkost.toFixed(3)}, боковые ${bok.toFixed(3)}, вне сцены в том же масштабе ${ploskaya.myagkost.toFixed(3)}`);
 console.log(`  к боковым ${otnBok.toFixed(3)} (мера кривая: у боковых свой кегль, поворот и прозрачность)`);
-console.log(`  К ПЛОСКОЙ  ${otnPlosk.toFixed(3)} при пороге ${PREDEL} — вот это и есть размытие от слоя`);
+console.log(`  ЦЕНА СЦЕНЫ ${otnPlosk.toFixed(3)} при пороге ${PREDEL} — вот это и есть вердикт`);
+if (ploskayaOdin.myagkost) {
+  console.log(
+    `  цена самого увеличения ×${masshtabBlizhney.toFixed(3)}: ` +
+      `${(ploskaya.myagkost / ploskayaOdin.myagkost).toFixed(3)} — её платит любая витрина с глубиной, ` +
+      'и на машинах с разным хинтингом она разная',
+  );
+}
 
-if (!ploskaya.kromok) {
-  console.log('\n!! плоскую карточку измерить не вышло — проверка ничего не доказала');
+if (!ploskaya.kromok || !ploskayaOdin.kromok) {
+  console.log('\n!! карточку вне сцены измерить не вышло — проверка ничего не доказала');
   process.exit(1);
 }
 const ok = otnPlosk <= PREDEL;
-console.log(ok ? '\nСлой не размывает текст' : '\n!! Текст в слое мягче, чем в плоской раскладке');
+console.log(ok ? '\nСцена не размывает текст' : '\n!! Текст в сцене мягче, чем вне неё при том же масштабе');
 process.exit(ok ? 0 : 1);
