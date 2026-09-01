@@ -38,13 +38,17 @@ for (const [w, name] of [[1512, 'десктоп'], [390, 'мобильная']])
 
     const move = await p.evaluate(async () => {
       const led = document.querySelector('.steps__led');
-      if (!document.querySelector('.steps__led-lobe')) throw new Error('нет .steps__led-lobe — проба устарела');
+      const core = document.querySelector('.steps__led-core');
+      if (!core) throw new Error('нет .steps__led-core — проба устарела');
       const fill = document.querySelector('.steps__track-fill');
       const halo = document.querySelector('.step__halo');
       const node = document.querySelector('.step__node');
       const num = document.querySelector('.step__num');
       const acc = { led: new Set(), fill: new Set(), halo: new Set(), num: new Set(),
-                    // Форма капли: контур задаётся transform двух долей.
+                    // Силуэт капли. Он ОБЯЗАН быть постоянным: светодиод
+                    // с меняющейся формой читается артефактом отрисовки,
+                    // а не движущимся предметом. Живость даёт дыхание
+                    // ореола, а не пляска контура.
                     shape: new Set(), bg: new Set(), border: new Set() };
       const t0 = performance.now();
       await new Promise((res) => { const t = () => {
@@ -52,8 +56,8 @@ for (const [w, name] of [[1512, 'десктоп'], [390, 'мобильная']])
         acc.fill.add(getComputedStyle(fill).transform);
         acc.halo.add(getComputedStyle(halo).opacity);
         acc.num.add(getComputedStyle(num).color);
-        acc.shape.add([...document.querySelectorAll('.steps__led-lobe')]
-          .map((e) => getComputedStyle(e).transform + '/' + getComputedStyle(e, '::before').transform).join('|'));
+        acc.shape.add([getComputedStyle(core).transform, getComputedStyle(core).borderRadius,
+                       getComputedStyle(led).width, getComputedStyle(led).height].join('|'));
         acc.bg.add(getComputedStyle(node).backgroundColor);
         // Обводки у кружка быть не должно вовсе — следим за ШИРИНОЙ.
         acc.border.add(getComputedStyle(node).borderTopWidth);
@@ -70,14 +74,16 @@ for (const [w, name] of [[1512, 'десктоп'], [390, 'мобильная']])
       // У заливки узла и цифры ровно два состояния — так и задумано:
       // промежуточные цвета делали цифру нечитаемой (см. steps.css).
       // Обводки нет вовсе: её ширина обязана оставаться нулевой.
+      // Силуэт ровно один: см. комментарий у acc.shape.
       : (move.led > 20 && move.fill > 20 && move.halo > 5 &&
-         move.shape > 20 && move.bg === 2 && move.num === 2 && move.border === 1 && move.zero);
+         move.shape === 1 && move.bg === 2 && move.num === 2 && move.border === 1 && move.zero);
     if (!okGeom || !okMove) bad++;
     console.log(`  ${okGeom && okMove ? 'ok ' : 'НЕТ'} ${name}${rm ? ', движение выключено' : ''}: ` +
       `дорожка ${geom.dir}, длина ${geom.len}, конец в ${geom.trackEnd} px от центра последнего кружка, ` +
       `доли ${geom.at.join('/')}`);
     console.log(`      за полный цикл: капля ${move.led} положений и ${move.shape} состояний контура, заливка ${move.fill}, ` +
-      `свечение ${move.halo}, у узла ${move.bg} цветов фона, цифра ${move.num}, ширина обводки ${move.widths}`);
+      `свечение ${move.halo}, силуэт капли ${move.shape} (должен быть 1), ` +
+      `у узла ${move.bg} цветов фона, цифра ${move.num}, ширина обводки ${move.widths}`);
     await c.close();
   }
 }

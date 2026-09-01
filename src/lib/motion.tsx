@@ -248,10 +248,18 @@ export function useStepTrack<T extends HTMLElement>() {
       const vertical = Math.abs(dy) > Math.abs(dx);
       const len = vertical ? dy : dx;
 
+      const total = Math.abs(len);
       root.style.setProperty('--track-x', `${first.x}px`);
       root.style.setProperty('--track-y', `${first.y}px`);
-      root.style.setProperty('--track-len', `${Math.abs(len)}px`);
+      root.style.setProperty('--track-len', `${total}px`);
       root.dataset.trackDir = vertical ? 'vertical' : 'horizontal';
+
+      // Полуширина вспышки в ДОЛЯХ дорожки. В пикселях это половина
+      // капли плюс половина цифры — то есть «капля лежит на цифре».
+      // Считается здесь, потому что в CSS длину на длину не поделить,
+      // а доля зависит от длины дорожки и меняется с шириной окна.
+      const FLASH_PX = 16;
+      root.style.setProperty('--flash', total > 0 ? (FLASH_PX / total).toFixed(5) : '0.032');
 
       nodes.forEach((node) => {
         const c = centre(node);
@@ -263,7 +271,23 @@ export function useStepTrack<T extends HTMLElement>() {
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(root);
-    return () => ro.disconnect();
+
+    // Часы блока идут только пока он на экране: анимация
+    // пользовательского свойства считается на главном потоке, и
+    // пересчитывать стиль поддерева ради невидимого незачем.
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (e.isIntersecting) root.dataset.visible = '';
+        else delete root.dataset.visible;
+      },
+      { rootMargin: '120px' },
+    );
+    io.observe(root);
+
+    return () => {
+      ro.disconnect();
+      io.disconnect();
+    };
   }, []);
 
   return ref;

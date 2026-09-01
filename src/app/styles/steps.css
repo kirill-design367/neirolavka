@@ -14,25 +14,88 @@
 }
 
 /* ─── Дорожка со светодиодом ────────────────────────────────────
-   Одна нить: линия, по которой бежит капля света и зажигает узлы.
-   Кружки, дорожка и точка нарисованы одним весом (1px по --c-line),
-   чтобы читаться как один механизм, а не как три разных элемента.
 
-   Всё движение — translate, transform и opacity, кроме перекраски
-   узла: у него меняются цвет заливки и цифры внутри. Обводки у
-   кружка нет. Ни один текст не масштабируется.
+   ОДНИ ЧАСЫ НА ВЕСЬ БЛОК. `--led-pos` — доля пройденной дорожки:
+   ноль у первой цифры, единица у последней. Из него считается ВСЁ —
+   положение капли, длина заливки и вспышка каждой цифры. Рассинхрона
+   не может быть по построению: не существует второго расписания,
+   с которым можно разойтись.
 
-   Цикл поделён на две части. Доля --run — бег точки от первого
-   кружка к последнему, остаток — догорание последнего узла и общее
-   затухание. Заливка и точка описаны одними и теми же ключевыми
-   кадрами с одной и той же линейной функцией, поэтому край заливки
-   в любой момент совпадает с центром точки. Раньше заливка
-   доезжала до конца за 92 % цикла, а точка за 100 %, и заливка
-   обгоняла точку на 7,8 % длины дорожки — 39,7 px на 1512.
+   Раньше расписаний было два. Капля ехала своими ключевыми кадрами,
+   а каждая цифра загоралась собственной анимацией с задержкой
+   `--at * --run * --cycle`. Арифметика сходилась, и замер по пикселям
+   показывал совпадение — но связи между ними не было никакой. Стоило
+   `useStepTrack` пересчитать `--at` после первой отрисовки (а он это
+   делает — и при загрузке шрифтов, и на каждое изменение размера),
+   и цифра перескакивала в другую фазу: вспышка без капли. Плюс до
+   первого замера `--at` не задан вовсе, `var(--at, 0)` даёт ноль,
+   и все три цифры вспыхивают разом в начале цикла.
 
-   Геометрию дорожки считает useStepTrack и раздаёт переменными:
-   на телефоне она вертикальная, на широком экране горизонтальная,
-   и формулами по числу колонок это не описать. */
+   Теперь `--at` — это просто число, с которым сравнивается положение
+   капли. Пересчитали его — сместилась точка срабатывания, и всё.
+
+   Свойства ОБЯЗАНЫ быть зарегистрированы: незарегистрированное
+   пользовательское свойство для браузера строка, и анимировать его
+   нельзя — тот же закон, что у цветовых токенов темы. */
+@property --led-pos {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+/* Видимость капли и залитой дорожки. Живут в тех же ключевых кадрах,
+   что и положение, — это по-прежнему одно расписание, просто
+   с тремя выходами. */
+@property --led-on {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --fill-on {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+/* Производные величины цифры. Регистрация тут не для анимации,
+   а чтобы вычисленное значение было ЧИСЛОМ.
+   Незарегистрированное свойство остаётся строкой «clamp(0, calc(…), 1)»,
+   и проверка, читающая его через parseFloat, получает NaN — а NaN
+   не больше и не меньше порога, поэтому МОЛЧА проходит любое
+   сравнение. Проверка синхронизации ровно на этом и зависла:
+   ноль ложных срабатываний, ноль пропусков и ноль длительности
+   вспышки при исправном блоке.
+   inherits: false — вниз по дереву они не нужны, а лишняя
+   инвалидация стиля стоит кадров. */
+@property --d {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+@property --dist {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+
+@property --hit {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+/* --glow, в отличие от соседей, НАСЛЕДУЕТСЯ: его читает .step__halo,
+   а это ребёнок узла. С inherits: false ореол видел начальное
+   значение 0 и не загорался вовсе — проверка поймала это как
+   «свечение принимает одно значение за цикл». */
+@property --glow {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
 .steps__thread {
   position: relative;
   list-style: none;
@@ -42,6 +105,67 @@
   gap: var(--sp-5);
   --cycle: 5.6s;
   --run: 0.78;
+  /* Полуширина вспышки в долях дорожки: цифра горит, пока капля
+     ЛЕЖИТ НА НЕЙ. Ставит useStepTrack — в пикселях это половина
+     капли плюс половина цифры, а в долях зависит от длины дорожки,
+     и вычислить это в CSS нечем: деления длины на длину нет. */
+  --flash: 0.032;
+  /* Послесвечение после прохода. Только ПОСЛЕ: свет, загорающийся
+     до прихода капли, — это ровно та поломка, ради которой всё
+     переписано. */
+  --tail: 0.1;
+  animation: led-run var(--cycle) linear infinite;
+}
+
+/* Пока блок за экраном, часы стоят. Анимация пользовательского
+   свойства идёт по главному потоку — пересчитывать стиль поддерева
+   ради того, чего не видно, незачем. Атрибут ставит useStepTrack
+   по IntersectionObserver. */
+.steps__thread:not([data-visible]) {
+  animation-play-state: paused;
+}
+
+/* Капля НЕ ПАРКУЕТСЯ на последней цифре, а уходит за конец дорожки
+   и там гаснет. Иначе у последней цифры вспышка длится не столько же,
+   сколько у остальных, а до конца цикла: свет стоит на ней — значит,
+   она горит. Уходящая капля даёт всем трём одинаковое окно.
+
+   Скорость на участке 78–84 % та же, что и до него: 0.0132 доли
+   на процент цикла, 0.079 за шесть процентов. Ломать линейность
+   нельзя — по положению считается и заливка, и вспышки. */
+@keyframes led-run {
+  0% {
+    --led-pos: 0;
+    --led-on: 0;
+    --fill-on: 0;
+  }
+  /* 0.0256 = 2/78: положение остаётся строго линейным, лишний
+     ключевой кадр нужен только чтобы капля успела проявиться. */
+  2% {
+    --led-pos: 0.0256;
+    --led-on: 1;
+    --fill-on: 1;
+  }
+  78% {
+    --led-pos: 1;
+    --led-on: 1;
+    --fill-on: 1;
+  }
+  84% {
+    --led-pos: 1.079;
+    --led-on: 0;
+    --fill-on: 1;
+  }
+  90% {
+    --led-pos: 1.079;
+    --led-on: 0;
+    --fill-on: 1;
+  }
+  100% {
+    --led-pos: 1.079;
+    --led-on: 0;
+    --fill-on: 0;
+  }
 }
 
 .steps__track {
@@ -68,243 +192,104 @@
   pointer-events: none;
 }
 
-/* Подсвеченный участок за точкой: растёт масштабом, а не шириной. */
+/* Подсвеченный участок за каплей: растёт масштабом, а не шириной,
+   и берёт масштаб из тех же часов. Край заливки поэтому совпадает
+   с центром капли не «по замеру», а тождественно. */
 .steps__track-fill {
   inset: 0;
   background: var(--c-brand);
   transform-origin: top center;
-  transform: scaleY(0);
-  animation: track-fill var(--cycle) linear infinite;
+  /* Заливка обрезана единицей: капля уходит за конец дорожки,
+     а дорожке дальше расти некуда. */
+  transform: scaleY(clamp(0, var(--led-pos), 1));
+  opacity: var(--fill-on);
 }
 
 .steps__thread[data-track-dir='horizontal'] .steps__track-fill {
   transform-origin: left center;
-  transform: scaleX(0);
-  animation-name: track-fill-x;
+  transform: scaleX(clamp(0, var(--led-pos), 1));
 }
 
-/* Капля света. Идеального круга нет: две эллиптические доли
-   крутятся с разной скоростью, и их общий силуэт всё время немного
-   меняется.
+/* ── Светодиод ─────────────────────────────────────────────────
 
-   Внутри каждой доли — крупный слой с ярким многоцветным градиентом,
-   который медленно ползает. Доля обрезает его по кругу, поэтому
-   видно только сердцевину: в ней переливаются несколько цветов, как
-   будто внутри что-то движется. Двигается СЛОЙ через transform,
-   а не позиция градиента: браузер перекладывает готовый растр, а не
-   перерисовывает градиент каждый кадр.
+   Это источник света, а не облачко. Форма ясная и постоянная:
+   эллипс, вытянутый ВДОЛЬ хода и приплюснутый поперёк, с ярким
+   ядром внутри и мягким свечением вокруг.
 
-   Сам .steps__led цвета не несёт — он только ездит и гаснет. */
+   Прежняя капля была собрана из двух кругов с крутящимися
+   разноцветными градиентами: силуэт всё время менялся, ядра не было
+   вовсе, и читалось это аморфным пятном. Форма, которая ни на что
+   не похожа, не читается движущимся предметом — читается артефактом
+   отрисовки.
+
+   Живость даёт не силуэт, а дыхание свечения: контур стоит,
+   ореол вокруг него медленно пульсирует. */
 .steps__led {
   left: 50%;
   top: 0;
-  width: 0.75rem;
-  height: 0.75rem;
-  margin: -0.375rem 0 0 -0.375rem;
-  animation:
-    led-move-y var(--cycle) linear infinite,
-    led-fade var(--cycle) linear infinite;
-}
-
-.steps__led-lobe {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  overflow: hidden;
-  pointer-events: none;
-  animation: led-wobble-a 3.1s ease-in-out infinite;
-}
-
-.steps__led-lobe--b {
-  animation: led-wobble-b 4.3s ease-in-out infinite;
-}
-
-.steps__led-lobe::before {
-  content: '';
-  position: absolute;
-  inset: -85%;
-  animation: spark-a 2.6s linear infinite;
-  background:
-    radial-gradient(circle at 32% 28%, var(--c-spark-2) 0%, transparent 46%),
-    radial-gradient(circle at 72% 62%, var(--c-spark-3) 0%, transparent 44%),
-    conic-gradient(
-      from 0deg,
-      var(--c-spark-1),
-      var(--c-spark-3),
-      var(--c-spark-2),
-      var(--c-spark-1)
-    );
-}
-
-/* У второй доли и рисунок, и ход другие: периоды не кратны, поэтому
-   сочетание цветов в сердцевине не повторяется на глаз. */
-.steps__led-lobe--b::before {
-  animation: spark-b 3.7s linear infinite;
-  background:
-    radial-gradient(circle at 66% 34%, var(--c-spark-3) 0%, transparent 45%),
-    radial-gradient(circle at 26% 70%, var(--c-spark-1) 0%, transparent 42%),
-    conic-gradient(
-      from 140deg,
-      var(--c-spark-2),
-      var(--c-spark-1),
-      var(--c-spark-3),
-      var(--c-spark-2)
-    );
-}
-
-/* Мягкое свечение вокруг капли: дышит отдельно от формы, поэтому
-   пульс и колыхание контура не попадают в такт друг другу. */
-.steps__led::after {
-  content: '';
-  position: absolute;
-  inset: -0.625rem;
-  border-radius: 50%;
-  pointer-events: none;
-  background: radial-gradient(circle, var(--c-brand) 0%, transparent 68%);
-  opacity: 0.5;
-  animation: led-breathe 2.3s ease-in-out infinite;
-}
-
-@keyframes spark-a {
-  0% {
-    transform: rotate(0deg) translate3d(6%, -4%, 0);
-  }
-  50% {
-    transform: rotate(180deg) translate3d(-5%, 6%, 0);
-  }
-  100% {
-    transform: rotate(360deg) translate3d(6%, -4%, 0);
-  }
-}
-
-@keyframes spark-b {
-  0% {
-    transform: rotate(360deg) translate3d(-6%, 5%, 0);
-  }
-  50% {
-    transform: rotate(180deg) translate3d(5%, -6%, 0);
-  }
-  100% {
-    transform: rotate(0deg) translate3d(-6%, 5%, 0);
-  }
+  width: 0.5625rem;
+  height: 1.375rem;
+  margin: -0.6875rem 0 0 -0.28125rem;
+  translate: 0 calc(var(--led-pos) * var(--track-len, 0px));
+  opacity: var(--led-on);
 }
 
 .steps__thread[data-track-dir='horizontal'] .steps__led {
   left: 0;
   top: 50%;
-  animation-name: led-move-x, led-fade;
+  width: 1.375rem;
+  height: 0.5625rem;
+  margin: -0.28125rem 0 0 -0.6875rem;
+  translate: calc(var(--led-pos) * var(--track-len, 0px)) 0;
 }
 
-@keyframes track-fill {
-  0% {
-    transform: scaleY(0);
-    opacity: 1;
-  }
-  78% {
-    transform: scaleY(1);
-    opacity: 1;
-  }
-  88% {
-    transform: scaleY(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scaleY(1);
-    opacity: 0;
-  }
+/* Ядро: раскалённая сердцевина, тёплый переход, плотная кромка.
+   Так читается источник света, а не наклейка. Все три цвета взяты
+   из палитры и подобраны так, чтобы порядок светлот сохранялся
+   в обеих темах: --c-spark-3 светлее --c-spark-2, тот теплее
+   и светлее кромки.
+
+   Градиент `closest-side` у эллиптической коробки сам становится
+   эллипсом с теми же пропорциями — ядро вытянуто вместе с каплей,
+   а не сидит в ней кружком. */
+.steps__led-core {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    var(--c-spark-3) 0%,
+    var(--c-spark-3) 22%,
+    var(--c-spark-2) 52%,
+    var(--c-brand) 88%
+  );
 }
 
-@keyframes track-fill-x {
-  0% {
-    transform: scaleX(0);
-    opacity: 1;
-  }
-  78% {
-    transform: scaleX(1);
-    opacity: 1;
-  }
-  88% {
-    transform: scaleX(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scaleX(1);
-    opacity: 0;
-  }
+/* Свечение вокруг: шире вдоль хода, чем поперёк, — у бегущего света
+   ореол вытянут туда же, куда и он сам. Дышит своим периодом. */
+.steps__led::after {
+  content: '';
+  position: absolute;
+  inset: -0.55rem -0.35rem;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(closest-side, var(--c-brand) 0%, transparent 74%);
+  opacity: 0.5;
+  animation: led-breathe 2.3s ease-in-out infinite;
 }
 
-@keyframes led-move-y {
-  0% {
-    translate: 0 0;
-  }
-  78% {
-    translate: 0 var(--track-len, 0);
-  }
-  100% {
-    translate: 0 var(--track-len, 0);
-  }
-}
-
-@keyframes led-move-x {
-  0% {
-    translate: 0 0;
-  }
-  78% {
-    translate: var(--track-len, 0) 0;
-  }
-  100% {
-    translate: var(--track-len, 0) 0;
-  }
-}
-
-/* Гаснет вместе с дорожкой, а разгорается за 2 % цикла — к этому
-   моменту заливка выросла на те же 2 %, то есть на длину меньше
-   самой капли, и разрыва не видно. */
-@keyframes led-fade {
-  0% {
-    opacity: 0;
-  }
-  2%,
-  88% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-@keyframes led-wobble-a {
-  0% {
-    transform: rotate(0deg) scale(1.14, 0.88);
-  }
-  50% {
-    transform: rotate(180deg) scale(0.9, 1.12);
-  }
-  100% {
-    transform: rotate(360deg) scale(1.14, 0.88);
-  }
-}
-
-@keyframes led-wobble-b {
-  0% {
-    transform: rotate(60deg) scale(0.92, 1.1);
-  }
-  50% {
-    transform: rotate(-120deg) scale(1.1, 0.9);
-  }
-  100% {
-    transform: rotate(-300deg) scale(0.92, 1.1);
-  }
+.steps__thread[data-track-dir='horizontal'] .steps__led::after {
+  inset: -0.35rem -0.55rem;
 }
 
 @keyframes led-breathe {
   0%,
   100% {
-    transform: scale(0.88);
+    transform: scale(0.9);
     opacity: 0.42;
   }
   50% {
-    transform: scale(1.12);
+    transform: scale(1.1);
     opacity: 0.62;
   }
 }
@@ -317,20 +302,31 @@
   align-items: start;
 }
 
-/* Узел загорается целиком: заливка, цифра внутри и свечение вокруг.
+/* ── Цифра ─────────────────────────────────────────────────────
 
-   ОБВОДКИ НЕТ И БЫТЬ НЕ ДОЛЖНО. Тонкая линия вокруг цифры выглядит
-   дёшево и делает из кружка отдельную деталь; кружок читается
-   заливкой — она светлее фона секции — и свечением в момент прихода
-   капли.
+   КРУЖКА В ПОКОЕ НЕТ. Цифра стоит на дорожке сама по себе; её фон
+   равен фону страницы и нужен ровно затем, чтобы линия не шла
+   сквозь глиф. Это не рамка: перепад к фону 1:1, увидеть его нельзя.
 
-   Без isolation: узел не должен создавать свой контекст наложения,
-   иначе свечение с z-index -1 окажется НАД его фоном и цифра будет
-   лежать прямо на акцентном цвете.
+   Вспыхивает цифра ровно тогда, когда капля лежит на ней. `--d` —
+   расстояние со знаком от капли до этой цифры, `--dist` — оно же
+   по модулю (abs() ещё молод, а max(x, −x) — это он и есть).
 
-   Задержка равна доле пути до этого шага, умноженной на долю цикла,
-   которую занимает бег. Без множителя --run узлы загорались позже,
-   чем к ним подходила точка. */
+   `--hit` — жёсткая ступенька: множитель 100000 означает, что переход
+   занимает стотысячную долю дорожки — сотые доли миллисекунды, то есть
+   в кадр не попадает вовсе. Тысячи было мало: 4 мс на переход, и раз
+   в несколько проходов кадр приходился ровно на него — проверка ловила
+   у узла три цвета фона вместо двух. Ступенька здесь обязательна,
+   а не желательна: заливка идёт
+   от фона страницы к акценту, цифра навстречу, и на середине они
+   сходятся в один тон — контраст падал бы до единицы. Безопасного
+   промежутка между состояниями не существует, поэтому его нет.
+
+   `--glow` — послесвечение, и оно НЕСИММЕТРИЧНО. Загорается вместе
+   со вспышкой (первый множитель — та же ступенька со сдвигом
+   на полуширину вспышки), гаснет линейно за --tail после прохода.
+   Симметричное окно светило бы ДО прихода капли — ровно то, из-за
+   чего блок и переделан. */
 .step__node {
   position: relative;
   width: 2rem;
@@ -338,24 +334,27 @@
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: var(--c-surface);
-  color: var(--c-text);
-  animation: step-fill var(--cycle, 5.6s) linear infinite;
-  animation-delay: calc(var(--at, 0) * var(--run, 0.78) * var(--cycle, 5.6s));
+  --d: calc(var(--led-pos) - var(--at, 0));
+  --dist: max(var(--d), calc(0 - var(--d)));
+  --hit: clamp(0, calc((var(--flash) - var(--dist)) * 100000), 1);
+  --glow: min(
+    clamp(0, calc((var(--d) + var(--flash)) * 100000), 1),
+    clamp(0, calc((var(--tail) - var(--d)) / var(--tail)), 1)
+  );
+  background-color: color-mix(in oklab, var(--c-brand) calc(var(--hit) * 100%), var(--c-bg));
+  color: color-mix(in oklab, var(--c-on-brand) calc(var(--hit) * 100%), var(--c-muted));
 }
 
-/* Свечение вокруг узла — отдельный слой без текста: масштаб и
-   прозрачность ему разрешены, цифру он не трогает. */
+/* Свечение вокруг цифры — отдельный слой без текста: масштаб
+   и прозрачность ему разрешены, глиф он не трогает. */
 .step__halo {
   position: absolute;
   inset: -0.5rem;
   z-index: -1;
   border-radius: 50%;
   background: radial-gradient(circle, var(--c-brand) 0%, transparent 70%);
-  opacity: 0;
-  transform: scale(0.6);
-  animation: step-glow var(--cycle, 5.6s) linear infinite;
-  animation-delay: calc(var(--at, 0) * var(--run, 0.78) * var(--cycle, 5.6s));
+  opacity: calc(var(--glow) * 0.55);
+  transform: scale(calc(1 + (1 - var(--glow)) * 0.3));
 }
 
 /* Цифра не масштабируется и своей анимации не имеет: цвет она
@@ -367,80 +366,33 @@
   color: inherit;
 }
 
-/* НИКАКОГО РАЗГОРАНИЯ ДО НУЛЯ. Раньше свечение начинало разгораться
-   на 96 % своего цикла — за 224 мс до прихода капли, и узел читался
-   вспыхнувшим заранее: замер по пикселям давал 21–25 px хода на 1512
-   и 11–13 px на 390. Теперь всё включается ровно на 0 % — в тот
-   кадр, когда центр капли совпадает с центром кружка.
-
-   Заливка и цифра переключаются шагом, без промежуточных цветов.
-   Плавный переход здесь недопустим: заливка идёт от тёмно-зелёного
-   к кремовому, цифра навстречу, и на середине они сходятся в один
-   тон — замер показывал 1,10:1 в светлой теме и 1,02:1 в тёмной,
-   то есть цифра на полкадра пропадала. Ни один цвет цифры не
-   вытягивает 4,5:1 разом на обеих заливках, так что промежутка
-   между состояниями просто нет.
-
-   Мягкость даёт не заливка, а свечение: гаснет оно плавно и держит
-   послесвечение вокруг уже погасшего узла. */
-@keyframes step-fill {
-  0% {
-    background-color: var(--c-brand);
-    color: var(--c-on-brand);
-    animation-timing-function: steps(1, end);
-  }
-  14% {
-    background-color: var(--c-surface);
-    color: var(--c-text);
-    animation-timing-function: steps(1, end);
-  }
-  100% {
-    background-color: var(--c-brand);
-    color: var(--c-on-brand);
-  }
-}
-
-@keyframes step-glow {
-  0% {
-    opacity: 0.55;
-    transform: scale(1);
-  }
-  8% {
-    opacity: 0.36;
-    transform: scale(1.08);
-  }
-  22%,
-  100% {
-    opacity: 0;
-    transform: scale(1.3);
-  }
-}
-
-/* Движение выключено — капля стоит в начале, все шаги подсвечены
-   одинаково: иначе схлопнутые в один кадр анимации оставили бы
-   их погашенными. */
+/* Движение выключено — часы стоят на нуле, и по такому кадру блок
+   выглядел бы так, будто горит только первый шаг. Поэтому здесь
+   всё описано явно: капли нет, дорожка подсвечена ровно, цифры
+   одинаково приглушены. */
 @media (prefers-reduced-motion: reduce) {
-  .steps__track-fill {
+  .steps__thread {
     animation: none !important;
+  }
+
+  .steps__track-fill {
     transform: none !important;
     opacity: 0.5;
   }
 
-  .steps__led,
-  .steps__led-lobe,
-  .steps__led-lobe::before,
-  .steps__led::after {
-    animation: none !important;
+  .steps__led {
+    display: none;
   }
 
   .step__node {
-    animation: none !important;
+    background-color: var(--c-bg) !important;
+    color: var(--c-muted) !important;
   }
 
   .step__halo {
-    animation: none !important;
-    opacity: 0.3 !important;
+    opacity: 0.22 !important;
     transform: scale(1) !important;
+    animation: none !important;
   }
 }
 

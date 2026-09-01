@@ -39,22 +39,20 @@ export function Steps() {
             из отрезков между соседними шагами. */}
         <span className="steps__track" aria-hidden="true">
           <span className="steps__track-fill" />
-          {/* Две доли капли. Каждая — круг с обрезкой, внутри которого
-              медленно ползает крупный яркий градиент: это и есть
-              перелив сердцевины. Доли крутятся с разными периодами,
-              поэтому их общий силуэт всё время меняется. */}
+          {/* Светодиод: ясная постоянная форма и яркое ядро. Ездит он
+              не своей анимацией, а положением --led-pos — теми же
+              часами, по которым вспыхивают цифры. */}
           <span className="steps__led">
-            <span className="steps__led-lobe" />
-            <span className="steps__led-lobe steps__led-lobe--b" />
+            <span className="steps__led-core" />
           </span>
         </span>
         {STEPS.map((step) => (
           <li className="step" key={step.n}>
             <span className="step__node" aria-hidden="true">
               {/* Свечение — отдельный слой без текста: увеличивается
-                  и гаснет оно. Сам узел загорается целиком — заливка
-                  и цифра, — но не масштабируется: масштаб на узле
-                  с текстом растянул бы готовый растр. */}
+                  и гаснет оно. Сама цифра вспыхивает цветом, но
+                  не масштабируется: масштаб на тексте растянул бы
+                  готовый растр. */}
               <span className="step__halo" />
               <span className="step__num tnum">{step.n}</span>
             </span>

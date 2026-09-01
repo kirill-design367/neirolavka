@@ -1,173 +1,153 @@
 /**
- * Перелив внутри капли света: правда ли внутри неё что-то движется
- * и сколько там цветов.
+ * Светодиод на дорожке шагов: форма и ядро.
  *
- * Замер разделён на два, иначе он ничего не доказывает. Если гнать
- * все анимации разом, то «картинка внутри меняется» получится и от
- * колыхания самого контура — то есть проверка перелива засчитает
- * ровно то, что переливом не является.
+ * Прежде здесь мерился ПЕРЕЛИВ внутри капли — сколько цветов ползает
+ * в её сердцевине. Того перелива больше нет и не должно быть: капля
+ * из двух крутящихся долей с разноцветными градиентами читалась
+ * аморфным пятном, а не источником света. Проверка переписана
+ * под то, что теперь требуется от капли:
  *
- *   перелив — колыхание и дыхание заморожены, крутится только
- *             градиент внутри долей;
- *   контур  — наоборот: градиент заморожен, крутятся доли.
+ *   1. СИЛУЭТ ВЫТЯНУТ ВДОЛЬ ХОДА. На горизонтальной дорожке капля
+ *      шире, чем выше; на вертикальной наоборот. Круглое пятно —
+ *      это не движущийся свет.
+ *   2. ЯДРО СВЕТЛЕЕ КРОМКИ. В обеих темах: и днём, и ночью
+ *      сердцевина взята из --c-spark-3, а кромка из --c-brand,
+ *      и порядок светлот там один и тот же.
+ *   3. ФОРМА ЯСНАЯ, а не облако. Площадь плотной части капли
+ *      сравнивается с площадью объявленного эллипса: у размытого
+ *      пятна плотной части почти нет, у наклейки она вдвое больше
+ *      объявленной.
  *
- * Мера движения — размах КАЖДОГО пикселя за цикл (max − min по
- * фазам), усреднённый по сердцевине. Средняя разница между соседними
- * фазами не годится: она падает при увеличении числа фаз, и вердикт
- * начинает зависеть от аргумента командной строки.
- *
- * Свечение вокруг капли в счёт не идёт: берём только круг по её
- * собственному размеру.
+ * Всё, кроме капли, на время замера прячется: дорожка и цифры дают
+ * свою краску, и без этого меряется не капля, а окрестность.
  */
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
 
-const URL = process.argv[2];
-const PHASES = Number(process.argv[3] ?? 16);
-const SCALE = 8;
+const URL = process.argv[2] ?? 'http://127.0.0.1:4173/';
+const CHROME = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
-const hsl = (r, g, b) => {
-  r /= 255; g /= 255; b /= 255;
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, l = (mx + mn) / 2;
-  if (d === 0) return [0, 0, l];
-  const s = d / (1 - Math.abs(2 * l - 1));
-  let h;
-  if (mx === r) h = 60 * (((g - b) / d) % 6);
-  else if (mx === g) h = 60 * ((b - r) / d + 2);
-  else h = 60 * ((r - g) / d + 4);
-  return [(h + 360) % 360, s, l];
-};
-
-const b = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
 let bad = 0;
+const ok = (t) => console.log(`  ok   ${t}`);
+const no = (t) => { bad++; console.log(`  НЕТ  ${t}`); };
+const info = (t) => console.log(`  —    ${t}`);
 
-for (const theme of ['light', 'dark']) {
-  const c = await b.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU', deviceScaleFactor: SCALE });
-  await c.addInitScript((t) => localStorage.setItem('neirolavka-theme', t), theme);
-  const p = await c.newPage();
-  await p.goto(URL, { waitUntil: 'networkidle' });
-  await p.waitForTimeout(700);
-  await p.locator('.steps').scrollIntoViewIfNeeded();
-  await p.waitForTimeout(900);
+const browser = await chromium.launch({ executablePath: CHROME });
 
-  // Капля стоит на месте: цикл дорожки останавливаем в середине пути.
-  const periods = await p.evaluate(() => {
-    const cyc = document.querySelector('.steps__track-fill').getAnimations()[0].effect.getTiming().duration;
-    [...document.querySelectorAll('.steps__track-fill,.steps__led,.step__node,.step__halo')]
-      .flatMap((e) => e.getAnimations())
-      .forEach((a) => { if (a.effect.getTiming().duration === cyc) { a.pause(); a.currentTime = cyc * 0.3; } });
-    // Анимации перелива и колыхания — у долей и их псевдоэлементов.
-    const pick = (test) => document.getAnimations().filter((a) => test(a.animationName || ''));
-    const spark = pick((n) => n.startsWith('spark-'));
-    const shape = pick((n) => n.startsWith('led-wobble') || n === 'led-breathe');
-    [...spark, ...shape].forEach((a) => { a.pause(); a.currentTime = 0; });
-    window.__spark = spark;
-    window.__shape = shape;
-    return { spark: spark.map((a) => ({ n: a.animationName, d: a.effect.getTiming().duration })),
-             shape: shape.map((a) => ({ n: a.animationName, d: a.effect.getTiming().duration })) };
+for (const [w, theme, name] of [
+  [1512, 'light', 'десктоп, светлая'],
+  [1512, 'dark', 'десктоп, тёмная'],
+  [390, 'light', 'телефон, светлая'],
+]) {
+  console.log(`\n── ${name} ──`);
+  const ctx = await browser.newContext({
+    viewport: { width: w, height: 900 },
+    locale: 'ru-RU',
+    isMobile: w < 500,
+    hasTouch: w < 500,
+    deviceScaleFactor: 4,
   });
+  await ctx.addInitScript((t) => localStorage.setItem('neirolavka-theme', t), theme);
+  const page = await ctx.newPage();
+  await page.goto(URL, { waitUntil: 'networkidle' });
+  await page.evaluate(() => document.querySelector('.steps').scrollIntoView({ block: 'center' }));
+  await page.waitForTimeout(1400);
 
-  if (!periods.spark.length || !periods.shape.length) {
-    console.log(`  НЕТ АНИМАЦИЙ (перелив ${periods.spark.length}, контур ${periods.shape.length}) — проба устарела, поправьте имена в скрипте`);
-    bad++; await c.close(); continue;
-  }
-
-  const box = await p.locator('.steps__led').boundingBox();
-  const sweep = async (which) => {
-    const out = [];
-    for (let i = 0; i < PHASES; i++) {
-      await p.evaluate(([w, f]) => {
-        window[w].forEach((a) => { a.currentTime = a.effect.getTiming().duration * f; });
-      }, [which, i / PHASES]);
-      await p.waitForTimeout(90);
-      out.push(PNG.sync.read(await p.screenshot({
-        clip: { x: box.x, y: box.y, width: box.width, height: box.height },
-      })));
+  // Капля ставится в четверть пути — там она заведомо не накрыта
+  // цифрой. Дыхание ореола замораживается, иначе размер пятна гуляет.
+  const geom = await page.evaluate(() => {
+    const th = document.querySelector('.steps__thread');
+    const a = th.getAnimations().find((x) => x.animationName === 'led-run');
+    if (!a) return null;
+    a.pause();
+    a.currentTime = 0.25 * 0.78 * parseFloat(getComputedStyle(th).getPropertyValue('--cycle')) * 1000;
+    for (const x of document.getAnimations()) {
+      if (x.animationName === 'led-breathe') { x.pause(); x.currentTime = 0; }
     }
-    // Возвращаем эту группу в исходную фазу, чтобы следующий проход
-    // мерил только своё движение.
-    await p.evaluate((w) => { window[w].forEach((a) => { a.currentTime = 0; }); }, which);
-    return out;
+    // Прячем всё, кроме капли.
+    document.querySelector('.steps__track').style.background = 'transparent';
+    document.querySelector('.steps__track-fill').style.visibility = 'hidden';
+    for (const s of document.querySelectorAll('.step')) s.style.visibility = 'hidden';
+    const led = document.querySelector('.steps__led');
+    const r = led.getBoundingClientRect();
+    return {
+      horiz: th.dataset.trackDir === 'horizontal',
+      w: r.width,
+      h: r.height,
+      box: { x: Math.round(r.x - 22), y: Math.round(r.y - 22),
+             width: Math.round(r.width + 44), height: Math.round(r.height + 44) },
+    };
+  });
+  if (!geom) { no('анимации led-run нет — проба устарела'); await ctx.close(); continue; }
+
+  await page.waitForTimeout(150);
+  const png = PNG.sync.read(await page.screenshot({ clip: geom.box }));
+  const DPR = png.width / geom.box.width;
+  const yark = (x, y) => {
+    const o = ((y * png.width) + x) * 4;
+    return 0.2126 * png.data[o] + 0.7152 * png.data[o + 1] + 0.0722 * png.data[o + 2];
   };
-  const shots = await sweep('__spark');
-  const shapes = await sweep('__shape');
-  await c.close();
+  // Фон — угол снимка: там заведомо ничего нет.
+  const fon = yark(1, 1);
+  // Краска: отклонение от фона. Направление отклонения разное
+  // в темах, поэтому берём модуль.
+  const kr = (x, y) => Math.abs(yark(x, y) - fon);
 
-  const W = shots[0].width, H = shots[0].height;
-  const cx = (W - 1) / 2, cy = (H - 1) / 2, rad = Math.min(W, H) / 2 - 1;
-  const inside = [];
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
-    if (Math.hypot(x - cx, y - cy) <= rad * 0.86) inside.push((y * W + x) << 2);
+  let pik = 0;
+  for (let y = 0; y < png.height; y++) for (let x = 0; x < png.width; x++) pik = Math.max(pik, kr(x, y));
+  if (pik < 12) { no(`капли на снимке нет: наибольшее отклонение от фона ${pik.toFixed(1)} уровня`); await ctx.close(); continue; }
 
-  const bins = new Set();
-  const hues = [];
-  let sMin = 1, sMax = 0, lMin = 1, lMax = 0;
-  for (const png of shots) for (const o of inside) {
-    const [r, g, bl] = [png.data[o], png.data[o + 1], png.data[o + 2]];
-    bins.add((r >> 3) * 1024 + (g >> 3) * 32 + (bl >> 3));
-    const [h, s, l] = hsl(r, g, bl);
-    if (s > 0.08) hues.push(h);
-    if (s < sMin) sMin = s; if (s > sMax) sMax = s;
-    if (l < lMin) lMin = l; if (l > lMax) lMax = l;
-  }
-  // Разброс тона считается ПО КРУГУ: тон замкнут, и у сливового с
-  // янтарным разность концов через ноль давала 343° вместо 70°.
-  // Берём наибольший пустой сектор и вычитаем его из полного круга.
-  hues.sort((a, z) => a - z);
-  let span = 0;
-  if (hues.length > 1) {
-    let gap = 0;
-    for (let i = 1; i < hues.length; i++) gap = Math.max(gap, hues[i] - hues[i - 1]);
-    gap = Math.max(gap, hues[0] + 360 - hues[hues.length - 1]);
-    span = 360 - gap;
-  }
-
-  // Размах каждого пикселя за цикл, усреднённый по сердцевине.
-  // Мера не зависит от числа фаз: с ростом фаз она сходится, а не
-  // падает, как средняя разница между соседними кадрами.
-  let swingSum = 0, swingMax = 0;
-  for (const o of inside) {
-    let s = 0;
-    for (let ch = 0; ch < 3; ch++) {
-      let mn = 255, mx = 0;
-      for (const png of shots) { const v = png.data[o + ch]; if (v < mn) mn = v; if (v > mx) mx = v; }
-      s += mx - mn;
+  // Плотная часть: не меньше половины пика.
+  let minX = 1e9; let maxX = -1e9; let minY = 1e9; let maxY = -1e9; let plot = 0;
+  let sx = 0; let sy = 0; let sw = 0;
+  for (let y = 0; y < png.height; y++) {
+    for (let x = 0; x < png.width; x++) {
+      const v = kr(x, y);
+      if (v > pik * 0.5) {
+        plot++;
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+      sx += v * x; sy += v * y; sw += v;
     }
-    s /= 3;
-    swingSum += s; if (s > swingMax) swingMax = s;
   }
-  const swing = swingSum / inside.length;
+  const shir = (maxX - minX + 1) / DPR;
+  const vys = (maxY - minY + 1) / DPR;
+  const vdol = geom.horiz ? shir : vys;
+  const poperek = geom.horiz ? vys : shir;
+  const rastyazh = poperek ? vdol / poperek : 0;
+  info(`плотная часть ${shir.toFixed(1)}×${vys.toFixed(1)} px при коробке ${geom.w.toFixed(1)}×${geom.h.toFixed(1)}`);
+  if (rastyazh < 1.6) no(`капля не вытянута вдоль хода: ${vdol.toFixed(1)} против ${poperek.toFixed(1)} px, отношение ${rastyazh.toFixed(2)} при пороге 1.6`);
+  else ok(`капля вытянута вдоль хода: ${vdol.toFixed(1)} против ${poperek.toFixed(1)} px, отношение ${rastyazh.toFixed(2)}`);
 
-  // Силуэт: сколько пикселей кадра занимает сама капля. Считается по
-  // ВТОРОМУ проходу, где крутится контур, а градиент стоит.
-  const areas = shapes.map((png) => {
-    const bg = [png.data[0], png.data[1], png.data[2]];
-    let n = 0;
-    for (let i = 0; i < W * H; i++) {
-      const o = i << 2;
-      if (Math.abs(png.data[o] - bg[0]) + Math.abs(png.data[o + 1] - bg[1]) + Math.abs(png.data[o + 2] - bg[2]) > 120) n++;
+  // Площадь плотной части против объявленного эллипса.
+  const ellips = Math.PI * (geom.w / 2) * (geom.h / 2);
+  const dolya = (plot / (DPR * DPR)) / ellips;
+  if (dolya < 0.5 || dolya > 1.6) no(`форма размыта или разъехалась: плотная часть ${(dolya * 100).toFixed(0)} % объявленного эллипса (коридор 50–160 %)`);
+  else ok(`форма ясная: плотная часть ${(dolya * 100).toFixed(0)} % объявленного эллипса`);
+
+  // Ядро против кромки: середина обязана быть СВЕТЛЕЕ.
+  const cx = sx / sw; const cy = sy / sw;
+  const rx = (geom.w / 2) * DPR; const ry = (geom.h / 2) * DPR;
+  const kolco = (a, b) => {
+    let s = 0; let n = 0;
+    for (let y = 0; y < png.height; y++) {
+      for (let x = 0; x < png.width; x++) {
+        const d = Math.hypot((x - cx) / rx, (y - cy) / ry);
+        if (d >= a && d < b) { s += yark(x, y); n++; }
+      }
     }
-    return n;
-  });
-  const aMin = Math.min(...areas), aMax = Math.max(...areas);
-  const wobble = (aMax - aMin) / aMin * 100;
+    return n ? s / n : 0;
+  };
+  const yadro = kolco(0, 0.3);
+  const kromka = kolco(0.72, 0.96);
+  const perepad = yadro - kromka;
+  if (perepad < 12) no(`ядра не видно: середина ${yadro.toFixed(1)}, кромка ${kromka.toFixed(1)}, перепад ${perepad.toFixed(1)} уровня при пороге 12`);
+  else ok(`ядро светлее кромки на ${perepad.toFixed(1)} уровня (середина ${yadro.toFixed(1)}, кромка ${kromka.toFixed(1)})`);
 
-  // Порог по числу цветов невысок намеренно: капля 12 css-px, и
-  // при пятибитном квантовании даже насыщенный градиент даёт
-  // меньше сотни различимых оттенков. Главное — что их много
-  // больше одного, что цвета разные и что внутри капли за цикл
-  // действительно ходит краска, а не колышется её контур.
-  const ok = bins.size >= 60 && span >= 25 && swing >= 20 && wobble >= 2;
-  if (!ok) bad++;
-  console.log(`  ${ok ? 'ok ' : 'НЕТ'} ${theme === 'dark' ? 'тёмная' : 'светлая'}: капля ${(W / SCALE).toFixed(0)}x${(H / SCALE).toFixed(0)} css-px, ${PHASES} фаз, ${inside.length} пикселей сердцевины`);
-  console.log(`      перелив: ${periods.spark.map((q) => `${q.n} ${(q.d / 1000).toFixed(1)} с`).join(', ')}`);
-  console.log(`      контур:  ${periods.shape.map((q) => `${q.n} ${(q.d / 1000).toFixed(1)} с`).join(', ')}`);
-  console.log(`      различных цветов в сердцевине ${bins.size}, разброс тона ${span.toFixed(0)}°`);
-  console.log(`      насыщенность ${sMin.toFixed(2)}–${sMax.toFixed(2)}, светлота ${lMin.toFixed(2)}–${lMax.toFixed(2)}`);
-  console.log(`      размах пикселя сердцевины за цикл перелива: ${swing.toFixed(1)} уровня в среднем, ${swingMax.toFixed(1)} наибольший`);
-  console.log(`      площадь силуэта при неподвижном градиенте ${(aMin / SCALE / SCALE).toFixed(0)}–${(aMax / SCALE / SCALE).toFixed(0)} css-px², колебание контура ${wobble.toFixed(1)} %`);
+  await ctx.close();
 }
 
-await b.close();
-console.log(bad ? '\nПЕРЕЛИВА НЕТ ИЛИ ОН СЛИШКОМ СЛАБ' : '\nВнутри капли живой перелив в обеих темах');
+await browser.close();
+console.log(bad ? '\nСВЕТОДИОД ВЫГЛЯДИТ НЕ ТАК' : '\nСветодиод: форма вытянута вдоль хода, ядро светлее кромки');
 process.exit(bad ? 1 : 0);
