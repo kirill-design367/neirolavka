@@ -1,0 +1,34 @@
+name: Проверка боем
+
+# Боевой адрес глазами постороннего: сертификат и цепочка, переходы
+# по одному шагу, коды и СОДЕРЖИМОЕ ответов, своя страница 404,
+# сжатие, заголовки кеша, время до первого байта.
+#
+# Раз в сутки — не ради красоты. Сертификат Let's Encrypt живёт 90 дней
+# и продлевается автоматически; единственный способ узнать, что
+# продление сломалось, — регулярно смотреть на срок годности. Красный
+# прогон здесь означает, что сайт сломан прямо сейчас.
+
+on:
+  workflow_dispatch:
+    inputs:
+      adres:
+        description: 'Какой адрес проверять'
+        default: 'https://neirolavka.ru'
+        required: false
+  schedule:
+    # 06:00 по Москве.
+    - cron: '0 3 * * *'
+
+jobs:
+  proverka:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Проверка боем
+        run: node scripts/check-live.mjs "${{ inputs.adres || vars.SITE_URL || 'https://neirolavka.ru' }}"
