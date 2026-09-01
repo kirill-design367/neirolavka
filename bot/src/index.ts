@@ -164,7 +164,7 @@ async function glavnaya(): Promise<void> {
   await proveritKomandu(l).catch((e) => zhurnal.oshibka('проверка команды не прошла:', e));
 
   sostoyanie.gotov = true;
-  sostoyanie.shag = 'на связи';
+  sostoyanie.shag = `на связи по IPv${putDoTelegram}`;
 
   zapustitNapominaniya(l);
   zapustitPrismotr(l, putDoTelegram);

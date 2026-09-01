@@ -66,8 +66,12 @@ export function sozdatServer(l: Lavka, vypusk: string, sostoyanie: Sostoyanie): 
       // разные вещи, и монитор должен различать их, иначе недоступный
       // Telegram выглядит как исправная лавка.
       if (sostoyanie.gotov) {
+        // В теле — каким путём бот ходит в Telegram. Иначе это знание
+        // живёт только в журнале сервера, куда выкладка не дотягивается,
+        // и «запросы должны уходить по IPv6» остаётся намерением,
+        // а не фактом.
         res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
-        res.end('жив');
+        res.end(`жив: ${sostoyanie.shag}`);
       } else {
         res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
         res.end(`не готов: ${sostoyanie.shag}`);

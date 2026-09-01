@@ -293,6 +293,9 @@ jobs:
             [ "$KOD" = 200 ] && break
             sleep 1
           done
+          # В теле ответа бот сам говорит, каким путём ходит в Telegram.
+          # Это и есть факт вместо намерения: с российского сервера
+          # работает только IPv6, и здесь видно, что он выбран.
           echo "$SAYT/bot-health → $KOD ${PRICHINA:+($PRICHINA)} (ждали $i с)"
           if [ "$KOD" = 503 ]; then
             # Бот жив и отвечает, но сам говорит, что не готов. Чаще
@@ -342,6 +345,7 @@ jobs:
             echo "| живой процесс отдаёт | \`$(znach vypusk_v_processe)\` |"
             echo "| служба | $(znach sostoyanie) |"
             echo "| через nginx | $SAYT/bot-health отвечает 200 |"
+            echo "| путь до Telegram | \`$(curl -s --max-time 5 "$SAYT/bot-health" || echo '?')\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Уборка старых выпусков

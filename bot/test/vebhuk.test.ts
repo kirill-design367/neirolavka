@@ -107,8 +107,11 @@ test('чужой секрет в заголовке не пускают', async 
 test('/health говорит правду о готовности, /vypusk отвечает всегда', async () => {
   const s = await stend();
   try {
-    // Пока бот на связи — обычные 200.
-    assert.equal((await fetch(`${s.koren}/health`)).status, 200);
+    // Пока бот на связи — 200, и в теле сказано, каким путём он ходит.
+    s.sostoyanie.shag = 'на связи по IPv6';
+    const zhiv = await fetch(`${s.koren}/health`);
+    assert.equal(zhiv.status, 200);
+    assert.match(await zhiv.text(), /на связи по IPv6/);
     assert.equal((await (await fetch(`${s.koren}/vypusk`)).text()).trim(), 'proba');
 
     // Пока Telegram недоступен, процесс жив и отвечает, КАКОЙ выпуск
