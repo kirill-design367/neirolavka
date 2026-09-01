@@ -59,6 +59,12 @@ jobs:
       - name: Витрина — кромка холста теней и ряд кадров перехода
         run: node scripts/check-shelf-motion.mjs "$ADRES"
 
+      - name: Витрина — чёткость текста против той же карточки вне сцены
+        run: node scripts/check-card-sharpness.mjs "$ADRES"
+
+      - name: Отзывы — стык ленты, остановка под курсором, листание
+        run: node scripts/check-reviews.mjs "$ADRES"
+
       - name: Пузыри — число, отклик, лопание, отложенность
         run: node scripts/check-bubbles.mjs "$ADRES"
 
