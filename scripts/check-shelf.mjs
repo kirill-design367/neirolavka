@@ -44,11 +44,25 @@ const tap = async (page, loc) => {
 };
 
 /** Разбудить отложенную загрузку: сцена ждёт первого действия человека. */
+// Сцена поднимается по ПЕРВОМУ действию человека, и тяжёлый кусок
+// с Three.js едет по сети. Фиксированная пауза здесь — гонка: на
+// локальной выдаче 1800 мс хватало всегда, на боевом адресе с чистым
+// кешем контекста хватило девять раз из десяти, а на десятом (390×844,
+// тёмная) прогон покраснел при исправном сайте. Ждём СОБЫТИЕ, а не
+// срок: опрашиваем data-3d до потолка. Проверка при этом не ослаблена —
+// если сцена не поднимется вовсе, ожидание упрётся в потолок и вердикт
+// будет тот же самый, только на 8 секунд позже.
+const POTOLOK_SCENY_MS = 8000;
 const wake = async (page) => {
   await page.mouse.move(60, 200);
   await page.mouse.move(64, 204);
   await page.evaluate(() => document.querySelector('.shop').scrollIntoView({ block: 'center' }));
-  await page.waitForTimeout(1800);
+  await page
+    .waitForFunction(() => document.querySelector('.shelf3d')?.hasAttribute('data-3d'), null,
+                     { timeout: POTOLOK_SCENY_MS, polling: 100 })
+    .catch(() => {});
+  // Сцена объявилась — дать ей кадр-другой доехать до конечных мест.
+  await page.waitForTimeout(600);
 };
 
 const geometry = async (page) => page.evaluate(() => {
