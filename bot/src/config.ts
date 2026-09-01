@@ -25,6 +25,16 @@ export type Nastroyki = {
   port: number;
   /** Публичный адрес сайта — из него собирается адрес вебхука. */
   adresSayta: string;
+  /**
+   * Адрес, по которому Telegram должен ходить к нам, вместо того что
+   * он получит из DNS. Пусто — пусть решает сам.
+   *
+   * Существует по одной причине: бот переобъявляет вебхук при КАЖДОМ
+   * старте, и заданный руками адрес стёрся бы следующей выкладкой.
+   * Значение должно жить рядом с остальными настройками, иначе оно
+   * не переживёт обновления.
+   */
+  adresVebhukaDlyaTelegram: string;
   /** Владельцы: видят всё. Список из окружения — засев базы при старте. */
   vladelcy: number[];
   /** Помощники: только заказы и выдача. */
@@ -122,6 +132,7 @@ export function prochitat(env: NodeJS.ProcessEnv): Nastroyki {
     baza: (env['NEIROLAVKA_BAZA'] ?? '/var/lib/neirolavka-bot/baza.sqlite').trim(),
     port: chislo(env, 'NEIROLAVKA_PORT', 8080),
     adresSayta: (env['NEIROLAVKA_ADRES'] ?? 'https://neirolavka.ru').trim().replace(/\/+$/, ''),
+    adresVebhukaDlyaTelegram: (env['NEIROLAVKA_ADRES_DLYA_TELEGRAM'] ?? '').trim(),
     vladelcy,
     pomoshniki: spisokId(env, 'NEIROLAVKA_POMOSHNIKI'),
     poyas: (env['NEIROLAVKA_POYAS'] ?? 'Europe/Moscow').trim(),

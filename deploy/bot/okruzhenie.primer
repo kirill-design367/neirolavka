@@ -44,6 +44,15 @@ NEIROLAVKA_BAZA=/var/lib/neirolavka-bot/baza.sqlite
 NEIROLAVKA_PORT=8080
 NEIROLAVKA_ADRES=https://neirolavka.ru
 
+# По какому адресу Telegram должен ходить к нам с вебхуками.
+# Пусто — пусть разрешает имя сам, это правильное умолчание.
+#
+# Заполнять только если стало видно, что его выбор не работает:
+# pending_update_count растёт, а last_error_date свежий. Значение
+# живёт здесь, а не ставится руками, потому что бот переобъявляет
+# вебхук при каждом старте и затёр бы ручную настройку.
+NEIROLAVKA_ADRES_DLYA_TELEGRAM=
+
 # Сколько резервных копий держать на диске.
 NEIROLAVKA_KOPIY_HRANIT=28
 

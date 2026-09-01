@@ -133,6 +133,10 @@ async function glavnaya(): Promise<void> {
   sostoyanie.shag = 'объявляю вебхук';
   await bot.api.setWebhook(adresVebhuka(n), {
     secret_token: n.sekretVebhuka,
+    // Telegram сам разрешает наше имя и решает, по какому адресу идти.
+    // Задать адрес явно можно — но только если стало видно, что его
+    // выбор не работает: доставка стоит, pending растёт.
+    ...(n.adresVebhukaDlyaTelegram ? { ip_address: n.adresVebhukaDlyaTelegram } : {}),
     // Пропущенные за время простоя обновления НЕ выбрасываем: там
     // могут быть заказы.
     drop_pending_updates: false,
