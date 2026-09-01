@@ -194,10 +194,16 @@ for U in neirolavka-bot.service neirolavka-bot-perezapusk.service \
   install -m 644 "$REPO/deploy/systemd/$U" "/etc/systemd/system/$U"
 done
 systemctl daemon-reload
+# enable, а не start: включаем автозапуск при загрузке машины прямо
+# сейчас, ещё до появления кода. Иначе первая выкладка подняла бы бота,
+# а первая же перезагрузка сервера его выключила — и заметили бы это
+# только по молчащему боту.
+systemctl enable neirolavka-bot.service >/dev/null 2>&1 || true
 systemctl enable neirolavka-bot-perezapusk.path >/dev/null 2>&1 || true
 systemctl start  neirolavka-bot-perezapusk.path >/dev/null 2>&1 || true
 systemctl enable --now neirolavka-bot-kopiya.timer >/dev/null 2>&1 || true
-ok "юниты поставлены, таймер копий: $(systemctl is-active neirolavka-bot-kopiya.timer 2>/dev/null || echo 'не запущен')"
+ok "юниты поставлены, автозапуск: $(systemctl is-enabled neirolavka-bot 2>/dev/null || echo 'нет')"
+ok "таймер копий: $(systemctl is-active neirolavka-bot-kopiya.timer 2>/dev/null || echo 'не запущен')"
 
 # ─────────────────────────────────────────────────────────────────────
 # 6. nginx: включить вебхуки
@@ -233,9 +239,9 @@ shag "Бот"
 if [ -z "$TOKEN" ]; then
   vni "токена в $OKR нет — бота не запускаю"
   echo
-  echo "   Положить токен и запустить:"
-  echo "     sudo sed -i 's|^NEIROLAVKA_TOKEN_BOTA=.*|NEIROLAVKA_TOKEN_BOTA=СЮДА_ТОКЕН|' $OKR"
-  echo "     sudo systemctl enable --now neirolavka-bot"
+  echo "   Положить токен:"
+  echo "     sudo nano $OKR      # строка NEIROLAVKA_TOKEN_BOTA="
+  echo "   и запустить этот скрипт ещё раз — он идемпотентный."
   echo
   echo "   Токен берётся у @BotFather. В репозиторий он не попадает."
   exit 0
@@ -243,11 +249,13 @@ fi
 
 if [ ! -e "$DOM_BOT/current" ]; then
   vni "выпуск ещё не выложен: $DOM_BOT/current не существует"
-  echo "   Толкните main — прогон deploy-bot.yml разложит код и поднимет бота."
+  echo
+  echo "   Дальше — выкладка. Откройте на GitHub Actions последний прогон"
+  echo "   «Сборка и выкладка бота» и нажмите Re-run all jobs. Прогон"
+  echo "   разложит код, поставит зависимости и поднимет бота сам."
   exit 0
 fi
 
-systemctl enable neirolavka-bot >/dev/null 2>&1 || true
 systemctl restart neirolavka-bot
 sleep 3
 PORT="$(grep -E '^NEIROLAVKA_PORT=' "$OKR" | head -1 | cut -d= -f2-)"
