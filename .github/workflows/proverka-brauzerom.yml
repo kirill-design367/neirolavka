@@ -14,7 +14,13 @@ name: Проверка боевого адреса браузером
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/proverka-brauzerom.yml']
+    # Правка самой проверки — повод её прогнать. Иначе выходит вот что:
+    # проверка покраснела на бегунке, её починили, запушили — и узнать,
+    # починилась ли она, нечем, пока кто-нибудь не тронет файл прогона.
+    paths:
+      - '.github/workflows/proverka-brauzerom.yml'
+      - 'scripts/check-*.mjs'
+      - 'scripts/verify-live.mjs'
   workflow_dispatch:
     inputs:
       adres:

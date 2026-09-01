@@ -11,10 +11,18 @@
  * так и осталось.
  *
  * Меряется это шириной ступеньки на кромке буквы — сколько точек
- * занимает переход от фона к краске. Вердикт — отношение мягкости
- * ближней карточки В СЦЕНЕ к её же мягкости ВНЕ СЦЕНЫ при том же
- * увеличении. Отношение к боковым печатается, но вердиктом быть
- * не может: у боковых свой кегль, свой поворот и своя прозрачность.
+ * занимает переход от фона к краске.
+ *
+ * Вердиктов ДВА, и они про разное. Первый — цена СЦЕНЫ: мягкость
+ * ближней карточки в сцене против её же мягкости вне сцены при том
+ * же увеличении и с остановленным парением. Опора отличается от
+ * предмета ровно одним свойством, иначе меряется их сумма. Второй —
+ * цена ПАРЕНИЯ: та же карточка в сцене, но с работающим парением.
+ * Порог у него шире, потому что дробный сдвиг стоит по-разному
+ * на разных машинах.
+ *
+ * Отношение к боковым печатается, но вердиктом быть не может:
+ * у боковых свой кегль, свой поворот и своя прозрачность.
  *
  * Почему среднее, а не наибольшее: наибольшая ступенька растёт вместе
  * с числом просмотренных точек, и вердикт начинает зависеть от размера
@@ -40,6 +48,8 @@ import { PNG } from 'pngjs';
 const URL = process.argv[2] ?? 'http://127.0.0.1:4173/';
 const THEME = process.argv[3] ?? 'light';
 const PREDEL = 1.05;
+/** Порог для парения — см. пояснение у вердикта. */
+const PREDEL_PARENIE = 1.35;
 
 const browser = await chromium.launch({
   executablePath: process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
@@ -85,6 +95,20 @@ const meta = await page.evaluate(() => {
   });
 });
 
+// Первый снимок — страница КАК ЕСТЬ: сцена держит карточку, парение
+// работает. Это то, что видит человек.
+const bufZhivoy = await page.screenshot({ clip: { x: 0, y: 0, width: 1512, height: 900 } });
+
+// Второй — та же сцена, но парение ОСТАНОВЛЕНО и сброшено в ноль.
+// Отменять надо через getAnimations: анимация побеждает inline-стиль
+// по каскаду, а смена animation-name перезапускает её с кадра покоя
+// и заодно выключает то, что выключать не просили.
+await page.evaluate(() => {
+  for (const el of document.querySelectorAll('.pcard')) {
+    for (const a of el.getAnimations()) a.cancel();
+  }
+});
+await page.waitForTimeout(400);
 const buf = await page.screenshot({ clip: { x: 0, y: 0, width: 1512, height: 900 } });
 
 // Вторая опора, и главная. Ближняя карточка сравнивается САМА С СОБОЙ
@@ -139,6 +163,7 @@ const vMasshtabe = await ploskijZamer(masshtabBlizhney);
 const vEdinice = await ploskijZamer(1);
 await browser.close();
 const png = PNG.sync.read(buf);
+const pngZhivoy = PNG.sync.read(bufZhivoy);
 const DPR = png.width / 1512;
 
 const yarkIz = (img) => (x, y) => {
@@ -216,6 +241,10 @@ function stupenka(box, img = png) {
 const zamery = meta
   .map((m) => ({ ...m, ...stupenka(m) }))
   .sort((a, b) => b.z - a.z);
+const zhivayaBlizhnyaya = stupenka(
+  meta.reduce((a, b) => (a.z > b.z ? a : b)),
+  pngZhivoy,
+);
 const ploskaya = stupenka(vMasshtabe.box, vMasshtabe.png);
 const ploskayaOdin = stupenka(vEdinice.box, vEdinice.png);
 
@@ -245,6 +274,10 @@ console.log(
   `  она же ВНЕ СЦЕНЫ и без увеличения: ступенька ${ploskayaOdin.srednyaya.toFixed(2)} px, ` +
     `штрих ${ploskayaOdin.shtrih.toFixed(2)} px, мягкость ${ploskayaOdin.myagkost.toFixed(3)} по ${ploskayaOdin.kromok} кромкам`,
 );
+console.log(
+  `  она же В СЦЕНЕ и С ПАРЕНИЕМ: ступенька ${zhivayaBlizhnyaya.srednyaya.toFixed(2)} px, ` +
+    `штрих ${zhivayaBlizhnyaya.shtrih.toFixed(2)} px, мягкость ${zhivayaBlizhnyaya.myagkost.toFixed(3)} по ${zhivayaBlizhnyaya.kromok} кромкам`,
+);
 console.log(`\n  мягкость: ближняя в сцене ${blizhnyaya.myagkost.toFixed(3)}, боковые ${bok.toFixed(3)}, вне сцены в том же масштабе ${ploskaya.myagkost.toFixed(3)}`);
 console.log(`  к боковым ${otnBok.toFixed(3)} (мера кривая: у боковых свой кегль, поворот и прозрачность)`);
 console.log(`  ЦЕНА СЦЕНЫ ${otnPlosk.toFixed(3)} при пороге ${PREDEL} — вот это и есть вердикт`);
@@ -260,6 +293,23 @@ if (!ploskaya.kromok || !ploskayaOdin.kromok) {
   console.log('\n!! карточку вне сцены измерить не вышло — проверка ничего не доказала');
   process.exit(1);
 }
-const ok = otnPlosk <= PREDEL;
-console.log(ok ? '\nСцена не размывает текст' : '\n!! Текст в сцене мягче, чем вне неё при том же масштабе');
+// Второй вердикт — про ПАРЕНИЕ, и порог у него свой.
+//
+// Парение двигает карточку на доли пикселя, и композитор пересчитывает
+// слой. Сколько это стоит — зависит от машины: там, где браузер
+// подгоняет штрихи под сетку точек, дробный сдвиг обходится дороже.
+// В контейнере разработки он не стоит ничего (0.108 против 0.109),
+// на бегунке GitHub заметен. Поэтому порог здесь широкий: он ловит
+// не проценты, а возврат к прежнему устройству, когда карточка ехала
+// готовым растром и мягкость подскакивала в полтора раза.
+const otnZhivoy = ploskaya.myagkost ? zhivayaBlizhnyaya.myagkost / ploskaya.myagkost : 0;
+console.log(
+  `  С ПАРЕНИЕМ ${otnZhivoy.toFixed(3)} при пороге ${PREDEL_PARENIE} — цена дробного сдвига, ` +
+    'на разных машинах разная',
+);
+
+const ok = otnPlosk <= PREDEL && otnZhivoy <= PREDEL_PARENIE;
+if (otnPlosk > PREDEL) console.log('\n!! Текст в сцене мягче, чем вне неё при том же масштабе');
+else if (otnZhivoy > PREDEL_PARENIE) console.log('\n!! Парение размывает текст сильнее, чем должно');
+else console.log('\nСцена не размывает текст');
 process.exit(ok ? 0 : 1);
