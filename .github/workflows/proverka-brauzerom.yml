@@ -82,3 +82,10 @@ jobs:
 
       - name: Панель заказа — кнопка видна на всех высотах
         run: node scripts/check-order-panel.mjs "$ADRES"
+
+      - name: Ссылки в бот и честность текстов про оплату
+        # SET_DO_TELEGRAM включает пробу живого ответа t.me: из
+        # контейнера разработки шлюз туда не пускает, а отсюда пускает.
+        env:
+          SET_DO_TELEGRAM: '1'
+        run: node scripts/check-bot-links.mjs "$ADRES"

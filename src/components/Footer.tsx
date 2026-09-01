@@ -67,7 +67,8 @@ export function Footer() {
         <div className="footer__bottom">
           <p className="footer__brand">Нейролавка</p>
           <p className="footer__legal">
-            Витрина и калькулятор. Оплата, выдача доступа и поддержка — в Telegram-боте.
+            Витрина и калькулятор. Заказ, выдача доступа и поддержка — в Telegram-боте;
+            про оплату там напишет администратор.
           </p>
         </div>
       </div>

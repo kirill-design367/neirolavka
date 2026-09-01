@@ -79,12 +79,23 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
     const botReady = catalog.botUrl.length > 0;
     let botHref = '';
     if (botReady) {
-      const params = new URLSearchParams();
-      if (selection) params.set('tovar', selection.plan.id);
-      if (payment) params.set('oplata', payment.id);
-      // Telegram передаёт боту всё, что лежит в start, одной строкой.
-      const start = params.toString().replace(/[=&]/g, '_');
-      botHref = start ? `${catalog.botUrl}?start=${start}` : catalog.botUrl;
+      botHref = catalog.botUrl;
+      // Заказ в параметре `start` — за флагом, и флаг сейчас выключен.
+      // Почему — написано у самого флага в catalog.ts: бот эту строку
+      // не читает, а в незаконченном разговоре она уйдёт человеку
+      // в ввод. Сама сборка строки живёт здесь, чтобы включить её
+      // можно было одним значением, когда бот научится.
+      //
+      // Telegram разрешает в `start` только латиницу, цифры, дефис
+      // и подчёркивание, не длиннее 64 знаков, — отсюда замена
+      // «=» и «&» на подчёркивание.
+      if (catalog.botStartPayload) {
+        const params = new URLSearchParams();
+        if (selection) params.set('tovar', selection.plan.id);
+        if (payment) params.set('oplata', payment.id);
+        const start = params.toString().replace(/[=&]/g, '_').slice(0, 64);
+        if (start) botHref = `${catalog.botUrl}?start=${start}`;
+      }
     }
 
     return {
@@ -102,7 +113,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       choosePayment,
       reset,
     };
-  }, [catalog.botUrl, catalog.payments, openProductId, paymentId, planId, chooseProduct, choosePlan, choosePayment, reset]);
+  }, [catalog.botUrl, catalog.botStartPayload, catalog.payments, openProductId, paymentId, planId, chooseProduct, choosePlan, choosePayment, reset]);
 
   return <OrderContext.Provider value={value}>{children}</OrderContext.Provider>;
 }
