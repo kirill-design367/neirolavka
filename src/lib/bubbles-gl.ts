@@ -136,7 +136,14 @@ const vert = (count: number) => /* glsl */ `
 
     vec3  cToC = P.xyz - uPointer;
     float lenC = length(cToC);
-    float dc   = lenC / rr;
+    // Дальность считается по расстоянию в РАДИУСАХ, но у радиуса есть
+    // нижняя граница. Разброс размеров стал четырёхкратным, и чистое
+    // деление на радиус сделало мелкие пузыри глухими: у пузыря
+    // в 15 px курсор в двухстах пикселях — это тринадцать радиусов,
+    // отклик 0.11, то есть та самая мёртвая зона по расстоянию,
+    // от которой уходили. Граница в 26 px выравнивает поле: мелкий
+    // отзывается слабее крупного, но отзывается.
+    float dc   = lenC / max(radius, 26.0);
     // Хвост, а не колокол: 1 в середине пузыря, 0.6 на трёх радиусах,
     // 0.14 на десяти. Мёртвых зон по расстоянию нет вовсе.
     float reach = 1.0 / (1.0 + dc * dc * 0.045);
@@ -239,14 +246,32 @@ type Bubble = {
  *  где они наползали друг на друга. Строки подзаголовка занимают
  *  сильно не всю ширину колонки — слева и справа от них запрещать
  *  нечего, и от этой поправки простора стало заметно больше. */
-type Rect = { top: number; bottom: number; left: number; right: number };
+type Rect = {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+  /** Запас в радиусах. У строк подзаголовка он большой — краска
+   *  не должна касаться букв вовсе. У блока условий маленький: блок
+   *  непрозрачный, и пузырь, наполовину ушедший ЗА него, читается
+   *  нормально; запрещать надо ровно то, чтобы он не торчал из щели
+   *  между карточками. */
+  keep: number;
+};
 
 export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void) | null {
   const gl = makeGL(canvas);
   if (!gl) return null; // WebGL нет — просто ничего не показываем
 
   const phone = window.matchMedia('(max-width: 640px)').matches;
-  const COUNT = phone ? 10 : 15;
+  // На телефоне пузырей меньше не из скупости к кадрам, а из-за места.
+  // Свободного поля там одна полоса — над строками подзаголовка,
+  // и четырнадцать штук в неё набивались комом.
+  const COUNT = phone ? 11 : 19;
+  /** Границы радиусов. Разброс широкий НАМЕРЕННО: пузыри одного
+   *  калибра читаются россыпью одинаковых бусин, а не живым полем. */
+  const R_MIN = phone ? 10 : 15;
+  const R_MAX = phone ? 26 : 54;
 
   const tanHalf = Math.tan((FOV / 2) * (Math.PI / 180));
   let proj = perspective(FOV, 1, 1, 4000);
@@ -285,9 +310,17 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     b.gone = false;
   };
 
+  // Радиус берётся НЕ случайно из отрезка, а с лесенки: отрезок
+  // [R_MIN, R_MAX] делится на COUNT логарифмических ступеней, и внутри
+  // своей ступени радиус уже случаен. Иначе на каждой третьей загрузке
+  // все двадцать два пузыря выпадали бы из середины отрезка и поле
+  // снова читалось бы одинаковым. Лесенка логарифмическая, а не
+  // равномерная: на глаз важно ОТНОШЕНИЕ размеров, и равномерный шаг
+  // отдал бы половину ступеней крупным, где разница уже не видна.
+  const stupen = Math.pow(R_MAX / R_MIN, 1 / COUNT);
   for (let i = 0; i < COUNT; i++) {
     const b: Bubble = {
-      r: rnd(17, 34) * (phone ? 0.82 : 1),
+      r: R_MIN * Math.pow(stupen, i + Math.random()),
       x: 0, y: 0, z: 0,
       vx: 0, vy: 0, dir: 0, speed: 0, pa: 1, pb: 1, swayA: 0, swayB: 0,
       rx: 0, ry: 0, wx: 0, wy: 0, popped: 0, pop: 0, gone: false,
@@ -297,7 +330,14 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   }
 
   // ─── Геометрия: один объект на все пузыри, единичные сферы ───
-  const counts = bubbles.map((b) => Math.round(b.r * 6));
+  //
+  // Точек — по ПЛОЩАДИ оболочки, а не по радиусу. Пока их было
+  // пропорционально радиусу, плотность краски падала обратно
+  // пропорционально ему: мелкий пузырь выходил плотным шариком,
+  // крупный — редкой сеткой, и на широком разбросе размеров это
+  // читалось как «большие недорисованы». Коэффициент 0.42 даёт
+  // примерно 0.033 точки на пиксель площади при любом радиусе.
+  const counts = bubbles.map((b) => Math.max(48, Math.round(b.r * b.r * 0.42)));
   const total = counts.reduce((a, n) => a + n, 0);
   const pos = new Float32Array(total * 3);
   const vel = new Float32Array(total * 3);
@@ -327,7 +367,7 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
       vel[k * 3 + 1] = y * s + rnd(0.06, 0.4);
       vel[k * 3 + 2] = z * s;
 
-      size[k] = rnd(1.2, 2.6);
+      size[k] = rnd(1.9, 4.0);
       tint[k] = (Math.random() * 3) | 0;
       phase[k] = Math.random() * Math.PI * 2;
       who[k] = bi;
@@ -395,7 +435,8 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     // Отсчёт от ХОЛСТА: начало мировых координат лежит в его центре.
     const cb = canvas.getBoundingClientRect();
     const pad = 10;
-    const put = (el: Element | null): Rect | null => {
+    const put = (sel: string, keep: number): Rect | null => {
+      const el = host.querySelector(sel);
       if (!el) return null;
       const b = el.getBoundingClientRect();
       if (b.width < 1 || b.height < 1) return null;
@@ -404,15 +445,26 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
         bottom: h / 2 - (b.bottom - cb.top) - pad,
         left: b.left - cb.left - w / 2 - pad,
         right: b.right - cb.left - w / 2 + pad,
+        keep,
       };
     };
-    rects = [put(host.querySelector('.hero__lead'))].filter(Boolean) as Rect[];
+    // Блок условий добавлен к запретным не ради текста — он
+    // непрозрачный и сам всё закрывает, — а ради ЩЕЛЕЙ между
+    // карточками. Пузыри, плававшие за ним, высовывались в эти щели
+    // рваными полосками краски, и особенно скверно это выглядело
+    // на телефоне, где карточки идут стопкой во всю ширину: две трети
+    // поля уходило под них, и от четырнадцати пузырей на глазах
+    // оставалось три.
+    rects = [
+      put('.hero__lead', 1.95),
+      put('.terms', 1.05),
+    ].filter(Boolean) as Rect[];
   };
 
   /** Накрывает ли пузырь какой-нибудь запретный прямоугольник. */
   const inBand = (x: number, y: number, r: number) => {
-    const keep = r * 1.7;
     for (const q of rects) {
+      const keep = r * q.keep;
       if (x > q.left - keep && x < q.right + keep && y - keep < q.top && y + keep > q.bottom) return true;
     }
     return false;
@@ -422,7 +474,11 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
    *  не вплотную к соседям и не туда, где только что лопнул
    *  предыдущий. */
   const place = (b: Bubble, avoid?: { x: number; y: number }) => {
-    for (let i = 0; i < 24; i++) {
+    // Попыток стало больше: свободного поля убавилось (добавился
+    // запрет на блок условий), а пузырей прибавилось, и прежние
+    // двадцать четыре нет-нет да и исчерпывались — тогда срабатывал
+    // запасной путь, который запреты не смотрит вовсе.
+    for (let i = 0; i < 60; i++) {
       const x = rnd(vis.xmin + b.r * EDGE, vis.xmax - b.r * EDGE);
       const y = rnd(vis.ymin + b.r * EDGE, vis.ymax - b.r * EDGE);
       if (inBand(x, y, b.r)) continue;
@@ -440,8 +496,12 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
       b.z = rnd(-b.r * 0.5, b.r * 0.5);
       return;
     }
+    // Запасной путь: место не нашлось за шестьдесят попыток. Ставим
+    // к верхней кромке поля — там запретов нет по построению —
+    // и с тем же запасом от края, что и везде, иначе пузырь окажется
+    // ближе к кромке, чем ему позволено, и будет от неё отскакивать.
     b.x = rnd(vis.xmin + b.r * EDGE, vis.xmax - b.r * EDGE);
-    b.y = vis.ymax - b.r;
+    b.y = vis.ymax - b.r * EDGE;
     b.z = 0;
   };
 
@@ -695,9 +755,9 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
           const ox = b.x - o.x;
           const oy = b.y - o.y;
           const od = Math.hypot(ox, oy);
-          const want = (b.r + o.r) * 1.4;
+          const want = (b.r + o.r) * 1.65;
           if (od > want || od < 0.001) continue;
-          const push = (1 - od / want) * 42 * dt;
+          const push = (1 - od / want) * 58 * dt;
           b.vx += (ox / od) * push;
           b.vy += (oy / od) * push;
           o.vx -= (ox / od) * push;
@@ -721,9 +781,17 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
         if (b.y < vis.ymin + k6) { b.y = vis.ymin + k6; b.dir = -b.dir; b.vy = Math.abs(b.vy); }
         if (b.y > vis.ymax - k6) { b.y = vis.ymax - k6; b.dir = -b.dir; b.vy = -Math.abs(b.vy); }
 
-        // Запретный прямоугольник: строки подзаголовка.
+        // Запретные прямоугольники: строки подзаголовка и блок условий.
+        //
+        // Проход ПОВТОРЯЕТСЯ, и это не перестраховка. Прямоугольников
+        // теперь два, они стоят один под другим, и выталкивание
+        // из нижнего заносит пузырь в верхний. Верхний в этом кадре
+        // уже разобран, поправка приходит только на следующем — и на
+        // один кадр краска оказывается на строках подзаголовка.
+        // Замер это и поймал: 9 окрашенных пикселей из 42408.
+        for (let pass = 0; pass < 3; pass++)
         for (const q of rects) {
-          const keep = b.r * 1.7;
+          const keep = b.r * q.keep;
           const top = q.top + keep;
           const bot = q.bottom - keep;
           if (b.x < q.left - keep || b.x > q.right + keep) continue;

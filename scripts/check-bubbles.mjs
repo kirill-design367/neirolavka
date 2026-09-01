@@ -35,13 +35,21 @@ const browser = await chromium.launch({ executablePath: EXE });
 
 /** Маска краски: отличие от фона страницы. Работает только когда
  *  всё, кроме холста, спрятано, — иначе меряется не то. */
-function inkMask(png, bg) {
+/* Маска краски. Порог — параметр, и это не украшение.
+   Для «полоса подзаголовка чиста» нужна самая чувствительная маска:
+   там важно, что краски НЕТ ВОВСЕ. А для поиска ОДИНОЧНОГО пузыря
+   она вредна: у оболочки есть еле видимая дымка дальних точек,
+   и когда пузырей стало вдвое больше, дымка соседей сомкнулась —
+   весь верх первого экрана читался одним пятном, и все шестьдесят
+   кандидатов подряд давали край 88–96 px при пороге 74. Пузыри при
+   этом были на месте и глазом различались. */
+function inkMask(png, bg, porog = 1.5) {
   const { width: W, height: H, data } = png;
   const m = new Float32Array(W * H);
   for (let i = 0; i < W * H; i++) {
     const o = i * 4;
     const d = (Math.abs(data[o] - bg[0]) + Math.abs(data[o + 1] - bg[1]) + Math.abs(data[o + 2] - bg[2])) / 3;
-    m[i] = d > 1.5 ? d : 0;
+    m[i] = d > porog ? d : 0;
   }
   return m;
 }
@@ -53,7 +61,13 @@ function inkMask(png, bg) {
  *  там задаётся расстоянием между пятнами. Замер от этого гулял
  *  от 8 до 20 % на неизменной странице. Разбирать список должен
  *  вызывающий: он знает, какого размера пузырь бывает. */
-function densestList(m, W, H, box) {
+/* Список пятен по убыванию плотности.
+   `keep` — сколько вернуть. Двенадцати хватало, пока пузырей было
+   пятнадцать и одного калибра; на двадцати двух с разбросом радиусов
+   вчетверо все двенадцать самых плотных окон попадают в один комок
+   крупных, а одиночный мелкий пузырь — ровно то, что нужно замеру —
+   до списка не доходит вовсе. */
+function densestList(m, W, H, box, keep = 12) {
   const spots = [];
   for (let y = box; y < H - box; y += 8) {
     for (let x = box; x < W - box; x += 8) {
@@ -70,7 +84,7 @@ function densestList(m, W, H, box) {
   for (const sp of spots) {
     if (out.some((o) => Math.hypot(o.x - sp.x, o.y - sp.y) < box)) continue;
     out.push(sp);
-    if (out.length >= 12) break;
+    if (out.length >= keep) break;
   }
   return out;
 }
@@ -134,8 +148,8 @@ function spread(m, W, H, cx0, cy0, box) {
 }
 
 for (const vp of [
-  { name: 'десктоп', w: 1512, h: 900, lo: 14, hi: 15, mobile: false },
-  { name: 'мобильная', w: 390, h: 844, lo: 9, hi: 10, mobile: true },
+  { name: 'десктоп', w: 1512, h: 900, lo: 18, hi: 19, mobile: false },
+  { name: 'мобильная', w: 390, h: 844, lo: 10, hi: 11, mobile: true },
 ]) {
   const ctx = await browser.newContext({
     viewport: { width: vp.w, height: vp.h },
@@ -280,12 +294,20 @@ for (const vp of [
   await page.waitForTimeout(1400);
   await bare(true);
 
-  const BOX = 60;
+  // Окно замера и порог одиночности идут ЗА радиусами пузырей.
+  // Радиусы выросли (15–58 на десктопе, 10–26 на телефоне), и старое
+  // окно в 60 px было меньше самого крупного пузыря: его край
+  // не помещался в замер вовсе, и «одиночного не нашлось» означало
+  // не слипшиеся пузыри, а слишком тесную мерку.
+  // Окно чуть больше самого крупного пузыря — и НЕ БОЛЬШЕ. Шире
+  // окно, дальше от него польза: при 160 px в замер попадали соседи,
+  // и весь верх первого экрана читался одним сплошным пятном (край
+  // 105–169 px у всех шестидесяти кандидатов подряд).
+  const BOX = vp.mobile ? 50 : 90;
   // Берём не самое плотное пятно, а самое плотное ОДИНОЧНОЕ: край
-  // пятна должен укладываться в наибольший радиус пузыря с запасом.
-  // Наибольший радиус — 34 px на десктопе и 28 на телефоне; краска
-  // выходит за него на размер точки и на мягкий край, отсюда запас.
-  const maxEdge = vp.mobile ? 40 : 48;
+  // пятна должен укладываться в наибольший радиус пузыря с запасом
+  // на размер точки и мягкую кромку.
+  const maxEdge = vp.mobile ? 36 : 74;
   // Пятно должно лежать там, где курсор ДОСТАНЕТ до секции.
   // Иначе замер выходит случайным: панель заказа непрозрачна и лежит
   // поверх правой части первого экрана, мышь над ней до слушателя
@@ -303,9 +325,13 @@ for (const vp of [
   // одиночного нет — ждём и смотрим снова, а не объявляем поломку.
   for (let attempt = 0; attempt < 4 && !spot; attempt++) {
     if (attempt) { await page.waitForTimeout(1500); png = await shot(); }
-    const pm = inkMask(png, bg);
-    for (const cand of densestList(pm, png.width, png.height, 44)) {
+    const pm = inkMask(png, bg, 9);
+    for (const cand of densestList(pm, png.width, png.height, vp.mobile ? 34 : 56, 60)) {
       const st = spread(pm, png.width, png.height, cand.x, cand.y, BOX);
+      // OTLADKA=1 печатает всех кандидатов. Без этого «одиночного
+      // пузыря не нашлось» — сообщение без единой зацепки: неясно,
+      // слиплись ли пузыри на самом деле или мерка стала им тесна.
+      if (process.env.OTLADKA) console.log(`      кандидат ${cand.x},${cand.y} краски ${Math.round(st.ink)} край ${st.edge.toFixed(1)} при пороге ${maxEdge}`);
       if (!(st.ink > 0 && st.edge > 6 && st.edge <= maxEdge)) continue;
       await bare(false);
       const good = await reachable(OX + st.cx, OY + st.cy);
