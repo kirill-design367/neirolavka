@@ -96,9 +96,14 @@ ok "sqlite3 $(sqlite3 --version | awk '{print $1}')"
 # секретов, ни базы: выкладка пишет ТОЛЬКО в папку кода.
 # ─────────────────────────────────────────────────────────────────────
 shag "Папки"
-install -d -o bot   -g bot -m 750  "$DOM_BOT"
 # setgid и права группы: выкладка ходит сюда под deploy, который
 # состоит в группе bot. Новые файлы получают группу bot сами.
+#
+# Права на САМУ папку, а не только на releases, — потому что выкладка
+# подменяет здесь ссылку current. Без записи в $DOM_BOT она разложила
+# бы выпуск и упала бы на подмене ссылки, оставив рабочего бота
+# на прежнем коде и красный прогон без внятной причины.
+install -d -o bot   -g bot -m 2770 "$DOM_BOT"
 install -d -o bot   -g bot -m 2770 "$DOM_BOT/releases"
 # Секреты не читает НИКТО, кроме root: EnvironmentFile systemd
 # читает от root и передаёт боту уже готовым окружением, а
@@ -111,6 +116,7 @@ install -d -o bot   -g bot -m 700  "$KOPII"
 chmod 750 /home/bot
 chown bot:bot /home/bot
 # Метка перезапуска: её кладёт выкладка, за ней следит systemd.
+chmod 2770 "$DOM_BOT" "$DOM_BOT/releases"
 touch "$DOM_BOT/perezapusk"
 chown bot:bot "$DOM_BOT/perezapusk"
 chmod 660 "$DOM_BOT/perezapusk"
