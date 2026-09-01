@@ -27,6 +27,9 @@ import { proveritKlyuch } from './lib/shifr.js';
 import { zhurnal, skryt } from './lib/zhurnal.js';
 import { sobrat } from './bot/index.js';
 import { proveritKomandu } from './bot/uvedomleniya.js';
+import { vybratPut, rasskazat } from './lib/svyaz.js';
+import type { Semeystvo } from './lib/svyaz.js';
+import { zapustit as zapustitPrismotr } from './jobs/svyaz.js';
 import { sozdatServer } from './server.js';
 import type { Sostoyanie } from './server.js';
 import { zapustit as zapustitNapominaniya } from './jobs/napominaniya.js';
@@ -45,15 +48,23 @@ import { sozdatBota } from './lavka.js';
  * Сдаваться при этом нельзя: связь возвращается, и бот обязан
  * подняться сам, без человека.
  */
-async function dozhdatsyaTelegram(l: Lavka): Promise<void> {
+const UZEL_TELEGRAM = 'api.telegram.org';
+
+async function dozhdatsyaTelegram(l: Lavka): Promise<Semeystvo> {
   const nachalo = Date.now();
   for (let popytka = 1; ; popytka += 1) {
+    // Путь выбирается ЗАНОВО на каждой попытке, а не один раз при
+    // старте. Так работает обещание «предпочитаем IPv6, но не
+    // прибиваем»: если он отвалится, а IPv4 к тому времени
+    // разблокируют, следующая же попытка это увидит и переключится.
+    const vybor = await vybratPut(UZEL_TELEGRAM);
+    rasskazat(UZEL_TELEGRAM, vybor);
     try {
       await l.bot.api.getMe();
       if (popytka > 1) {
         zhurnal.info(`Telegram ответил с ${popytka}-й попытки, ждали ${Math.round((Date.now() - nachalo) / 1000)} с`);
       }
-      return;
+      return vybor.vybrano ?? 4;
     } catch (e) {
       zhurnal.vnimanie(
         `Telegram недоступен с этого сервера (попытка ${popytka}, ` +
@@ -115,7 +126,7 @@ async function glavnaya(): Promise<void> {
   });
 
   sostoyanie.shag = 'жду ответа Telegram';
-  await dozhdatsyaTelegram(l);
+  const putDoTelegram = await dozhdatsyaTelegram(l);
   await bot.init();
   zhurnal.info(`бот: @${bot.botInfo.username}`);
 
@@ -127,7 +138,20 @@ async function glavnaya(): Promise<void> {
     drop_pending_updates: false,
     allowed_updates: ['message', 'callback_query'],
   });
-  zhurnal.info('вебхук объявлен Telegram');
+  // Что Telegram думает о нашем вебхуке — в журнал сразу после
+  // объявления. Поле ip_address показывает, по какому адресу он к нам
+  // ходит: без этой строки «почему не доходят обновления» выясняется
+  // отдельным походом на сервер.
+  try {
+    const v = await bot.api.getWebhookInfo();
+    zhurnal.info(
+      `вебхук объявлен; Telegram ходит к нам на ${v.ip_address ?? '?'}, ` +
+        `ожидают доставки ${v.pending_update_count ?? 0}` +
+        (v.last_error_message ? `, последняя ошибка: ${v.last_error_message}` : ''),
+    );
+  } catch (e) {
+    zhurnal.vnimanie('вебхук объявлен, но состояние спросить не вышло:', e);
+  }
 
   // Кому мы вообще можем писать. Проверяется СРАЗУ, а не в момент
   // первого заказа: «chat not found» означает, что человек ни разу
@@ -139,6 +163,7 @@ async function glavnaya(): Promise<void> {
   sostoyanie.shag = 'на связи';
 
   zapustitNapominaniya(l);
+  zapustitPrismotr(l, putDoTelegram);
 
   const ostanovka = (signal: string) => {
     zhurnal.info(`${signal}: останавливаюсь`);
