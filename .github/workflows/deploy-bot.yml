@@ -79,6 +79,13 @@ jobs:
         working-directory: bot
         run: npm run build
 
+      - name: Разбор юнитов systemd
+        # Настоящим systemd, а не глазами. Ключ, поставленный не в ту
+        # секцию, systemd принимает молча и не применяет: так
+        # StartLimitIntervalSec простоял в [Service], где он ничего
+        # не значит, и пропустил 250 перезапусков подряд.
+        run: bash scripts/check-yunity.sh
+
       - name: Ключ и известный хост
         env:
           KLYUCH: ${{ secrets.SSH_PRIVATE_KEY }}
