@@ -220,29 +220,45 @@ jobs:
 
       - name: Проверка сразу после подмены
         if: steps.dostup.outputs.est == 'да'
-        # Ходим на сам сервер через петлю с нужным заголовком Host:
-        # это работает и до переезда домена, и проверяет ровно то,
-        # что отдаёт nginx, а не то, что лежит в папке.
+        # Ходим на САМ СЕРВЕР через петлю, но по настоящему имени:
+        # --resolve сажает neirolavka.ru на 127.0.0.1, поэтому проверяется
+        # то, что отдаёт наш nginx, а не то, что лежит в папке, и не то,
+        # куда сейчас смотрит DNS.
+        #
+        # Раньше здесь стоял голый http://127.0.0.1/ с заголовком Host.
+        # Это работало ровно до выпуска сертификата: боевая конфигурация
+        # отвечает на http редиректом 301, и проверка искала «Нейролавка»
+        # в пустом теле редиректа. Теперь запрос идёт с -L и через оба
+        # порта — путь человека воспроизводится целиком, вместе
+        # с переходом на https.
         run: |
-          ssh cel "
-            set -e
-            koren=\$(curl -sS --max-time 10 -H 'Host: neirolavka.ru' http://127.0.0.1/)
-            echo \"\$koren\" | grep -q 'Нейролавка'   || { echo '::error::на главной нет слова Нейролавка'; exit 1; }
-            echo \"\$koren\" | grep -q 'Claude Pro'   || { echo '::error::на главной нет витрины'; exit 1; }
+          ssh cel bash -s -- "$KOREN" <<'SH'
+          set -euo pipefail
+          KOREN="$1"
+          Q=(curl -sS --max-time 10 -L
+             --resolve neirolavka.ru:80:127.0.0.1
+             --resolve neirolavka.ru:443:127.0.0.1)
 
-            kod=\$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 -H 'Host: neirolavka.ru' http://127.0.0.1/)
-            [ \"\$kod\" = 200 ] || { echo \"::error::главная отдала \$kod\"; exit 1; }
+          koren=$("${Q[@]}" http://neirolavka.ru/)
+          printf '%s' "$koren" | grep -q 'Нейролавка' \
+            || { echo '::error::на главной нет слова Нейролавка'; exit 1; }
+          printf '%s' "$koren" | grep -q 'Claude Pro' \
+            || { echo '::error::на главной нет витрины'; exit 1; }
 
-            kusok=\$(echo \"\$koren\" | grep -o '/_next/static/[^\\\"]*\\.css' | head -1)
-            [ -n \"\$kusok\" ] || { echo '::error::в главной нет ссылки на статику'; exit 1; }
-            kkod=\$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 -H 'Host: neirolavka.ru' \"http://127.0.0.1\$kusok\")
-            [ \"\$kkod\" = 200 ] || { echo \"::error::статика \$kusok отдала \$kkod\"; exit 1; }
+          kod=$("${Q[@]}" -o /dev/null -w '%{http_code}' http://neirolavka.ru/)
+          [ "$kod" = 200 ] || { echo "::error::главная отдала $kod"; exit 1; }
 
-            n404=\$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 -H 'Host: neirolavka.ru' http://127.0.0.1/net-takoy-stranicy/)
-            [ \"\$n404\" = 404 ] || { echo \"::error::несуществующий адрес отдал \$n404\"; exit 1; }
+          kusok=$(printf '%s' "$koren" | grep -o '/_next/static/[^"]*\.css' | head -1)
+          [ -n "$kusok" ] || { echo '::error::в главной нет ссылки на статику'; exit 1; }
+          kkod=$("${Q[@]}" -o /dev/null -w '%{http_code}' "https://neirolavka.ru$kusok")
+          [ "$kkod" = 200 ] || { echo "::error::статика $kusok отдала $kkod"; exit 1; }
 
-            echo \"главная 200, статика \$kusok 200, несуществующий адрес 404\"
-          "
+          n404=$("${Q[@]}" -o /dev/null -w '%{http_code}' https://neirolavka.ru/net-takoy-stranicy/)
+          [ "$n404" = 404 ] || { echo "::error::несуществующий адрес отдал $n404"; exit 1; }
+
+          echo "главная 200, статика $kusok 200, несуществующий адрес 404"
+          echo "текущий выпуск: $(readlink -f "$KOREN/current")"
+          SH
 
       - name: Наблюдение за непрерывностью — разбор
         if: always() && steps.dostup.outputs.est == 'да' && steps.domen.outputs.nash == 'да'
@@ -289,34 +305,60 @@ jobs:
         env:
           IMYA: ${{ steps.vypusk.outputs.imya }}
         run: |
-          # Возвращаем предыдущий выпуск, если он есть. Красный прогон
-          # с рабочим сайтом лучше красного прогона со сломанным.
-          ssh cel "
-            set -e
-            preds=\$(ls -1dt '$KOREN'/releases/*/ 2>/dev/null | grep -v '$IMYA' | head -1 || true)
-            if [ -n \"\$preds\" ]; then
-              ln -sfn \"\${preds%/}\" '$KOREN/.current.new'
-              mv -Tf '$KOREN/.current.new' '$KOREN/current'
-              echo \"откатились на \$(readlink -f '$KOREN/current')\"
-            else
-              echo 'откатываться не на что — это первая выкладка'
-            fi
-          " || true
+          ssh cel bash -s -- "$KOREN" "$IMYA" <<'SH'
+          set -euo pipefail
+          KOREN="$1"; IMYA="$2"
+          # Откатываться можно только на ГОДНЫЙ выпуск, а не просто
+          # на предыдущий по времени. От упавшей заливки остаётся пустая
+          # папка с правильным именем, и откат на неё кладёт сайт
+          # насмерть — это уже случилось. Годность решается тем же
+          # набором файлов, что проверяет заливка.
+          godnyy() {
+            [ -s "$1/index.html" ] && [ -s "$1/404.html" ] && [ -d "$1/_next/static" ]
+          }
+          nashli=
+          for d in $(ls -1dt "$KOREN"/releases/*/ 2>/dev/null); do
+            d="${d%/}"
+            case "$d" in *"$IMYA") continue ;; esac
+            if godnyy "$d"; then nashli="$d"; break; fi
+            echo "пропускаю негодный выпуск: $d"
+          done
+          if [ -n "$nashli" ]; then
+            ln -sfn "$nashli" "$KOREN/.current.new"
+            mv -Tf "$KOREN/.current.new" "$KOREN/current"
+            echo "откатились на $(readlink -f "$KOREN/current")"
+          else
+            echo '::warning::годного прошлого выпуска нет — current оставлен как есть'
+          fi
+          SH
 
       - name: Уборка старых выпусков
-        if: steps.dostup.outputs.est == 'да'
+        if: always() && steps.dostup.outputs.est == 'да'
         run: |
-          ssh cel "
-            cd '$KOREN/releases'
-            tek=\$(readlink -f '$KOREN/current')
-            # Держим $HRANIT свежих плюс тот, на который смотрит current.
-            ls -1dt */ | tail -n +\$(( $HRANIT + 1 )) | while read -r d; do
-              [ \"\$(readlink -f \"\$d\")\" = \"\$tek\" ] && continue
-              rm -rf -- \"\$d\"
-              echo \"убран \$d\"
-            done
-            echo \"осталось выпусков: \$(ls -1d */ | wc -l)\"
-          "
+          ssh cel bash -s -- "$KOREN" "$HRANIT" <<'SH'
+          set -euo pipefail
+          KOREN="$1"; HRANIT="$2"
+          cd "$KOREN/releases"
+          tek=$(readlink -f "$KOREN/current")
+          godnyy() {
+            [ -s "$1/index.html" ] && [ -s "$1/404.html" ] && [ -d "$1/_next/static" ]
+          }
+          # Сначала выносим негодные — пустые папки от упавших заливок.
+          # Пока они лежат рядом, откат может выбрать такую и положить сайт.
+          for d in */; do
+            d="${d%/}"
+            [ "$(readlink -f "$d")" = "$tek" ] && continue
+            godnyy "$d" || { rm -rf -- "$d"; echo "убран негодный $d"; }
+          done
+          # Потом лишние по возрасту: держим HRANIT свежих плюс текущий.
+          ls -1dt */ | tail -n +$(( HRANIT + 1 )) | while read -r d; do
+            d="${d%/}"
+            [ "$(readlink -f "$d")" = "$tek" ] && continue
+            rm -rf -- "$d"
+            echo "убран старый $d"
+          done
+          echo "осталось выпусков: $(ls -1d */ 2>/dev/null | wc -l), текущий $tek"
+          SH
 
       - name: Проверка боем
         if: steps.dostup.outputs.est == 'да' && steps.domen.outputs.nash == 'да'
