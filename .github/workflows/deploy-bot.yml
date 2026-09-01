@@ -280,14 +280,24 @@ jobs:
         run: |
           # Внутренняя проверка говорит «процесс жив». Эта — «вебхуки
           # доезжают»: тот же путь, которым ходит Telegram.
-          TELO=$(curl -s --max-time 15 -w '\n%{http_code}' "$SAYT/bot-health" || echo -e '\n000')
-          KOD=$(printf '%s' "$TELO" | tail -1)
-          PRICHINA=$(printf '%s' "$TELO" | head -n -1)
-          echo "$SAYT/bot-health → $KOD ${PRICHINA:+($PRICHINA)}"
+          # ЖДЁМ готовности, а не спрашиваем один раз. Бот теперь
+          # поднимает сервер ДО обращения к Telegram: /vypusk отвечает
+          # сразу, а «на связи» наступает через рукопожатие с Telegram.
+          # Первая версия этой проверки спрашивала через секунду после
+          # перезапуска, получала честное «жду ответа Telegram» и
+          # красила прогон за то, что бот ещё не успел поздороваться.
+          for i in $(seq 1 45); do
+            TELO=$(curl -s --max-time 5 -w '\n%{http_code}' "$SAYT/bot-health" || printf '\n000')
+            KOD=$(printf '%s' "$TELO" | tail -1)
+            PRICHINA=$(printf '%s' "$TELO" | head -n -1)
+            [ "$KOD" = 200 ] && break
+            sleep 1
+          done
+          echo "$SAYT/bot-health → $KOD ${PRICHINA:+($PRICHINA)} (ждали $i с)"
           if [ "$KOD" = 503 ]; then
             # Бот жив и отвечает, но сам говорит, что не готов. Чаще
             # всего это значит, что сервер не достучался до Telegram.
-            echo "::error::Бот запущен, но не на связи: «$PRICHINA». Код выложен, работать он не может. Проверьте с сервера: curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://api.telegram.org"
+            echo "::error::Бот запущен, но за 45 с не вышел на связь: «$PRICHINA». Код выложен, работать он не может. Проверьте с сервера: curl -6 -sS -o /dev/null -m 10 -w 'IPv6 %{http_code} за %{time_total} с\n' https://api.telegram.org/"
             exit 1
           fi
           if [ "$KOD" != 200 ]; then
