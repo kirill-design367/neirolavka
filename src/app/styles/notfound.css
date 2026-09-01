@@ -1,0 +1,68 @@
+/* Страница 404. Ступени кегля и цвета — только существующие токены. */
+
+.nf {
+  min-height: 100svh;
+  display: grid;
+  align-items: center;
+}
+
+.nf__in {
+  display: grid;
+  gap: var(--sp-4);
+  padding-block: var(--sp-8);
+  /* Ширину столбца ограничивает сам текст, а не эта коробка: .page
+     центрирует по своей максимальной ширине, и max-width здесь увёл бы
+     блок в середину экрана — мимо колонки, по которой выстроен весь
+     остальной сайт. */
+  justify-items: start;
+}
+
+.nf__code {
+  font-family: var(--font-display);
+  font-size: var(--t-label);
+  letter-spacing: 0.14em;
+  color: var(--c-muted);
+}
+
+.nf__title {
+  max-width: 18ch;
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  /* Заголовок нейтральный: акцентом красится состояние, а не текст. */
+  color: var(--c-text);
+}
+
+.nf__text {
+  font-size: var(--t-body);
+  color: var(--c-muted);
+  line-height: 1.55;
+  max-width: 46ch;
+}
+
+.nf__back {
+  margin-top: var(--sp-2);
+  padding: var(--sp-3) var(--sp-5);
+  border-radius: var(--r-lg);
+  font-size: var(--t-label);
+  font-weight: 600;
+  background: var(--c-brand);
+  color: var(--c-on-brand);
+  /* Только transform и opacity — как везде на странице. */
+  transition: transform 0.2s var(--ease-out);
+}
+
+.nf__back:hover {
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nf__back {
+    transition: none;
+  }
+
+  .nf__back:hover {
+    transform: none;
+  }
+}

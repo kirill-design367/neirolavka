@@ -1,16 +1,22 @@
 import type { NextConfig } from 'next';
 
 /**
- * basePath вынесен в переменную окружения: на GitHub Pages это «/neirolavka»,
- * на своём домене — пустая строка. Задаётся через NEXT_PUBLIC_BASE_PATH.
+ * Сайт живёт в КОРНЕ своего домена (neirolavka.ru), поэтому basePath
+ * и assetPrefix здесь больше нет.
+ *
+ * Они стояли ради GitHub Pages, где страница лежала в подпапке с именем
+ * репозитория. После переезда на свой сервер подпапки нет, а пустой
+ * basePath — это ровно то же самое, что его отсутствие, только с лишней
+ * переменной окружения, о которую можно споткнуться: собрали с
+ * NEXT_PUBLIC_BASE_PATH из старого окружения — и все пути уехали
+ * в несуществующий /neirolavka.
+ *
+ * trailingSlash остаётся: выдача — папки с index.html, и nginx настроен
+ * ровно под неё (см. deploy/nginx/neirolavka.conf).
  */
-const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
-
 const nextConfig: NextConfig = {
   output: 'export',
   images: { unoptimized: true },
-  basePath,
-  assetPrefix: basePath || undefined,
   trailingSlash: true,
   reactStrictMode: true,
   productionBrowserSourceMaps: false,

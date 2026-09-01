@@ -1,11 +1,14 @@
 /**
  * Проверка статической выдачи перед публикацией.
  *
- * Ловит ровно те поломки, которые на GitHub Pages проявляются только
- * в браузере: ссылки на ассеты без basePath, недостающие файлы,
- * пропавший .nojekyll (без него Pages выбрасывает папку _next).
+ * Ловит поломки, которые видны только в браузере: ссылки на ассеты
+ * мимо basePath, недостающие файлы, пропавшие гарнитуры.
  *
- * Запуск: node scripts/check-export.mjs out /neirolavka
+ * Второй аргумент — basePath. Сайт переехал в корень своего домена,
+ * поэтому он пустой; аргумент оставлен на случай, если выдачу опять
+ * придётся класть в подпапку.
+ *
+ * Запуск: node scripts/check-export.mjs out
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,7 +27,10 @@ function walk(dir) {
 const files = walk(root);
 const htmls = files.filter((f) => f.endsWith('.html'));
 
-if (!fs.existsSync(path.join(root, '.nojekyll'))) {
+// .nojekyll нужен только на GitHub Pages: без него Pages выбрасывает
+// папку _next. На своём nginx он ничего не значит, поэтому требуется
+// он ровно тогда, когда выдача собрана под подпапку Pages.
+if (basePath && !fs.existsSync(path.join(root, '.nojekyll'))) {
   problems.push('нет файла .nojekyll в корне выдачи — Pages выбросит папку _next');
 }
 if (!htmls.length) {
@@ -66,10 +72,29 @@ for (const font of ['golos_text', 'akt']) {
   }
 }
 
+// Своя страница 404. Готовая страница Next набрана по-английски,
+// а nginx обязан отдавать именно её (error_page 404 /404.html),
+// поэтому проверяем и наличие файла, и что это НАША страница.
+const notFound = path.join(root, '404.html');
+if (!fs.existsSync(notFound)) {
+  problems.push('в выдаче нет 404.html — nginx нечего отдать на несуществующий адрес');
+} else {
+  const body = fs.readFileSync(notFound, 'utf8');
+  if (!body.includes('Такой страницы в лавке нет')) {
+    problems.push('404.html — не наша страница: нет собственного текста');
+  }
+  if (/This page could not be found/.test(body)) {
+    problems.push('404.html — готовая английская страница Next, а не наша');
+  }
+}
+
 if (problems.length) {
   console.error('Проверка выдачи не пройдена:');
   for (const p of problems) console.error('  • ' + p);
   process.exit(1);
 }
 
-console.log(`Выдача в порядке: ${htmls.length} страниц, ${fonts.length} гарнитур, basePath «${basePath || 'пустой'}».`);
+console.log(
+  `Выдача в порядке: ${htmls.length} страниц, ${fonts.length} гарнитур, ` +
+    `своя страница 404 на месте, basePath «${basePath || 'пустой, сайт в корне домена'}».`,
+);
