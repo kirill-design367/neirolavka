@@ -1,0 +1,72 @@
+name: Проверка боевого адреса браузером
+
+# check-live.mjs смотрит на ответы сервера. Этого мало, чтобы сказать
+# «сайт работает так же, как раньше»: витрина, пузыри, темы, выбор
+# тарифов и чек живут в JavaScript, и проверить их можно только
+# настоящим браузером на настоящем адресе.
+#
+# Из контейнера разработки боевой адрес недоступен — сеть закрыта
+# политикой шлюза. Поэтому те же самые проверки гоняются здесь.
+#
+# Запускается правкой этого файла или кнопкой (кнопка появится, когда
+# веткой по умолчанию у репозитория станет main).
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/proverka-brauzerom.yml']
+  workflow_dispatch:
+    inputs:
+      adres:
+        description: 'Какой адрес проверять'
+        default: 'https://neirolavka.ru/'
+        required: false
+
+jobs:
+  proverka:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ADRES: ${{ inputs.adres || 'https://neirolavka.ru/' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Браузер
+        # Скрипты берут путь из CHROME_PATH, а по умолчанию смотрят туда,
+        # где браузер лежит в контейнере разработки. Здесь его ставит
+        # сам Playwright и говорит, куда положил.
+        run: |
+          npx playwright install --with-deps chromium
+          echo "CHROME_PATH=$(node -e "console.log(require('playwright').chromium.executablePath())")" >> "$GITHUB_ENV"
+          echo "браузер: $(node -e "console.log(require('playwright').chromium.executablePath())")"
+
+      - name: Живая страница — запросы, консоль, CLS
+        run: node scripts/verify-live.mjs "$ADRES"
+
+      - name: Разрешения — ничего не вылезает за экран
+        run: node scripts/check-viewports.mjs "$ADRES"
+
+      - name: Витрина — геометрия, выбор тарифа, чек, плоский запасной вид
+        run: node scripts/check-shelf.mjs "$ADRES"
+
+      - name: Витрина — кромка холста теней и ряд кадров перехода
+        run: node scripts/check-shelf-motion.mjs "$ADRES"
+
+      - name: Пузыри — число, отклик, лопание, отложенность
+        run: node scripts/check-bubbles.mjs "$ADRES"
+
+      - name: Темы — вспышка при загрузке и prefers-reduced-motion
+        run: node scripts/check-theme-motion.mjs "$ADRES"
+
+      - name: Контраст в обеих темах
+        run: node scripts/check-contrast.mjs "$ADRES"
+
+      - name: Панель заказа — кнопка видна на всех высотах
+        run: node scripts/check-order-panel.mjs "$ADRES"

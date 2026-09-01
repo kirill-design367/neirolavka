@@ -17,7 +17,7 @@ import { chromium } from 'playwright';
 
 const URL = process.argv[2];
 const ZONE = process.argv[3] ?? 'слева';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const browser = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
 const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU' });
 const page = await ctx.newPage();
 await page.goto(URL, { waitUntil: 'networkidle' });

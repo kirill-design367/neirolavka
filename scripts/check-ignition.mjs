@@ -54,7 +54,7 @@ const STEP_MS = Number(process.argv[3] ?? 8);
 // скорости капли, иначе на телефоне она не успевает отойти от кружка.
 const HALF_MS = Number(process.argv[4] ?? 320);
 
-const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const b = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
 let bad = 0;
 // Одна и та же геометрия, снятая в двух темах, даёт для метода
 // независимую оценку одного и того же момента. Расхождение между

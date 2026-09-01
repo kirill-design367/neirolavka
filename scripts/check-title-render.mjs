@@ -16,7 +16,7 @@ import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
 
 const URL = process.argv[2];
-const EXEC = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const EXEC = (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome');
 
 const measure = async (browser, SCALE, theme) => {
   const c = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU',

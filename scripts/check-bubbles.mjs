@@ -25,7 +25,7 @@ if (!URL) {
   process.exit(1);
 }
 
-const EXE = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const EXE = (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome');
 const CHUNK = /_next\/static\/chunks\//;
 /** Кусок с Three.js — самый тяжёлый на сайте. Следующий за ним
  *  собственный код страницы весит вдвое меньше. */

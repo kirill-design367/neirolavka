@@ -23,7 +23,7 @@ const THEME = process.argv[3] ?? 'dark';
 const VW = Number(process.argv[4] ?? 1512);
 const MARGIN = 220;
 
-const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const b = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
 const c = await b.newContext({ viewport: { width: VW, height: 1180 }, locale: 'ru-RU',
                                isMobile: VW < 500, hasTouch: VW < 500 });
 await c.addInitScript((t) => localStorage.setItem('neirolavka-theme', t), THEME);

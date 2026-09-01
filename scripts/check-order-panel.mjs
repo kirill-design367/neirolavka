@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 
 const URL = process.argv[2];
 const SIZES = [[1920, 1080], [1512, 820], [1366, 768]];
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const browser = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
 let bad = 0;
 
 for (const [w, h] of SIZES) {

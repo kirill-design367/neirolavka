@@ -3,7 +3,7 @@
  */
 import { chromium } from 'playwright';
 const URL = process.argv[2];
-const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const b = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
 let bad = 0;
 
 for (const [w, name] of [[1512, 'десктоп'], [390, 'мобильная']]) {

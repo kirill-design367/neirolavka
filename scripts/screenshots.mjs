@@ -15,7 +15,7 @@ const VIEWPORTS = [
 ];
 
 fs.mkdirSync(OUT, { recursive: true });
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const browser = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
 
 const shotBlock = async (page, sel, file) => {
   const el = page.locator(sel).first();

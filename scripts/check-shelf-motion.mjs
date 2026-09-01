@@ -49,7 +49,7 @@ const ok = (t) => console.log(`  ok   ${t}`);
 const no = (t) => { bad = true; console.log(`  ПЛОХО ${t}`); };
 
 const browser = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'),
 });
 
 // ─── 1. Кромка холста теней ───────────────────────────────────────

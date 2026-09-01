@@ -38,7 +38,7 @@ const hsl = (r, g, b) => {
   return [(h + 360) % 360, s, l];
 };
 
-const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const b = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
 let bad = 0;
 
 for (const theme of ['light', 'dark']) {

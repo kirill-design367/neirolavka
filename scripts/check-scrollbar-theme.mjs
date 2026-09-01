@@ -19,7 +19,7 @@ import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
 
 const URL = process.argv[2];
-const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROME = (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome');
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: false });
 let bad = 0;

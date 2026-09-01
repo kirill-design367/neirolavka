@@ -5,7 +5,7 @@
  */
 import { chromium } from 'playwright';
 const URL = process.argv[2];
-const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const b = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
 let bad = 0;
 
 // ── 1. Параллакс: размах за весь проход блока ──

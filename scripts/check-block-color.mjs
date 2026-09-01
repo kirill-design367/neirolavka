@@ -26,7 +26,7 @@ const hsl = (r, g, b) => {
   return [(h + 360) % 360, s, l];
 };
 
-const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const b = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
 
 for (const [theme, sel, hide, label] of [
   ['dark', '.referral', '.referral__content', 'реферальный блок'],
