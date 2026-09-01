@@ -305,7 +305,16 @@ for (const [w, h, phone] of [[1512, 900, false], [390, 844, true]]) {
       // Плоская вёрстка выдаёт себя одинаковой шириной всех трёх
       // карточек: в сцене они на разной глубине и равными быть не могут.
       flat: new Set(wid).size === 1,
-      matrix: cards.every((c) => c.style.transform.includes('matrix3d')),
+      // Сцена ставит преобразование каждой карточке. Раньше здесь
+      // искалась подстрока matrix3d — теперь сцена пишет разные записи:
+      // повёрнутой карточке perspective()+rotateY(), неповёрнутой
+      // (выбранной, и всем на телефоне) обычный двумерный translate+scale.
+      // Проверять надо ФАКТ преобразования, а не его запись, иначе
+      // проверка держится за способ и падает на первой же правке.
+      matrix: cards.every((c) => {
+        const t = c.style.transform;
+        return t !== '' && t !== 'none';
+      }),
       wid,
     };
   });
@@ -329,7 +338,7 @@ for (const [w, h, phone] of [[1512, 900, false], [390, 844, true]]) {
     const beda = [];
     if (!s.d3) beda.push('сцены нет (data-3d снят)');
     if (s.flat) beda.push(`плоская вёрстка: ширины ${s.wid.join('/')} одинаковы`);
-    if (!s.matrix) beda.push('карточкам не выставлена matrix3d');
+    if (!s.matrix) beda.push('карточкам не выставлено преобразование от сцены');
     if (s.open.filter(Boolean).length !== 1) beda.push(`раскрыто карточек ${s.open.filter(Boolean).length}`);
     if (s.active !== target) beda.push(`выбрана карточка ${s.active + 1}, а нажимали ${target + 1}`);
     if (beda.length) no(`+${s.at} мс: ${beda.join('; ')}`);

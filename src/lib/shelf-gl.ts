@@ -197,25 +197,9 @@ type Slot = {
   h: number;
 };
 
-const eps = (v: number) => (Math.abs(v) < 1e-10 ? 0 : v);
+/** Короткое число для строки transform: она разбирается каждый кадр. */
+const eps = (v: number) => (Math.abs(v) < 1e-4 ? 0 : Math.round(v * 1e4) / 1e4);
 
-/** Матрица камеры для CSS: та же, что у Three, с перевёрнутой осью Y. */
-const cameraCss = (m: readonly number[]) =>
-  `matrix3d(${[
-    eps(m[0]), eps(-m[1]), eps(m[2]), eps(m[3]),
-    eps(m[4]), eps(-m[5]), eps(m[6]), eps(m[7]),
-    eps(m[8]), eps(-m[9]), eps(m[10]), eps(m[11]),
-    eps(m[12]), eps(-m[13]), eps(m[14]), eps(m[15]),
-  ].join(',')})`;
-
-/** Матрица предмета для CSS. */
-const objectCss = (m: readonly number[]) =>
-  `matrix3d(${[
-    eps(m[0]), eps(m[1]), eps(m[2]), eps(m[3]),
-    eps(-m[4]), eps(-m[5]), eps(-m[6]), eps(-m[7]),
-    eps(m[8]), eps(m[9]), eps(m[10]), eps(m[11]),
-    eps(m[12]), eps(m[13]), eps(m[14]), eps(m[15]),
-  ].join(',')})`;
 
 export type Shelf = {
   /** Указатель над карточкой: −1, если ни над одной. */
@@ -237,7 +221,6 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
   if (!renderer.getContext()) return null;
 
   const scene = new Scene();
-  const camera = new PerspectiveCamera(FOV, 1, 10, 6000);
   const tanHalf = Math.tan((FOV / 2) * (Math.PI / 180));
   // Тени рисуются ТОЙ ЖЕ сценой, но в холст, который шире блока
   // на SHADOW_PAD с каждой стороны. Поэтому у них своя камера: то же
@@ -251,6 +234,10 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
   let w = 1;
   let h = 1;
   let camZ = 1;
+  // Перспектива слоя HTML. Раньше стояла свойством `perspective`
+  // на контейнере; теперь входит в transform каждой карточки — см.
+  // комментарий у tick.
+  let persp = 1;
   let phone = false;
 
   const shadowGeo = new PlaneGeometry(1, 1);
@@ -514,10 +501,6 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
     // пятна разницы нет.
     const dpr = 0.6;
     camZ = h / 2 / tanHalf;
-    camera.aspect = w / h;
-    camera.position.set(0, 0, camZ);
-    camera.updateProjectionMatrix();
-    camera.updateMatrixWorld();
 
     // Холст теней выше блока на SHADOW_PAD сверху и снизу и вынесен
     // за его кромку отрицательным top. Камера теней стоит там же,
@@ -549,21 +532,9 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
     }
 
     // Перспектива слоя HTML берётся из той же камеры: иначе объём
-    // теней и объём карточек разошлись бы.
-    const persp = 0.5 / tanHalf * h;
-    root.style.perspective = `${persp}px`;
-    // Сдвиг в середину сцены стоит ПЕРВЫМ, а не последним.
-    //
-    // В примере CSS3DRenderer он последний — но там держатель камеры
-    // размером со сцену, и все преобразования считаются от его центра.
-    // Здесь держатель нулевой (иначе его собственная коробка уезжает
-    // за экран и появляется горизонтальная прокрутка), а у нулевой
-    // коробки начало отсчёта — угол. Оставленный последним сдвиг
-    // попадал под отражение оси Y внутри матрицы камеры и уезжал
-    // ВВЕРХ на половину высоты: карточки уходили из своего блока
-    // и ложились на первый экран. Снаружи матрицы отражать его нечему.
-    cameraEl.style.transform =
-      `translate(${w / 2}px, ${h / 2}px) translateZ(${persp}px)${cameraCss(camera.matrixWorldInverse.elements)}`;
+    // теней и объём карточек разошлись бы. Значение хранится в поле,
+    // а не пишется свойством `perspective` на контейнер: см. tick.
+    persp = 0.5 / tanHalf * h;
 
     measure();
     apply(true);
@@ -633,7 +604,61 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
       s.group.scale.setScalar(n.s);
       s.group.updateMatrixWorld(true);
 
-      s.el.style.transform = `translate(-50%,-50%)${objectCss(s.group.matrixWorld.elements)}`;
+      // ── Как карточка попадает на экран ───────────────────────
+      //
+      // Раньше здесь стояла матрица из графа сцены, а перспективу
+      // держал контейнер свойством `perspective`. Работало верно
+      // и стоило чёткости текста: элемент внутри трёхмерного
+      // контекста растеризуется композитором ОДИН раз и дальше
+      // натягивается на слой, а сглаживание в таком слое считается
+      // иначе. Замер по настоящим пикселям (ступенька кромки буквы,
+      // делённая на толщину штриха — иначе кегль боковых карточек
+      // всё портит):
+      //
+      //   в слое, дробное смещение, как было ......... 0.135
+      //   в слое, смещение по целым точкам ........... 0.126
+      //   плоским 2D-преобразованием, вне слоя ....... 0.109
+      //   образец: та же карточка без преобразований . 0.117
+      //
+      // То есть даже в лучшем случае слой стоит +8 % размытия,
+      // а плоское преобразование не просто возвращает чёткость,
+      // а даёт её БОЛЬШЕ образца: браузер растеризует текст сразу
+      // в увеличенном масштабе, а не растягивает готовый растр.
+      //
+      // Отсюда устройство. Перспектива больше не живёт на контейнере
+      // и не приходит матрицей от камеры: она сложена в transform
+      // самой карточки. У карточки, повёрнутой вокруг Y, всё как
+      // прежде — функция `perspective()` плюс `rotateY`. А у карточки
+      // БЕЗ поворота (это выбранная на широком экране и все карточки
+      // на телефоне) перспектива вырождается в одно число: точка
+      // на глубине z уезжает от середины сцены ровно в
+      // persp / (persp − z) раз. Такую карточку можно поставить
+      // обычным двумерным `translate … scale` — и её текст рисуется
+      // как обычный текст страницы.
+      //
+      // Обе ветки — одна и та же математика, поэтому при ry → 0
+      // переход между ними незаметен: подставьте ry = 0 в трёхмерную
+      // запись и получите двумерную.
+      //
+      // Начало отсчёта преобразования — СЕРЕДИНА карточки (умолчание).
+      // Двигать его в угол нельзя: парение висит на отдельных
+      // свойствах `rotate` и `translate`, а они считаются от того же
+      // начала, и наклон на 0.28° превратился бы в размах вокруг угла.
+      const ow = s.el.offsetWidth;
+      const oh = s.h;
+      const f = persp / Math.max(1, persp - n.z);
+      if (Math.abs(n.ry) < 5e-4) {
+        const k = n.s * f;
+        const cx = w / 2 + n.x * f - ow / 2;
+        const cy = h / 2 - n.y * f - oh / 2;
+        s.el.style.transform = `translate(${eps(cx)}px, ${eps(cy)}px) scale(${eps(k)})`;
+      } else {
+        s.el.style.transform =
+          `translate(${eps(w / 2 - ow / 2)}px, ${eps(h / 2 - oh / 2)}px)` +
+          ` perspective(${eps(persp)}px)` +
+          ` translate3d(${eps(n.x)}px, ${eps(-n.y)}px, ${eps(n.z)}px)` +
+          ` rotateY(${eps(n.ry)}rad) scale(${eps(n.s)})`;
+      }
       s.el.style.opacity = String(n.o);
       s.el.style.zIndex = String(1000 + Math.round(n.z));
 
@@ -703,6 +728,8 @@ export function mount(root: HTMLElement, canvas: HTMLCanvasElement, cards: HTMLE
       shadowGeo.dispose();
       scene.clear();
       renderer.dispose();
+      // Перспектива и матрица камеры на этих узлах больше не живут,
+      // но старый выпуск мог их оставить: чистим на всякий случай.
       root.style.perspective = '';
       cameraEl.style.transform = '';
     },
