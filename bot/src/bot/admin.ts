@@ -53,6 +53,11 @@ function opisanie(l: Lavka, z: zakazy.Zakaz): string {
     strok.push(`Доступ до: ${dataSlovami(new Date(z.dostup_do), r.poyas)}`);
   }
   if (dostupy.est(l.db, z.id)) strok.push('Доступ записан');
+  // Заказ, о котором никому не сообщили, обязан быть виден как таковой:
+  // иначе он тихо лежит в очереди и ждёт, пока кто-нибудь туда заглянет.
+  if (zakazy.sobytiya(l.db, z.id).some((s) => s.chto === 'команду уведомить не удалось')) {
+    strok.push('⚠ уведомление команде не дошло — заказ найден в очереди');
+  }
   return strok.join('\n');
 }
 
@@ -65,9 +70,31 @@ function opisanie(l: Lavka, z: zakazy.Zakaz): string {
  * вызываться из подтверждения платежа — текст поменяется, а место нет.
  */
 export async function soobshchitOZakaze(l: Lavka, z: zakazy.Zakaz): Promise<void> {
-  const oplachen = z.status !== 'zhdet_oplaty';
-  const shapka = oplachen ? 'Новый оплаченный заказ.' : 'Новый заказ. Оплата пока вне бота.';
-  await uvedom.komande(l, `${shapka}\n\n${opisanie(l, z)}`, klav.novyZakazAdminu(z, oplachen));
+  try {
+    const oplachen = z.status !== 'zhdet_oplaty';
+    const shapka = oplachen ? 'Новый оплаченный заказ.' : 'Новый заказ. Оплата пока вне бота.';
+    const itog = await uvedom.komande(l, `${shapka}\n\n${opisanie(l, z)}`, klav.novyZakazAdminu(z, oplachen));
+
+    if (itog.doshlo > 0) {
+      zakazy.sobytie(l.db, z.id, 'команда уведомлена', null, `дошло ${itog.doshlo} из ${itog.vsego}`);
+      return;
+    }
+    // Никому не дошло. Заказ от этого не пропадает: он записан
+    // и стоит в очереди — администратор увидит его, как только
+    // откроет служебный раздел. Но в журнале это должно быть видно.
+    const komu = itog.nedostupny
+      .map((x) => uvedom.pochemuSlovami(x.pochemu, x.tgId))
+      .join('; ');
+    zakazy.sobytie(l.db, z.id, 'команду уведомить не удалось', null, komu || 'команда пуста');
+    zhurnal.oshibka(
+      `заказ № ${z.id} записан, но передать его некому: ${komu || 'в команде никого нет'}. ` +
+        'Заказ ждёт в очереди на выдачу.',
+    );
+  } catch (e) {
+    // Последняя черта. Уведомление администратора не имеет права
+    // уронить путь покупателя: заказ уже принят и записан.
+    zhurnal.oshibka(`уведомление о заказе № ${z.id} не отправлено:`, e);
+  }
 }
 
 export function podklyuchit(bot: Bot, l: Lavka): void {
@@ -229,17 +256,23 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     // порядок оставил бы заказ «выданным» при неотправленном доступе.
     const dostupDoDaty = z.dostup_do ? new Date(z.dostup_do) : dostupDo(new Date(), z.mesyacev);
     const dlyaPokupatelya = { ...z, dostup_do: dostupDoDaty.toISOString() };
-    const doshlo = await uvedom.cheloveku(
+    const otpravka = await uvedom.cheloveku(
       l,
       z.tg_id,
       t.dostupVydan(dlyaPokupatelya, d.login, d.parol, d.zametka, r()),
     );
-    if (!doshlo) {
+    if (!otpravka.doshlo) {
       await ctx.answerCallbackQuery('Сообщение покупателю не доставлено');
       await ctx.reply(
-        `Покупателю по заказу № ${id} сообщение не доставлено — вероятно, он заблокировал бота. ` +
-          'Заказ оставил невыданным.',
+        [
+          `Покупателю по заказу № ${id} доступ не доставлен:`,
+          uvedom.pochemuSlovami(otpravka.pochemu, z.tg_id) + '.',
+          '',
+          'Заказ оставил НЕвыданным — иначе он числился бы закрытым, а человек ' +
+            'остался бы без доступа.',
+        ].join('\n'),
       );
+      zakazy.sobytie(l.db, id, 'доступ не доставлен покупателю', ctx.from.id, otpravka.pochemu);
       return;
     }
     zakazy.otmetitVydannym(l.db, id, dostupDoDaty, ctx.from.id);
@@ -451,13 +484,31 @@ export function podklyuchitDialogi(bot: Bot, l: Lavka): void {
       }
       const c = lyudi.chelovek(l.db, id);
       komanda.dobavit(l.db, id, 'pomoshnik', c?.imya ?? '', tgId);
-      await ctx.reply(`Добавил ${id} помощником. Заказы теперь приходят и ему.`);
-      await uvedom.cheloveku(
+
+      // Проверяем СРАЗУ, а не в момент первого заказа. «chat not
+      // found» здесь — обычное дело: человек мог ни разу не открывать
+      // бота, и узнать об этом лучше сейчас.
+      const dostupen = await uvedom.cheloveku(
         l,
         id,
         'Вас добавили помощником в Нейролавке. В нижнем меню появился раздел «Заказы лавки»: ' +
           'там очередь на выдачу. Нажмите /start, чтобы меню обновилось.',
       );
+      if (dostupen.doshlo) {
+        await ctx.reply(`Добавил ${id} помощником, сообщение ему дошло. Заказы теперь приходят и ему.`);
+      } else {
+        await ctx.reply(
+          [
+            `Добавил ${id} помощником, но написать ему я не могу:`,
+            uvedom.pochemuSlovami(dostupen.pochemu, id) + '.',
+            '',
+            dostupen.pochemu === 'ne_zapuskal'
+              ? 'Пусть он откроет бота и нажмёт «Начать» — после этого заказы начнут ему приходить. ' +
+                'До тех пор он в команде числится, но уведомлений не получает.'
+              : 'Пока это так, заказы ему не придут.',
+          ].join('\n'),
+        );
+      }
       return;
     }
 

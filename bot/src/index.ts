@@ -26,9 +26,12 @@ import { zaseyat } from './db/komanda.js';
 import { proveritKlyuch } from './lib/shifr.js';
 import { zhurnal, skryt } from './lib/zhurnal.js';
 import { sobrat } from './bot/index.js';
+import { proveritKomandu } from './bot/uvedomleniya.js';
+import { sozdatServer } from './server.js';
 import { zapustit as zapustitNapominaniya } from './jobs/napominaniya.js';
 import { zaglushka } from './oplata/zaglushka.js';
 import type { Lavka } from './lavka.js';
+import { sozdatBota } from './lavka.js';
 
 async function glavnaya(): Promise<void> {
   const n = prochitat(process.env);
@@ -43,7 +46,7 @@ async function glavnaya(): Promise<void> {
   zaseyat(db, n.vladelcy, n.pomoshniki);
   zhurnal.info(`база открыта: ${n.baza}`);
 
-  const bot = new Bot(n.token);
+  const bot = sozdatBota(n);
   const l: Lavka = { db, n, bot, oplata: zaglushka };
   sobrat(l);
 
@@ -55,15 +58,6 @@ async function glavnaya(): Promise<void> {
   await bot.init();
   zhurnal.info(`бот: @${bot.botInfo.username}`);
 
-  const obrabotchik = webhookCallback(bot, 'http', {
-    secretToken: n.sekretVebhuka,
-    // Долгий обработчик не должен доводить Telegram до повтора:
-    // отвечаем 200 и доделываем начатое. От двойной работы спасает
-    // отсев повторов по update_id.
-    onTimeout: 'return',
-    timeoutMilliseconds: 25_000,
-  });
-
   // Отметка выпуска. Кладётся выкладкой рядом с кодом; выкладка потом
   // спрашивает её у живого бота и так убеждается, что перезапустился
   // именно новый выпуск, а не остался работать прежний.
@@ -74,39 +68,8 @@ async function glavnaya(): Promise<void> {
     // Запуск из исходников без выкладки — это нормально.
   }
 
-  const put = putVebhuka(n);
-  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const adres = (req.url ?? '').split('?')[0];
-    if (adres === '/health') {
-      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
-      res.end('жив');
-      return;
-    }
-    if (adres === '/vypusk') {
-      // Наружу не проксируется: спрашивает только выкладка с самого
-      // сервера. Снаружи знать номер выпуска незачем.
-      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
-      res.end(vypusk);
-      return;
-    }
-    if (adres === put && req.method === 'POST') {
-      void obrabotchik(req, res);
-      return;
-    }
-    if (adres === '/yookassa') {
-      // Место под уведомления об оплате. Пока поставщик — заглушка,
-      // и разбирать нечего: отвечаем «принято», чтобы никто не копил
-      // очередь повторов, но ничего не делаем.
-      zhurnal.vnimanie('пришло уведомление об оплате, а оплата не подключена');
-      res.writeHead(200).end('ok');
-      return;
-    }
-    // Всё остальное — не наше. Ни намёка на то, что здесь бот.
-    res.writeHead(404).end();
-  });
+  const { server, put } = sozdatServer(l, vypusk);
 
-  // Слушаем ТОЛЬКО петлю: наружу порт не открыт и открывать его
-  // не нужно — вебхуки приходят на 443 и проксируются сюда.
   server.listen(n.port, '127.0.0.1', () => {
     zhurnal.info(`слушаю 127.0.0.1:${n.port}${put.replace(/\/[^/]+$/, '/‹секрет›')}, выпуск ${vypusk}`);
   });
@@ -119,6 +82,12 @@ async function glavnaya(): Promise<void> {
     allowed_updates: ['message', 'callback_query'],
   });
   zhurnal.info('вебхук объявлен Telegram');
+
+  // Кому мы вообще можем писать. Проверяется СРАЗУ, а не в момент
+  // первого заказа: «chat not found» означает, что человек ни разу
+  // не открывал бота, и узнать об этом надо до того, как в пустоту
+  // уйдёт чей-то оплаченный заказ.
+  await proveritKomandu(l).catch((e) => zhurnal.oshibka('проверка команды не прошла:', e));
 
   zapustitNapominaniya(l);
 

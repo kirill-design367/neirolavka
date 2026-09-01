@@ -13,6 +13,7 @@
  */
 
 import { Bot } from 'grammy';
+import type { Context } from 'grammy';
 import type { Lavka } from '../lavka.js';
 import * as pokupatel from './pokupatel.js';
 import * as admin from './admin.js';
@@ -23,10 +24,24 @@ import { seychasISO } from '../db/index.js';
 import * as t from '../lib/texty.js';
 import { zhurnal } from '../lib/zhurnal.js';
 
+/** Коротко, что это за обновление, — для одной строки в журнале. */
+function vid(ctx: Context): string {
+  if (ctx.callbackQuery) return `нажатие «${ctx.callbackQuery.data ?? '?'}»`;
+  if (ctx.message?.text) return 'сообщение';
+  if (ctx.message) return 'вложение';
+  return 'иное';
+}
+
 export function sobrat(l: Lavka): Bot {
   const bot = l.bot;
 
   // 1. Повторная доставка того же обновления не делает работу дважды.
+  //
+  // Здесь же — единственная строка в журнал на каждое обновление.
+  // Она кажется лишней ровно до того дня, когда бот замолчит и надо
+  // будет ответить на вопрос «запросы вообще доходят?». Без неё
+  // молчание бота и молчание Telegram выглядят в журнале одинаково,
+  // и это уже стоило дня разбирательств.
   bot.use(async (ctx, next) => {
     const id = ctx.update.update_id;
     const r = l.db
@@ -36,6 +51,7 @@ export function sobrat(l: Lavka): Bot {
       zhurnal.vnimanie(`повтор обновления ${id} — пропускаю`);
       return;
     }
+    zhurnal.info(`обновление ${id}: ${vid(ctx)} от ${ctx.from?.id ?? '?'}`);
     await next();
   });
 
