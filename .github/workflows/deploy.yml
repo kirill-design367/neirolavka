@@ -109,6 +109,15 @@ jobs:
             ConnectTimeout 20
           EOF
           chmod 600 ~/.ssh/config
+          # Сначала говорим понятно, потом даём ssh ругаться непонятно.
+          # «Host key verification failed» не подсказывает, что именно
+          # не так с секретом, а вариантов ровно два: пусто или ключ
+          # записан для другого адреса.
+          if ! ssh-keygen -F "$HOST" -f ~/.ssh/known_hosts > /dev/null 2>&1; then
+            echo "::error::В секрете SSH_KNOWN_HOSTS нет ключа для $HOST. Строк в секрете: $(grep -c . ~/.ssh/known_hosts). Получить правильную строку на сервере: for T in ed25519 rsa; do awk -v ip=$HOST '{print ip, \$1, \$2}' /etc/ssh/ssh_host_\${T}_key.pub; done"
+            exit 1
+          fi
+          echo "известный хост найден: $(ssh-keygen -F "$HOST" -f ~/.ssh/known_hosts | grep -c '^[^#]')"
           ssh cel 'echo подключение есть: $(whoami)@$(hostname)'
 
       - name: Имя выпуска
