@@ -151,15 +151,20 @@ jobs:
         run: |
           cat > /tmp/nablyudenie.sh <<'SH'
           #!/bin/bash
+          # Один запрос на строку, а не два: код и тело обязаны быть
+          # из ОДНОГО ответа, иначе на самой подмене можно получить
+          # код от старого выпуска и тело от нового.
           while :; do
             t=$(date -u +%H:%M:%S.%2N)
-            telo=$(curl -sS --max-time 4 https://neirolavka.ru/ 2>/dev/null) || { echo "$t ОШИБКА"; sleep 0.5; continue; }
-            kod=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 https://neirolavka.ru/ 2>/dev/null || echo 000)
-            if   printf '%s' "$telo" | grep -q 'Claude Pro';                then chto=сайт
-            elif printf '%s' "$telo" | grep -q 'сайт ещё не выложен';       then chto=заглушка
-            else                                                                chto=неизвестно
+            otvet=$(curl -sS --max-time 4 -w '\n%{http_code}' https://neirolavka.ru/ 2>/dev/null) \
+              || { echo "$t ОШИБКА"; sleep 0.5; continue; }
+            kod=${otvet##*$'\n'}
+            telo=${otvet%$'\n'*}
+            if   printf '%s' "$telo" | grep -q 'Claude Pro';          then chto=сайт
+            elif printf '%s' "$telo" | grep -q 'сайт ещё не выложен'; then chto=заглушка
+            else                                                           chto=неизвестно
             fi
-            printf '%s %s %s %s\n' "$t" "$kod" "$chto" "$(printf '%s' "$telo" | wc -c)"
+            printf '%s %s %s %s\n' "$t" "$kod" "$chto" "${#telo}"
             sleep 0.5
           done
           SH
@@ -193,6 +198,7 @@ jobs:
           echo "залито: $(ssh cel "find '$KOREN/releases/$IMYA' -type f | wc -l") файлов"
 
       - name: Подмена одним движением
+        id: podmena
         if: steps.dostup.outputs.est == 'да'
         env:
           IMYA: ${{ steps.vypusk.outputs.imya }}
@@ -263,7 +269,11 @@ jobs:
           echo "сайт не падал ни разу; содержимое сменилось $perehodov раз(а) — ровно на подмене"
 
       - name: Откат, если проверка не прошла
-        if: failure() && steps.dostup.outputs.est == 'да'
+        # Ровно тогда, когда откатывать есть что: подмена состоялась,
+        # а что-то после неё не прошло. Пока условие было просто
+        # failure(), шаг срабатывал и на обрыве ещё до подключения —
+        # и добавлял к понятной ошибке вторую, непонятную.
+        if: failure() && steps.podmena.outcome == 'success'
         env:
           IMYA: ${{ steps.vypusk.outputs.imya }}
         run: |
