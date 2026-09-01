@@ -13,6 +13,21 @@ name: Сборка и выкладка бота
 # Перезапуск делает systemd, а не выкладка: у пользователя deploy нет
 # sudo и не будет. Выкладка кладёт файл-метку, за файлом следит
 # .path-юнит. Дверь односторонняя.
+#
+# ─────────────────────────────────────────────────────────────────────
+# ЗЕЛЁНЫЙ ПРОГОН ЗДЕСЬ ЗНАЧИТ ОДНО: КОД НА СЕРВЕРЕ И БОТ ЕГО ПОДНЯЛ.
+#
+# Первая версия умела пропускать выкладку и оставаться зелёной —
+# «сервер ещё не готов, это же не поломка кода». Выглядело разумно
+# и оказалось ловушкой: пять зелёных прогонов подряд, на сервере пусто,
+# служба в петле перезапусков, и понять это можно было только развернув
+# лог и заметив, что прогон идёт двадцать секунд вместо минуты.
+#
+# Зелёный прогон, после которого на сервере ничего нет, — это ложное
+# успокоение. Поэтому пропусков больше нет: чего бы ни не хватало —
+# секрета, папки, службы, — прогон краснеет и говорит, какой командой
+# это чинится. Последним шагом стоит проверка, которая спрашивает
+# у живого бота номер выпуска и сверяет его с только что залитым.
 
 on:
   push:
@@ -64,25 +79,20 @@ jobs:
         working-directory: bot
         run: npm run build
 
-      - name: Есть ли доступ к серверу
-        id: dostup
-        env:
-          KLYUCH: ${{ secrets.SSH_PRIVATE_KEY }}
-          HOSTY: ${{ secrets.SSH_KNOWN_HOSTS }}
-        run: |
-          if [ -n "$KLYUCH" ] && [ -n "$HOSTY" ]; then
-            echo "est=да" >> "$GITHUB_OUTPUT"
-          else
-            echo "est=нет" >> "$GITHUB_OUTPUT"
-            echo "::notice::Секретов SSH нет — выкладка бота пропущена, сборка и проверки прошли."
-          fi
-
       - name: Ключ и известный хост
-        if: steps.dostup.outputs.est == 'да'
         env:
           KLYUCH: ${{ secrets.SSH_PRIVATE_KEY }}
           HOSTY: ${{ secrets.SSH_KNOWN_HOSTS }}
         run: |
+          # Раньше отсутствие секретов молча пропускало выкладку.
+          # Теперь это красный прогон: сборка без выкладки — не победа.
+          NET=""
+          [ -z "$KLYUCH" ] && NET="$NET SSH_PRIVATE_KEY"
+          [ -z "$HOSTY" ] && NET="$NET SSH_KNOWN_HOSTS"
+          if [ -n "$NET" ]; then
+            echo "::error::Нет секретов репозитория:$NET. Их печатает scripts/server-setup.sh при запуске на сервере. Без них выкладывать некуда."
+            exit 1
+          fi
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$KLYUCH" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
@@ -104,26 +114,72 @@ jobs:
           fi
           ssh cel 'echo подключение есть: $(whoami)@$(hostname)'
 
-      - name: Готов ли сервер принимать бота
-        if: steps.dostup.outputs.est == 'да'
-        id: gotov
+      - name: Осмотр сервера перед выкладкой
+        # Спрашиваем сервер обо всём, что нужно выкладке, ОДНИМ заходом
+        # и печатаем ответ целиком. Прежняя проверка была одним «да/нет»
+        # на два условия сразу: она честно говорила «не готов», но не
+        # говорила, ЧЕГО не хватает, и починить по ней было нельзя.
         run: |
-          # Папку и службы делает scripts/bot-setup.sh. Пока его
-          # не запускали, выкладывать некуда — и это не поломка кода.
-          if ssh cel "test -d $KOREN/releases && systemctl list-unit-files neirolavka-bot.service >/dev/null 2>&1"; then
-            echo "est=да" >> "$GITHUB_OUTPUT"
-          else
-            echo "est=нет" >> "$GITHUB_OUTPUT"
-            echo "::notice::На сервере ещё не запускали scripts/bot-setup.sh — выкладка бота пропущена."
+          OTCHET="$(ssh cel bash -s -- "$KOREN" <<'SH'
+          K="$1"
+          est() { [ -e "$1" ] && echo да || echo нет; }
+          zapis() { [ -w "$1" ] && echo да || echo нет; }
+          echo "papka=$(est "$K")"
+          echo "papka_zapis=$(zapis "$K")"
+          echo "releases=$(est "$K/releases")"
+          echo "releases_zapis=$(zapis "$K/releases")"
+          echo "metka_zapis=$(zapis "$K/perezapusk")"
+          echo "sluzhba=$(systemctl cat neirolavka-bot.service >/dev/null 2>&1 && echo да || echo нет)"
+          # || true, а не || echo нет: is-active сам печатает «inactive»
+          # и выходит с ненулевым кодом, и «нет» приклеилось бы второй
+          # строкой прямо в разбираемый отчёт.
+          echo "path_yunit=$(systemctl is-active neirolavka-bot-perezapusk.path 2>/dev/null || true)"
+          echo "avtozapusk=$(systemctl is-enabled neirolavka-bot.service 2>/dev/null || true)"
+          echo "node=$(command -v node >/dev/null 2>&1 && node -v || echo нет)"
+          echo "npm=$(command -v npm >/dev/null 2>&1 && npm -v || echo нет)"
+          echo "rsync=$(command -v rsync >/dev/null 2>&1 && echo да || echo нет)"
+          # readlink -f печатает путь и возвращает 0, даже когда ссылки
+          # нет вовсе, — поэтому сначала проверяем существование.
+          echo "current=$([ -e "$K/current" ] && readlink -f "$K/current" || echo нет)"
+          echo "sostoyanie=$(systemctl is-active neirolavka-bot.service 2>/dev/null || true)"
+          SH
+          )"
+          echo "$OTCHET"
+          znach() { printf '%s\n' "$OTCHET" | grep -E "^$1=" | cut -d= -f2-; }
+
+          BEDA=""
+          [ "$(znach papka)" = да ]          || BEDA="$BEDA\n  нет папки $KOREN"
+          [ "$(znach papka_zapis)" = да ]    || BEDA="$BEDA\n  $USER не может писать в $KOREN (там подменяется ссылка current)"
+          [ "$(znach releases)" = да ]       || BEDA="$BEDA\n  нет папки $KOREN/releases"
+          [ "$(znach releases_zapis)" = да ] || BEDA="$BEDA\n  $USER не может писать в $KOREN/releases"
+          [ "$(znach metka_zapis)" = да ]    || BEDA="$BEDA\n  $USER не может трогать метку $KOREN/perezapusk"
+          [ "$(znach sluzhba)" = да ]        || BEDA="$BEDA\n  нет службы neirolavka-bot.service"
+          [ "$(znach path_yunit)" = active ] || BEDA="$BEDA\n  neirolavka-bot-perezapusk.path не активен — метка не приведёт к перезапуску"
+          [ "$(znach rsync)" = да ]          || BEDA="$BEDA\n  на сервере нет rsync"
+          case "$(znach node)" in v2[2-9]*|v[3-9][0-9]*) ;; *) BEDA="$BEDA\n  нужен Node 22 и старше, а там «$(znach node)»" ;; esac
+          [ "$(znach npm)" != нет ]          || BEDA="$BEDA\n  на сервере нет npm"
+
+          if [ -n "$BEDA" ]; then
+            printf '%b\n' "Сервер не готов принять бота:$BEDA"
+            echo "::error::Сервер не готов принять бота (подробности в логе шага). Лечится на сервере от root: cd /opt/neirolavka-repo && git pull origin main && bash scripts/bot-setup.sh"
+            {
+              echo "## Выкладка бота не состоялась"
+              printf '%b\n' "Сервер не готов:$BEDA"
+              echo
+              echo 'Починить на сервере от root:'
+              echo '```'
+              echo 'cd /opt/neirolavka-repo && git pull origin main && bash scripts/bot-setup.sh'
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
+          echo "сервер готов; сейчас там выпуск: $(znach current), служба: $(znach sostoyanie)"
 
       - name: Имя выпуска
-        if: steps.gotov.outputs.est == 'да'
         id: vypusk
         run: echo "imya=$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Заливка рядом с текущим
-        if: steps.gotov.outputs.est == 'да'
         env:
           VYPUSK: ${{ steps.vypusk.outputs.imya }}
         run: |
@@ -140,8 +196,6 @@ jobs:
           echo "залито: $VYPUSK"
 
       - name: Зависимости на сервере, подмена ссылки и перезапуск
-        if: steps.gotov.outputs.est == 'да'
-        id: podmena
         env:
           VYPUSK: ${{ steps.vypusk.outputs.imya }}
         run: |
@@ -154,7 +208,12 @@ jobs:
           # на этой машине, поэтому зависимости ставятся здесь,
           # а не привозятся с бегунка.
           cd "$NOV"
-          npm ci --omit=dev --no-audit --no-fund
+          if ! npm ci --omit=dev --no-audit --no-fund; then
+            echo "npm ci не прошёл. Чаще всего это значит, что готовой сборки"
+            echo "better-sqlite3 под этот Node нет и её пробовали собрать на месте."
+            echo "Лечится на сервере от root:  apt-get install -y build-essential python3"
+            exit 1
+          fi
 
           godny() {                       # папка выпуска → 0, если годен
             [ -s "$1/dist/bot/src/index.js" ] \
@@ -207,29 +266,68 @@ jobs:
           SH
 
       - name: Журнал бота, если что-то пошло не так
-        if: failure() && steps.gotov.outputs.est == 'да'
+        if: failure()
         run: ssh cel 'journalctl -u neirolavka-bot -n 60 --no-pager' || true
 
       - name: Проверка снаружи, через nginx
-        if: steps.gotov.outputs.est == 'да'
         run: |
           # Внутренняя проверка говорит «процесс жив». Эта — «вебхуки
           # доезжают»: тот же путь, которым ходит Telegram.
           KOD=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$SAYT/bot-health" || echo 000)
           echo "$SAYT/bot-health → $KOD"
           if [ "$KOD" != 200 ]; then
-            echo "::error::Через nginx бот не отвечает ($KOD). Вебхуки Telegram не дойдут."
+            echo "::error::Через nginx бот не отвечает ($KOD). Вебхуки Telegram не дойдут. Проверьте, включён ли snippets/neirolavka-bot-vkl.conf — его кладёт scripts/bot-setup.sh."
             exit 1
           fi
 
+      - name: Что в итоге стоит на сервере
+        # Отдельным шагом и последним по счёту. Предыдущие шаги говорят,
+        # что каждый из них СДЕЛАЛ; этот спрашивает сервер, что там
+        # СТОИТ, — и только его успех означает, что выкладка состоялась.
+        env:
+          VYPUSK: ${{ steps.vypusk.outputs.imya }}
+        run: |
+          ITOG="$(ssh cel bash -s -- "$KOREN" "$PORT" <<'SH'
+          K="$1"; PORT="$2"
+          echo "ssylka=$([ -e "$K/current" ] && readlink -f "$K/current" || echo нет)"
+          echo "vypusk_na_diske=$(cat "$K/current/vypusk" 2>/dev/null || echo нет)"
+          echo "vypusk_v_processe=$(curl -fsS --max-time 3 "http://127.0.0.1:$PORT/vypusk" 2>/dev/null || echo нет)"
+          echo "sostoyanie=$(systemctl is-active neirolavka-bot.service 2>/dev/null || true)"
+          SH
+          )"
+          echo "$ITOG"
+          znach() { printf '%s\n' "$ITOG" | grep -E "^$1=" | cut -d= -f2-; }
+          # Две беды называются по-разному: «стоит не тот код» и «код
+          # тот, но служба не работает» чинятся совсем по-своему.
+          if [ "$(znach sostoyanie)" != active ]; then
+            echo "::error::Служба neirolavka-bot не работает: состояние «$(znach sostoyanie)». Журнал: sudo journalctl -u neirolavka-bot -n 50 --no-pager"
+            exit 1
+          fi
+          if [ "$(znach vypusk_v_processe)" != "$VYPUSK" ]; then
+            echo "::error::На сервере работает не тот выпуск: залили $VYPUSK, а живой процесс отдаёт «$(znach vypusk_v_processe)». Значит перезапуск не дошёл или откатился."
+            exit 1
+          fi
+          {
+            echo "## Бот выложен"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| выпуск | \`$VYPUSK\` |"
+            echo "| ссылка current | \`$(znach ssylka)\` |"
+            echo "| живой процесс отдаёт | \`$(znach vypusk_v_processe)\` |"
+            echo "| служба | $(znach sostoyanie) |"
+            echo "| через nginx | $SAYT/bot-health отвечает 200 |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Уборка старых выпусков
-        if: always() && steps.gotov.outputs.est == 'да'
+        if: always()
         # Всегда, а не только на удачном прогоне: мусор от падения
         # надо убирать именно после падения.
         run: |
-          ssh cel bash -s -- "$KOREN" "$HRANIT" <<'SH'
+          ssh cel bash -s -- "$KOREN" "$HRANIT" <<'SH' || true
           set -euo pipefail
           KOREN="$1"; HRANIT="$2"
+          [ -d "$KOREN/releases" ] || exit 0
           TEK="$(readlink -f "$KOREN/current" 2>/dev/null || true)"
           cd "$KOREN/releases"
           OSTAVIT=0
