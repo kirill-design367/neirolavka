@@ -55,8 +55,6 @@ const PROBES = [
   // Подвал залит градиентом, а не цветом.
   ['подвал (градиент)', '.footer', 'backgroundImage'],
   ['подложка отзыва', '.review__plate', 'backgroundColor'],
-  ['оговорка про отзывы', '.footer__disclaimer', 'backgroundColor'],
-  ['плашка обещания шагов', '.steps__note', 'backgroundColor'],
   ['плашка надзаголовка', '.hero__eyebrow', 'backgroundColor', '::before'],
   ['карточка преимущества', '.term', 'backgroundColor'],
   ['подложка итога', '.order__total', 'backgroundColor'],

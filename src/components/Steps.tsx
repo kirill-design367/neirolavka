@@ -63,10 +63,6 @@ export function Steps() {
           </li>
         ))}
       </ol>
-
-      <p className="steps__note" data-reveal data-parallax="1.4">
-        Сайт не хранит и не запрашивает ваши данные: здесь только витрина и калькулятор.
-      </p>
     </section>
   );
 }

@@ -88,8 +88,6 @@ export type Catalog = {
    */
   referralReady: boolean;
   reviews: Review[];
-  /** true, пока отзывы демонстрационные. Влияет на подпись у блока. */
-  reviewsArePlaceholders: boolean;
 };
 
 /** Цена, которой ещё нет. По всему проекту такие стоят рублём. */
@@ -165,7 +163,6 @@ const CATALOG: Catalog = {
   referralReady: false,
   subscribers: 2417,
   reviews: REVIEWS,
-  reviewsArePlaceholders: true,
   payments: [
     { id: 'card', title: 'Карта РФ', caption: 'Любой российский банк' },
     { id: 'sbp', title: 'СБП', caption: 'Перевод по номеру телефона' },

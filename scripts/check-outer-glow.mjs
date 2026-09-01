@@ -46,9 +46,22 @@ const geom = await p.evaluate(() => {
     const q = e.getBoundingClientRect();
     return { sel, top: Math.round(q.top), bottom: Math.round(q.bottom), which };
   };
+  // Сосед сверху — НИЖНЯЯ СТРОКА текста шагов, а не весь список.
+  // Полоса должна быть чуть больше предмета и не больше: усреднение
+  // по всему списку в 240 px размазало бы прирост по площади, куда
+  // свет не долетает вовсе, и проба стала бы тем тише, чем длиннее
+  // список. Прежде здесь стояла плашка `.steps__note`; её убрали,
+  // и селектор перестал находиться — молча, потому что отсутствие
+  // соседа проба тогда не считала за отказ.
+  const nizhnyayaStroka = (which) => {
+    const els = [...document.querySelectorAll('.steps .step__text')];
+    if (!els.length) return null;
+    const bottom = Math.round(Math.max(...els.map((e) => e.getBoundingClientRect().bottom)));
+    return { sel: '.step__text, нижняя строка', top: bottom - 40, bottom, which };
+  };
   return {
     block: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
-    above: near('.steps__note', 'сверху'),
+    above: nizhnyayaStroka('сверху'),
     below: near('.footer__head', 'снизу') || near('.footer', 'снизу'),
     vh: window.innerHeight,
   };
@@ -115,8 +128,12 @@ const bandAt = (top, bottom) => {
     }
   return n ? { avg: sum / n, mx } : null;
 };
+// Ненайденный сосед — ОТКАЗ, а не заметка. Проба, потерявшая
+// предмет, перестаёт что-либо мерить и при этом молчит: ровно тот
+// случай, когда проверка опаснее упавшей.
+let ustarela = 0;
 for (const nb of [geom.above, geom.below]) {
-  if (!nb) { console.log('  соседний блок не найден — проба устарела'); continue; }
+  if (!nb) { console.log('  СОСЕДНИЙ БЛОК НЕ НАЙДЕН — проба устарела, поправьте селектор'); ustarela++; continue; }
   const r = bandAt(nb.top, nb.bottom);
   console.log(`  ${nb.which} (${nb.sel}, строки ${nb.top}–${nb.bottom}): прирост ${r.avg.toFixed(2)} в среднем, ${r.mx.toFixed(2)} наибольший`);
 }
@@ -133,4 +150,4 @@ if (!strong) console.log(THEME === 'dark'
 if (smooth && strong) console.log(THEME === 'dark'
   ? '  Свет снаружи есть, спад плавный, ступеньки нет'
   : '  В светлой теме свечения нет, как и задумано');
-process.exit(smooth && strong ? 0 : 1);
+process.exit(smooth && strong && ustarela === 0 ? 0 : 1);

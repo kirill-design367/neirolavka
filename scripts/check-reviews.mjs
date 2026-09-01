@@ -79,7 +79,6 @@ for (const vp of VIEWS) {
       vysotaBloka: Math.round(document.querySelector('#otzyvy').getBoundingClientRect().height),
       hScroll: document.documentElement.scrollWidth,
       shirinaOkna: document.documentElement.clientWidth,
-      pometka: document.querySelector('.footer__disclaimer')?.textContent?.trim() ?? '',
       dubli: document.querySelectorAll('.review[aria-hidden="true"]').length,
       dlitelnost: getComputedStyle(track).animationDuration,
     };
@@ -103,9 +102,6 @@ for (const vp of VIEWS) {
 
   if (geom.hScroll > geom.shirinaOkna) no(`страница поехала вбок: прокрутка ${geom.hScroll} при экране ${geom.shirinaOkna}`);
   else ok(`страница вбок не едет: ${geom.hScroll} при экране ${geom.shirinaOkna}`);
-
-  if (!geom.pometka.includes('Примеры оформления')) no(`пометки про примеры нет, а стоит «${geom.pometka}»`);
-  else ok(`пометка на месте: «${geom.pometka}»`);
 
   info(`высота ленты ${geom.vysotaLenty} px, всего блока ${geom.vysotaBloka} px, цикл ${geom.dlitelnost}`);
 

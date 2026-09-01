@@ -408,20 +408,6 @@
   max-width: 56ch;
 }
 
-/* Единственная гарантия страницы, и она стояла кеглем сноски под
-   дорожкой шагов. Теперь это плашка: перепад фона и полный кегль
-   подписи делают её предметом, а не примечанием. Обводки нет —
-   форму держит скругление и цвет поверхности. */
-.steps__note {
-  margin-top: var(--sp-5);
-  padding: var(--sp-3) var(--sp-4);
-  border-radius: var(--r-md);
-  background: var(--c-surface);
-  font-size: var(--t-label);
-  color: var(--c-text);
-  line-height: 1.5;
-}
-
 @media (min-width: 1024px) {
   .steps__thread {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -431,10 +417,5 @@
   .step {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--sp-3);
-  }
-
-
-  .steps__note {
-    padding: var(--sp-4) var(--sp-5);
   }
 }

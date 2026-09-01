@@ -25,7 +25,7 @@ function ReviewCard({ review, dubl }: { review: Review; dubl?: boolean }) {
 }
 
 export function Footer() {
-  const { reviews, reviewsArePlaceholders } = getCatalog();
+  const { reviews } = getCatalog();
   const ref = useMergedRefs(useReveal<HTMLElement>({ stagger: 0.06 }), useParallax<HTMLElement>());
 
   return (
@@ -35,11 +35,6 @@ export function Footer() {
           <h2 className="footer__title" data-reveal>
             Что пишут
           </h2>
-          {reviewsArePlaceholders && (
-            <p className="footer__disclaimer" data-reveal>
-              Примеры оформления блока.
-            </p>
-          )}
         </div>
 
         {/* Окно ленты. Отзывы идут бегущей строкой, и лента набрана
@@ -67,8 +62,8 @@ export function Footer() {
         <div className="footer__bottom">
           <p className="footer__brand">Нейролавка</p>
           <p className="footer__legal">
-            Витрина и калькулятор. Заказ, выдача доступа и поддержка — в Telegram-боте;
-            про оплату там напишет администратор.
+            Заказ, выдача доступа и поддержка — в Telegram-боте; про оплату там
+            напишет администратор.
           </p>
         </div>
       </div>
