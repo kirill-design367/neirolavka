@@ -26,13 +26,28 @@ import { zhurnal } from './lib/zhurnal.js';
  */
 export const PREDEL_OBRABOTKI_MS = 8_000;
 
+/**
+ * Готовность бота.
+ *
+ * Разделять «процесс жив» и «бот работает» пришлось после боевого
+ * случая: сервер не смог достучаться до api.telegram.org, grammY
+ * молча повторял getMe (он делает это БЕСКОНЕЧНО), а server.listen
+ * стоял после init — и снаружи бот выглядел мёртвым, хотя процесс
+ * был жив и здоров. Сорок секунд тишины стоили откаченной выкладки.
+ *
+ * Теперь сервер поднимается ПЕРВЫМ, а состояние говорит правду:
+ * /vypusk отвечает всегда (это про то, какой код запущен), /health —
+ * только когда бот действительно на связи.
+ */
+export type Sostoyanie = { gotov: boolean; shag: string };
+
 export type Sluzhba = {
   server: Server;
   /** Путь, который слушает вебхук (с секретом). */
   put: string;
 };
 
-export function sozdatServer(l: Lavka, vypusk: string): Sluzhba {
+export function sozdatServer(l: Lavka, vypusk: string, sostoyanie: Sostoyanie): Sluzhba {
   const put = putVebhuka(l.n);
 
   const obrabotchik = webhookCallback(l.bot, 'http', {
@@ -47,8 +62,16 @@ export function sozdatServer(l: Lavka, vypusk: string): Sluzhba {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const adres = (req.url ?? '').split('?')[0];
     if (adres === '/health') {
-      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
-      res.end('жив');
+      // 503, пока бот не на связи. «Процесс жив» и «бот работает» —
+      // разные вещи, и монитор должен различать их, иначе недоступный
+      // Telegram выглядит как исправная лавка.
+      if (sostoyanie.gotov) {
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end('жив');
+      } else {
+        res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end(`не готов: ${sostoyanie.shag}`);
+      }
       return;
     }
     if (adres === '/vypusk') {

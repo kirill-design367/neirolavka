@@ -28,6 +28,9 @@ export type Stend = {
   l: Lavka;
   tg: PodstavnoyTelegram;
   adres: string;
+  /** Корень сервера без пути вебхука — для /health и /vypusk. */
+  koren: string;
+  sostoyanie: { gotov: boolean; shag: string };
   zakryt: () => Promise<void>;
 };
 
@@ -49,7 +52,8 @@ export async function stend(): Promise<Stend> {
   sobrat(l);
   await bot.init();
 
-  const { server, put } = sozdatServer(l, 'proba');
+  const sostoyanie = { gotov: true, shag: 'на связи' };
+  const { server, put } = sozdatServer(l, 'proba', sostoyanie);
   await new Promise<void>((gotovo) => server.listen(0, '127.0.0.1', gotovo));
   const port = (server.address() as AddressInfo).port;
 
@@ -57,6 +61,8 @@ export async function stend(): Promise<Stend> {
     l,
     tg,
     adres: `http://127.0.0.1:${port}${put}`,
+    koren: `http://127.0.0.1:${port}`,
+    sostoyanie,
     zakryt: async () => {
       await new Promise<void>((gotovo) => {
         server.closeAllConnections?.();

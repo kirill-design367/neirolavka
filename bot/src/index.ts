@@ -28,10 +28,44 @@ import { zhurnal, skryt } from './lib/zhurnal.js';
 import { sobrat } from './bot/index.js';
 import { proveritKomandu } from './bot/uvedomleniya.js';
 import { sozdatServer } from './server.js';
+import type { Sostoyanie } from './server.js';
 import { zapustit as zapustitNapominaniya } from './jobs/napominaniya.js';
 import { zaglushka } from './oplata/zaglushka.js';
 import type { Lavka } from './lavka.js';
 import { sozdatBota } from './lavka.js';
+
+/**
+ * Дождаться, пока Telegram станет доступен, — вслух.
+ *
+ * grammY внутри init() повторяет getMe бесконечно и МОЛЧА. Молчание
+ * здесь недопустимо: невозможность достучаться до api.telegram.org
+ * с этого сервера — состояние, которое надо видеть в журнале
+ * с первой минуты, а не вычислять по косвенным признакам.
+ *
+ * Сдаваться при этом нельзя: связь возвращается, и бот обязан
+ * подняться сам, без человека.
+ */
+async function dozhdatsyaTelegram(l: Lavka): Promise<void> {
+  const nachalo = Date.now();
+  for (let popytka = 1; ; popytka += 1) {
+    try {
+      await l.bot.api.getMe();
+      if (popytka > 1) {
+        zhurnal.info(`Telegram ответил с ${popytka}-й попытки, ждали ${Math.round((Date.now() - nachalo) / 1000)} с`);
+      }
+      return;
+    } catch (e) {
+      zhurnal.vnimanie(
+        `Telegram недоступен с этого сервера (попытка ${popytka}, ` +
+          `прошло ${Math.round((Date.now() - nachalo) / 1000)} с). ` +
+          'Бот жив и ждёт связи; заказы пока не доходят.',
+        e,
+      );
+      const pauza = Math.min(30_000, 2_000 * popytka);
+      await new Promise((gotovo) => setTimeout(gotovo, pauza));
+    }
+  }
+}
 
 async function glavnaya(): Promise<void> {
   const n = prochitat(process.env);
@@ -50,14 +84,6 @@ async function glavnaya(): Promise<void> {
   const l: Lavka = { db, n, bot, oplata: zaglushka };
   sobrat(l);
 
-  // init() до сервера: до неё бот не знает своего имени и не может
-  // разбирать команды вида /start@imya_bota. Строка перед вызовом —
-  // не украшение: если Telegram недоступен, grammy повторяет запрос
-  // молча, и без неё в журнале не видно, на чём бот встал.
-  zhurnal.info('спрашиваю Telegram, кто я');
-  await bot.init();
-  zhurnal.info(`бот: @${bot.botInfo.username}`);
-
   // Отметка выпуска. Кладётся выкладкой рядом с кодом; выкладка потом
   // спрашивает её у живого бота и так убеждается, что перезапустился
   // именно новый выпуск, а не остался работать прежний.
@@ -68,12 +94,32 @@ async function glavnaya(): Promise<void> {
     // Запуск из исходников без выкладки — это нормально.
   }
 
-  const { server, put } = sozdatServer(l, vypusk);
+  // Сервер поднимается ПЕРВЫМ, до любого обращения к Telegram.
+  //
+  // Прежде порядок был обратный: сначала bot.init(), потом listen.
+  // Выглядит логично — бот должен знать своё имя, — но у grammY init
+  // повторяет getMe БЕСКОНЕЧНО при сетевой ошибке. Стоило серверу
+  // не достучаться до api.telegram.org, и процесс жил, молчал
+  // и не отвечал ни на /health, ни на /vypusk. Снаружи это
+  // неотличимо от мёртвого бота, и выкладка честно откатилась,
+  // хотя код был исправен.
+  //
+  // Имя бота для разбора команд вида /start@imya грамматический слой
+  // получит сам: webhookCallback вызывает init перед первым
+  // обновлением, если её ещё не было.
+  const sostoyanie: Sostoyanie = { gotov: false, shag: 'поднимаюсь' };
+  const { server, put } = sozdatServer(l, vypusk, sostoyanie);
 
   server.listen(n.port, '127.0.0.1', () => {
     zhurnal.info(`слушаю 127.0.0.1:${n.port}${put.replace(/\/[^/]+$/, '/‹секрет›')}, выпуск ${vypusk}`);
   });
 
+  sostoyanie.shag = 'жду ответа Telegram';
+  await dozhdatsyaTelegram(l);
+  await bot.init();
+  zhurnal.info(`бот: @${bot.botInfo.username}`);
+
+  sostoyanie.shag = 'объявляю вебхук';
   await bot.api.setWebhook(adresVebhuka(n), {
     secret_token: n.sekretVebhuka,
     // Пропущенные за время простоя обновления НЕ выбрасываем: там
@@ -88,6 +134,9 @@ async function glavnaya(): Promise<void> {
   // не открывал бота, и узнать об этом надо до того, как в пустоту
   // уйдёт чей-то оплаченный заказ.
   await proveritKomandu(l).catch((e) => zhurnal.oshibka('проверка команды не прошла:', e));
+
+  sostoyanie.gotov = true;
+  sostoyanie.shag = 'на связи';
 
   zapustitNapominaniya(l);
 

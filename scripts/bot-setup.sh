@@ -62,7 +62,11 @@ if id deploy >/dev/null 2>&1; then
   # доступ туда — и только туда: секреты лежат в /etc, база в /var/lib,
   # и ни того ни другого deploy не видит.
   usermod -aG bot deploy
-  ok "deploy добавлен в группу bot"
+  # Чтение журнала: без этого шаг выкладки «журнал бота, если что-то
+  # пошло не так» печатает «-- No entries --» и молча бесполезен.
+  # Группа systemd-journal даёт ТОЛЬКО чтение.
+  usermod -aG systemd-journal deploy
+  ok "deploy добавлен в группы bot и systemd-journal"
 fi
 
 # ─────────────────────────────────────────────────────────────────────

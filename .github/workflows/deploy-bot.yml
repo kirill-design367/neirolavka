@@ -280,8 +280,16 @@ jobs:
         run: |
           # Внутренняя проверка говорит «процесс жив». Эта — «вебхуки
           # доезжают»: тот же путь, которым ходит Telegram.
-          KOD=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$SAYT/bot-health" || echo 000)
-          echo "$SAYT/bot-health → $KOD"
+          TELO=$(curl -s --max-time 15 -w '\n%{http_code}' "$SAYT/bot-health" || echo -e '\n000')
+          KOD=$(printf '%s' "$TELO" | tail -1)
+          PRICHINA=$(printf '%s' "$TELO" | head -n -1)
+          echo "$SAYT/bot-health → $KOD ${PRICHINA:+($PRICHINA)}"
+          if [ "$KOD" = 503 ]; then
+            # Бот жив и отвечает, но сам говорит, что не готов. Чаще
+            # всего это значит, что сервер не достучался до Telegram.
+            echo "::error::Бот запущен, но не на связи: «$PRICHINA». Код выложен, работать он не может. Проверьте с сервера: curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://api.telegram.org"
+            exit 1
+          fi
           if [ "$KOD" != 200 ]; then
             echo "::error::Через nginx бот не отвечает ($KOD). Вебхуки Telegram не дойдут. Проверьте, включён ли snippets/neirolavka-bot-vkl.conf — его кладёт scripts/bot-setup.sh."
             exit 1

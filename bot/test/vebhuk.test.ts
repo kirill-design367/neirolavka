@@ -103,3 +103,25 @@ test('чужой секрет в заголовке не пускают', async 
     await s.zakryt();
   }
 });
+
+test('/health говорит правду о готовности, /vypusk отвечает всегда', async () => {
+  const s = await stend();
+  try {
+    // Пока бот на связи — обычные 200.
+    assert.equal((await fetch(`${s.koren}/health`)).status, 200);
+    assert.equal((await (await fetch(`${s.koren}/vypusk`)).text()).trim(), 'proba');
+
+    // Пока Telegram недоступен, процесс жив и отвечает, КАКОЙ выпуск
+    // запущен, но честно говорит, что не готов. Иначе недоступный
+    // Telegram снаружи неотличим от мёртвого бота — на этом уже
+    // откатилась выкладка.
+    s.sostoyanie.gotov = false;
+    s.sostoyanie.shag = 'жду ответа Telegram';
+    const zdorovie = await fetch(`${s.koren}/health`);
+    assert.equal(zdorovie.status, 503);
+    assert.match(await zdorovie.text(), /жду ответа Telegram/);
+    assert.equal((await (await fetch(`${s.koren}/vypusk`)).text()).trim(), 'proba');
+  } finally {
+    await s.zakryt();
+  }
+});
