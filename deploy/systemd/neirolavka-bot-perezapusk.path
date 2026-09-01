@@ -1,0 +1,10 @@
+[Unit]
+Description=Метка выкладки бота Нейролавки
+
+[Path]
+# Срабатывает на закрытие файла после записи, то есть на обычный touch.
+PathModified=/home/bot/neirolavka-bot/perezapusk
+Unit=neirolavka-bot-perezapusk.service
+
+[Install]
+WantedBy=multi-user.target

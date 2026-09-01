@@ -1,0 +1,15 @@
+[Unit]
+Description=Резервная копия базы бота Нейролавки
+
+[Service]
+Type=oneshot
+User=bot
+Group=bot
+EnvironmentFile=/etc/neirolavka-bot/okruzhenie
+ExecStart=/usr/local/bin/neirolavka-bot-kopiya.sh
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/backups/neirolavka-bot /var/lib/neirolavka-bot
+UMask=0077

@@ -1,0 +1,68 @@
+# Бот Нейролавки.
+#
+# Бот НЕ работает от root: пользователь bot, без sudo, со своей
+# базой в /var/lib и своими секретами в /etc. Утечка чего угодно
+# из этой службы не даёт ни сайта, ни сервера.
+
+[Unit]
+Description=Нейролавка: телеграм-бот
+Documentation=https://github.com/kirill-design367/neirolavka
+# Вебхуки приходят через nginx, поэтому поднимаемся после него.
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bot
+Group=bot
+
+# current — символическая ссылка на выпуск. systemd разворачивает её
+# при запуске, поэтому перезапуск подхватывает новый выпуск.
+WorkingDirectory=/home/bot/neirolavka-bot/current
+
+# Секреты лежат ОТДЕЛЬНО от кода и вне папки, куда пишет выкладка.
+# Файл принадлежит root и имеет права 600: его читает systemd от root
+# и передаёт боту уже готовым окружением. Ни пользователь bot, ни тем
+# более deploy прочитать его не могут — утечка ключа выкладки
+# не отдаёт ни токена, ни ключа шифрования доступов.
+EnvironmentFile=/etc/neirolavka-bot/okruzhenie
+
+ExecStart=/usr/bin/node dist/bot/src/index.js
+
+# Падение процесса не должно означать остановку лавки. Ограничение
+# на число перезапусков снято намеренно: бот, упавший десять раз
+# из-за недоступного Telegram, должен подняться на одиннадцатый,
+# а не остаться выключенным до прихода человека.
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=0
+
+# Мягкая остановка: боту дают доработать начатое обновление.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=neirolavka-bot
+
+# Права ужаты до необходимого. Единственное место, куда бот пишет, —
+# папка базы.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+# Единственное, куда бот пишет.
+ReadWritePaths=/var/lib/neirolavka-bot
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
