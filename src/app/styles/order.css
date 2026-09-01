@@ -10,7 +10,10 @@
      оказывается за краем и до него не добраться — она закреплена
      и вместе со страницей не прокручивается. */
   max-height: calc(100dvh - var(--side-top) - var(--sp-5));
-  background: var(--c-surface);
+  /* Бумага, а не полка. Панель — единственное белое место страницы,
+     и это намеренно: счёт обязан отличаться от всего остального
+     материала, иначе он читается ещё одной карточкой. */
+  background: var(--c-paper);
   border: 1px solid var(--c-line);
   border-bottom: none;
   border-radius: var(--r-lg) var(--r-lg) 0 0;
@@ -42,7 +45,7 @@
   right: -1px;
   bottom: -0.5rem;
   height: 0.5rem;
-  background: var(--c-surface);
+  background: var(--c-paper);
   border-inline: 1px solid var(--c-line);
   -webkit-mask-image: radial-gradient(circle at 0.375rem 0.5rem, transparent 0.375rem, #000 0.4rem);
   mask-image: radial-gradient(circle at 0.375rem 0.5rem, transparent 0.375rem, #000 0.4rem);
@@ -126,7 +129,7 @@
   padding: 0.4375rem 0.25rem;
   border-radius: var(--r-sm);
   border: 1px solid var(--c-line);
-  background: var(--c-bg);
+  background: var(--c-paper-2);
   font-size: var(--t-micro);
   color: var(--c-muted);
   white-space: nowrap;
@@ -137,7 +140,7 @@
 
 .pays__item--active {
   border-color: var(--c-brand);
-  background: color-mix(in oklab, var(--c-brand) 10%, var(--c-surface));
+  background: color-mix(in oklab, var(--c-brand) 10%, var(--c-paper));
   color: var(--c-text);
   font-weight: 600;
 }
@@ -166,7 +169,9 @@
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-4);
   border-radius: var(--r-md);
-  background: var(--c-surface-2);
+  /* Та же бумага на тон глубже: полоса итога — часть чека,
+     а не бежевая плашка, положенная поверх него. */
+  background: var(--c-paper-2);
 }
 
 .order__total-label {
@@ -196,7 +201,7 @@
 
 .order__cta--off,
 .bar__cta--off {
-  background: var(--c-surface-2);
+  background: var(--c-paper-2);
   color: var(--c-muted);
   cursor: not-allowed;
 }
@@ -233,7 +238,8 @@
   right: 0;
   bottom: 0;
   z-index: 50;
-  background: var(--c-surface);
+  /* На телефоне полоса — тот же чек, что панель на широком экране. */
+  background: var(--c-paper);
   padding: var(--sp-3) var(--sp-5) calc(var(--sp-3) + env(safe-area-inset-bottom));
   box-shadow: 0 -8px 28px -18px var(--c-shadow-3);
 }
@@ -255,7 +261,7 @@
   padding: 0.4375rem 0.75rem;
   border-radius: 999px;
   border: 1px solid var(--c-line);
-  background: var(--c-bg);
+  background: var(--c-paper-2);
   font-size: var(--t-micro);
   color: var(--c-muted);
   white-space: nowrap;
@@ -263,7 +269,7 @@
 
 .bar__pay--active {
   border-color: var(--c-brand);
-  background: color-mix(in oklab, var(--c-brand) 10%, var(--c-surface));
+  background: color-mix(in oklab, var(--c-brand) 10%, var(--c-paper));
   color: var(--c-text);
   font-weight: 600;
 }

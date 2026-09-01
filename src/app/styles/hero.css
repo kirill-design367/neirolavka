@@ -81,7 +81,9 @@
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: var(--c-surface);
+  /* Древесный, а не поверхность: белая плашка над названием выпадала
+     из природной палитры. */
+  background: var(--c-wood);
   box-shadow:
     0 10px 24px -12px var(--c-shadow-2),
     0 2px 5px -2px var(--c-shadow-1);
@@ -188,7 +190,9 @@
   overflow: hidden;
   padding: var(--sp-4);
   border-radius: var(--r-md);
-  background: var(--c-surface);
+  /* Древесный: три условия лавки стоят на дереве прилавка,
+     а не на белом листе. */
+  background: var(--c-wood);
   box-shadow:
     0 1px 2px var(--c-shadow-1),
     0 6px 16px -12px var(--c-shadow-2);
