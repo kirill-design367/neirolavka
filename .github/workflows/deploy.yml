@@ -1,21 +1,37 @@
-name: Сборка и публикация на GitHub Pages
+name: Сборка и выкладка на боевой сервер
+
+# Пуш в main → сборка → выкладка по SSH на VPS.
+#
+# Секреты, которые должны быть заведены в настройках репозитория:
+#   SSH_PRIVATE_KEY  — закрытый ключ пользователя deploy. Его печатает
+#                      scripts/server-setup.sh один раз при первом
+#                      запуске. Ключ root сюда не кладётся никогда.
+#   SSH_KNOWN_HOSTS  — строка из ssh-keyscan для адреса сервера. Без неё
+#                      пришлось бы отключать проверку хоста, а это
+#                      согласие подключиться к кому угодно.
+# Переменные (Settings → Variables), необязательные:
+#   DEPLOY_HOST, DEPLOY_USER, DEPLOY_ROOT, SITE_URL
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pages: write
-  id-token: write
-
+# Две выкладки одновременно подменяли бы ссылку current наперегонки.
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: vykladka
+  cancel-in-progress: false
+
+env:
+  HOST: ${{ vars.DEPLOY_HOST || '5.42.123.35' }}
+  USER: ${{ vars.DEPLOY_USER || 'deploy' }}
+  KOREN: ${{ vars.DEPLOY_ROOT || '/var/www/neirolavka' }}
+  SAYT: ${{ vars.SITE_URL || 'https://neirolavka.ru' }}
+  # Сколько прошлых выпусков держать на сервере — на случай отката.
+  HRANIT: 3
 
 jobs:
-  build:
+  sborka-i-vykladka:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,67 +48,172 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Сборка статического экспорта
-        env:
-          # На Pages сайт живёт в подпапке с именем репозитория.
-          # На своём домене переменную оставляем пустой.
-          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+        # Ни basePath, ни assetPrefix: сайт живёт в корне своего домена.
         run: npm run build
 
-      - name: Файл .nojekyll в корне выдачи
-        run: touch out/.nojekyll
-
       - name: Проверка выдачи
-        run: node scripts/check-export.mjs out "/${{ github.event.repository.name }}"
+        run: node scripts/check-export.mjs out
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: site
-          path: out
-          include-hidden-files: true
-
-      - uses: actions/configure-pages@v5
-        continue-on-error: true
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: out
-
-  # Основной путь: публикация артефакта, когда источником Pages выбран
-  # «GitHub Actions». Задача помечена continue-on-error, потому что при
-  # другом источнике или ограничении окружения github-pages она падает
-  # мгновенно, и из-за этого краснел бы весь прогон.
-  deploy-artefakt:
-    needs: build
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
-
-  # Запасной путь: та же выдача уезжает в ветку gh-pages.
-  # Работает, когда источником Pages выбрано «Deploy from a branch».
-  # Окружение github-pages здесь не задействовано вовсе.
-  deploy-vetka:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: site
-          path: site
-
-      - name: Публикация в ветку gh-pages
+      - name: Сжатие текстовых файлов заранее
+        # nginx настроен с gzip_static: если рядом с файлом лежит .gz,
+        # он отдаёт готовый. Сжать один раз здесь девятым уровнем
+        # дешевле и плотнее, чем жать каждый запрос на сервере.
         run: |
-          touch site/.nojekyll
-          cd site
-          git init -q
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -q -m "Выдача из ${GITHUB_SHA::7}"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:gh-pages
+          find out -type f \
+            \( -name '*.html' -o -name '*.css' -o -name '*.js' \
+               -o -name '*.json' -o -name '*.svg' -o -name '*.txt' \) \
+            -size +1k -print0 | xargs -0 -r -P4 gzip -9 -k -f
+          echo "сжато файлов: $(find out -name '*.gz' | wc -l)"
+
+      - name: Есть ли доступ к серверу
+        id: dostup
+        env:
+          KLYUCH: ${{ secrets.SSH_PRIVATE_KEY }}
+          HOSTY: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          # Пока сервер не поднят, секретов нет, и выкладывать некуда.
+          # Красить прогон в красный за это неправильно: сборка и проверка
+          # выдачи прошли, а отсутствие сервера — не поломка кода. Как
+          # только секреты появятся, все шаги ниже станут обязательными
+          # и любая их неудача покрасит прогон.
+          if [ -n "$KLYUCH" ] && [ -n "$HOSTY" ]; then
+            echo "est=да" >> "$GITHUB_OUTPUT"
+          else
+            echo "est=нет" >> "$GITHUB_OUTPUT"
+            echo "::notice::Секретов SSH_PRIVATE_KEY и SSH_KNOWN_HOSTS ещё нет — выкладка пропущена. Их печатает scripts/server-setup.sh при первом запуске на сервере."
+          fi
+
+      - name: Ключ и известный хост
+        if: steps.dostup.outputs.est == 'да'
+        env:
+          KLYUCH: ${{ secrets.SSH_PRIVATE_KEY }}
+          HOSTY: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KLYUCH" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$HOSTY" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host cel
+            HostName $HOST
+            User $USER
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ConnectTimeout 20
+          EOF
+          chmod 600 ~/.ssh/config
+          ssh cel 'echo подключение есть: $(whoami)@$(hostname)'
+
+      - name: Имя выпуска
+        if: steps.dostup.outputs.est == 'да'
+        id: vypusk
+        run: echo "imya=$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Заливка рядом с текущим
+        if: steps.dostup.outputs.est == 'да'
+        # Рядом, а не поверх: пока идёт заливка, current смотрит на
+        # прошлый выпуск и человек видит рабочий сайт. Полуразложенной
+        # выдачи не бывает по построению.
+        env:
+          IMYA: ${{ steps.vypusk.outputs.imya }}
+        run: |
+          ssh cel "mkdir -p '$KOREN/releases/$IMYA'"
+          rsync -az --delete --chmod=D755,F644 \
+            -e 'ssh -F ~/.ssh/config' \
+            out/ "cel:$KOREN/releases/$IMYA/"
+          ssh cel "test -s '$KOREN/releases/$IMYA/index.html' \
+                   && test -s '$KOREN/releases/$IMYA/404.html' \
+                   && test -d '$KOREN/releases/$IMYA/_next/static'"
+          echo "залито: $(ssh cel "find '$KOREN/releases/$IMYA' -type f | wc -l") файлов"
+
+      - name: Подмена одним движением
+        if: steps.dostup.outputs.est == 'да'
+        env:
+          IMYA: ${{ steps.vypusk.outputs.imya }}
+        run: |
+          # mv -T над символической ссылкой — атомарная операция ядра:
+          # промежуточного состояния, в котором current не существует,
+          # не бывает. nginx перезагружать не нужно, он разбирает
+          # ссылку на каждом запросе.
+          ssh cel "
+            set -e
+            ln -sfn '$KOREN/releases/$IMYA' '$KOREN/.current.new'
+            mv -Tf '$KOREN/.current.new' '$KOREN/current'
+            readlink -f '$KOREN/current'
+          "
+
+      - name: Проверка сразу после подмены
+        if: steps.dostup.outputs.est == 'да'
+        # Ходим на сам сервер через петлю с нужным заголовком Host:
+        # это работает и до переезда домена, и проверяет ровно то,
+        # что отдаёт nginx, а не то, что лежит в папке.
+        run: |
+          ssh cel "
+            set -e
+            koren=\$(curl -sS --max-time 10 -H 'Host: neirolavka.ru' http://127.0.0.1/)
+            echo \"\$koren\" | grep -q 'Нейролавка'   || { echo '::error::на главной нет слова Нейролавка'; exit 1; }
+            echo \"\$koren\" | grep -q 'Claude Pro'   || { echo '::error::на главной нет витрины'; exit 1; }
+
+            kod=\$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 -H 'Host: neirolavka.ru' http://127.0.0.1/)
+            [ \"\$kod\" = 200 ] || { echo \"::error::главная отдала \$kod\"; exit 1; }
+
+            kusok=\$(echo \"\$koren\" | grep -o '/_next/static/[^\\\"]*\\.css' | head -1)
+            [ -n \"\$kusok\" ] || { echo '::error::в главной нет ссылки на статику'; exit 1; }
+            kkod=\$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 -H 'Host: neirolavka.ru' \"http://127.0.0.1\$kusok\")
+            [ \"\$kkod\" = 200 ] || { echo \"::error::статика \$kusok отдала \$kkod\"; exit 1; }
+
+            n404=\$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 -H 'Host: neirolavka.ru' http://127.0.0.1/net-takoy-stranicy/)
+            [ \"\$n404\" = 404 ] || { echo \"::error::несуществующий адрес отдал \$n404\"; exit 1; }
+
+            echo \"главная 200, статика \$kusok 200, несуществующий адрес 404\"
+          "
+
+      - name: Откат, если проверка не прошла
+        if: failure() && steps.dostup.outputs.est == 'да'
+        env:
+          IMYA: ${{ steps.vypusk.outputs.imya }}
+        run: |
+          # Возвращаем предыдущий выпуск, если он есть. Красный прогон
+          # с рабочим сайтом лучше красного прогона со сломанным.
+          ssh cel "
+            set -e
+            preds=\$(ls -1dt '$KOREN'/releases/*/ 2>/dev/null | grep -v '$IMYA' | head -1 || true)
+            if [ -n \"\$preds\" ]; then
+              ln -sfn \"\${preds%/}\" '$KOREN/.current.new'
+              mv -Tf '$KOREN/.current.new' '$KOREN/current'
+              echo \"откатились на \$(readlink -f '$KOREN/current')\"
+            else
+              echo 'откатываться не на что — это первая выкладка'
+            fi
+          " || true
+
+      - name: Уборка старых выпусков
+        if: steps.dostup.outputs.est == 'да'
+        run: |
+          ssh cel "
+            cd '$KOREN/releases'
+            tek=\$(readlink -f '$KOREN/current')
+            # Держим $HRANIT свежих плюс тот, на который смотрит current.
+            ls -1dt */ | tail -n +\$(( $HRANIT + 1 )) | while read -r d; do
+              [ \"\$(readlink -f \"\$d\")\" = \"\$tek\" ] && continue
+              rm -rf -- \"\$d\"
+              echo \"убран \$d\"
+            done
+            echo \"осталось выпусков: \$(ls -1d */ | wc -l)\"
+          "
+
+      - name: Проверка боем, если домен уже переехал
+        if: steps.dostup.outputs.est == 'да'
+        # До переезда DNS публичная проверка падала бы не по вине кода.
+        # Поэтому она обязательна ровно тогда, когда домену есть куда
+        # отвечать: имя разрешается в адрес нашего сервера.
+        run: |
+          adresa=$(getent ahostsv4 neirolavka.ru 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ')
+          echo "neirolavka.ru → ${adresa:-ничего}"
+          if echo " $adresa " | grep -q " $HOST "; then
+            node scripts/check-live.mjs "$SAYT"
+          else
+            echo "::notice::Домен ещё не смотрит на $HOST — проверка боем пропущена."
+          fi
