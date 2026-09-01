@@ -5,7 +5,10 @@
 # Запускать НА СЕРВЕРЕ от root ПОСЛЕ того, как A-записи домена начали
 # указывать сюда:
 #
-#   cd /opt/neirolavka-repo && git pull && sudo bash scripts/server-tls.sh
+#   cd /opt/neirolavka-repo && git pull origin main && sudo bash scripts/server-tls.sh
+#
+# Если клон делался без «-b main», он стоит на старой ветке по умолчанию,
+# и скриптов в ней нет. Скрипт это проверяет и говорит, что делать.
 #
 # Раньше запускать бессмысленно: Let's Encrypt проверяет владение
 # доменом, обращаясь к нему по имени. Пока имя ведёт на заглушку
@@ -26,6 +29,16 @@ ok()   { printf '   ok   %s\n' "$*"; }
 vni()  { printf '   !!   %s\n' "$*"; }
 
 [ "$(id -u)" -eq 0 ] || { echo "Запускать от root."; exit 1; }
+
+# shellcheck source=scripts/lib-nginx.sh
+. "$REPO/scripts/lib-nginx.sh"
+
+VETKA="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+if [ "$VETKA" != main ] && [ "$VETKA" != '?' ]; then
+  vni "клон на ветке «$VETKA», а нужна main:"
+  vni "  cd $REPO && git fetch origin main && git checkout main"
+  exit 1
+fi
 
 # ─────────────────────────────────────────────────────────────────────
 # 1. Куда на самом деле смотрит домен
@@ -95,26 +108,16 @@ ok "годен до: $(openssl x509 -in "/etc/letsencrypt/live/$DOMEN/cert.pem" 
 # 3. Боевая конфигурация
 # ─────────────────────────────────────────────────────────────────────
 shag "Боевая конфигурация nginx"
-NV="$(nginx -v 2>&1 | sed 's|.*/||' | tr -d '[:space:]')"
-starshe() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ] && [ "$1" != "$2" ]; }
-DST=/etc/nginx/sites-available/neirolavka.conf
-cp "$REPO/deploy/nginx/neirolavka.conf" "$DST"
-cp "$REPO/deploy/nginx/snippets/neirolavka-tls.conf"    /etc/nginx/snippets/
-cp "$REPO/deploy/nginx/snippets/neirolavka-static.conf" /etc/nginx/snippets/
-cp "$REPO/deploy/nginx/snippets/neirolavka-zagolovki.conf" /etc/nginx/snippets/
-cp "$REPO/deploy/nginx/snippets/neirolavka-bot.conf"    /etc/nginx/snippets/
-if starshe "$NV" "1.25.1"; then
-  sed -i 's/^\(\s*\)listen 443 ssl\(.*\);$/\1listen 443 ssl http2\2;/' "$DST"
-  sed -i 's/^listen \[::\]:443 ssl;$/listen [::]:443 ssl http2;/' /etc/nginx/snippets/neirolavka-listen6-443.conf
-  printf '# http2 включается параметром listen: nginx %s\n' "$NV" > /etc/nginx/snippets/neirolavka-http2.conf
-else
-  printf 'http2 on;\n' > /etc/nginx/snippets/neirolavka-http2.conf
+NEIRO_NGINX_V="$(nginx -v 2>&1 | sed 's|.*/||' | tr -d '[:space:]')"
+# Проба во временном дереве, снимок, подмена, контрольная проверка
+# с откатом — всё в neiro_postavit. Живая конфигурация не заменяется,
+# пока проба не прошла.
+if ! neiro_postavit neirolavka.conf "$REPO"; then
+  vni "боевая конфигурация не поставлена, сайт остался на прежней"
+  exit 1
 fi
-ln -sfn "$DST" /etc/nginx/sites-enabled/neirolavka.conf
-rm -f /etc/nginx/sites-enabled/default
-nginx -t
 systemctl reload nginx
-ok "поставлена и перезагружена"
+ok "боевая конфигурация поставлена и перезагружена"
 
 # ─────────────────────────────────────────────────────────────────────
 # 4. Автопродление

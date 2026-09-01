@@ -5,9 +5,12 @@
 # Запускать НА СЕРВЕРЕ, из клона репозитория, от root:
 #
 #   apt-get update && apt-get install -y git
-#   git clone https://github.com/kirill-design367/neirolavka.git /opt/neirolavka-repo
+#   git clone -b main https://github.com/kirill-design367/neirolavka.git /opt/neirolavka-repo
 #   cd /opt/neirolavka-repo
 #   ADMIN_USER=kirill ADMIN_KEY="ssh-ed25519 AAAA... вы@ноутбук" bash scripts/server-setup.sh
+#
+# «-b main» обязательно. Без него git берёт ветку по умолчанию, а она
+# у репозитория старая, и скриптов в ней нет вовсе.
 #
 # Скрипт идемпотентный: его можно гонять сколько угодно раз. Повторный
 # запуск после `git pull` — это способ обновить конфигурацию nginx.
@@ -31,6 +34,19 @@ ok()   { printf '   ok   %s\n' "$*"; }
 vni()  { printf '   !!   %s\n' "$*"; }
 
 [ "$(id -u)" -eq 0 ] || { echo "Запускать от root."; exit 1; }
+
+# shellcheck source=scripts/lib-nginx.sh
+. "$REPO/scripts/lib-nginx.sh"
+
+# Ветка. У репозитория веткой по умолчанию стоит старая, и `git clone`
+# без -b тянет именно её. Сказать об этом здесь дешевле, чем разбираться
+# потом, почему конфигурация не та.
+VETKA="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+if [ "$VETKA" != main ] && [ "$VETKA" != '?' ]; then
+  vni "клон на ветке «$VETKA», а нужна main:"
+  vni "  cd $REPO && git fetch origin main && git checkout main"
+  exit 1
+fi
 
 # ─────────────────────────────────────────────────────────────────────
 # 0. Проверка входных данных ДО того, как что-то менять
@@ -134,11 +150,23 @@ if [ ! -f "$KLYUCH" ]; then
   NOVYY=да
   ok "пара ключей создана"
 else
-  ok "пара ключей уже есть — оставляю"
+  ok "пара ключей уже есть — та же самая, новую не завожу"
 fi
 dak="/home/$DEPLOY_USER/.ssh/authorized_keys"
 grep -qxF "$(cat "$KLYUCH.pub")" "$dak" || cat "$KLYUCH.pub" >> "$dak"
 chown "$DEPLOY_USER:$DEPLOY_USER" "$dak"; chmod 600 "$dak"
+
+# Печатается ЗДЕСЬ, а не только в итоге, и печатается всегда.
+# Первый запуск умер на nginx — то есть до итога, — и ключ, уже
+# созданный, человек не увидел. Ключ нужен для секрета GitHub;
+# печатать его на каждом запуске не хуже, чем на первом: смотрит
+# root в своём же терминале.
+echo
+echo "   ЗАКРЫТЫЙ КЛЮЧ ВЫКЛАДКИ — в секрет SSH_PRIVATE_KEY на GitHub."
+echo "   Он же лежит на сервере: $KLYUCH"
+echo "   ─────────────────────────────────────────────────────────"
+cat "$KLYUCH"
+echo "   ─────────────────────────────────────────────────────────"
 
 # ─────────────────────────────────────────────────────────────────────
 # 3. SSH: только ключи, root не входит
@@ -172,13 +200,26 @@ fi
 # 4. Файрвол: наружу только 22, 80, 443
 # ─────────────────────────────────────────────────────────────────────
 shag "Файрвол"
-ufw --force reset > /dev/null
-ufw default deny incoming > /dev/null
-ufw default allow outgoing > /dev/null
-ufw allow 22/tcp  comment 'SSH'   > /dev/null
-ufw allow 80/tcp  comment 'HTTP'  > /dev/null
-ufw allow 443/tcp comment 'HTTPS' > /dev/null
-ufw --force enable > /dev/null
+# Сброса правил при повторном запуске нет намеренно. `ufw --force reset`
+# выключает файрвол и стирает правила; если скрипт умрёт между сбросом
+# и включением, сервер останется вообще без файрвола. `ufw allow`
+# и `ufw default` идемпотентны сами по себе, поэтому сброс нужен ровно
+# один раз — когда ufw ещё не настроен нами.
+if ufw status verbose 2>/dev/null | grep -q 'Status: active' \
+   && ufw status 2>/dev/null | grep -q '22/tcp' \
+   && ufw status 2>/dev/null | grep -q '80/tcp' \
+   && ufw status 2>/dev/null | grep -q '443/tcp' \
+   && ufw status verbose 2>/dev/null | grep -q 'deny (incoming)'; then
+  ok "файрвол уже настроен как надо — не трогаю"
+else
+  ufw --force reset > /dev/null
+  ufw default deny incoming > /dev/null
+  ufw default allow outgoing > /dev/null
+  ufw allow 22/tcp  comment 'SSH'   > /dev/null
+  ufw allow 80/tcp  comment 'HTTP'  > /dev/null
+  ufw allow 443/tcp comment 'HTTPS' > /dev/null
+  ufw --force enable > /dev/null
+fi
 ok "$(ufw status | tr '\n' ' ' | sed 's/  */ /g')"
 
 # ─────────────────────────────────────────────────────────────────────
@@ -293,54 +334,46 @@ fi
 
 # ─────────────────────────────────────────────────────────────────────
 # 9. nginx
+#
+# Порядок здесь — часть устройства, а не оформление.
+#
+# 1. Гасим в стандартном nginx.conf директивы, которыми владеем мы.
+#    Иначе `gzip on;` объявлен дважды (в стандартном файле строкой 46
+#    и у нас), и nginx падает: файлы из conf.d подключаются в тот же
+#    блок http. Гашение идемпотентно и трогает только активные строки.
+#
+# 2. Проверяем конфигурацию ВО ВРЕМЕННОМ дереве, до того как трогать
+#    рабочую. Прошлый запуск клал файл, проверял и падал, оставляя
+#    сервер с конфигурацией, которая не проходит nginx -t. Теперь
+#    при неудачной пробе живое дерево вообще не меняется.
+#
+# 3. И только потом раскладываем по-настоящему, снимая перед этим
+#    копию /etc/nginx — на случай, если живое дерево отличается от
+#    пробного чем-то, чего проба не увидела.
 # ─────────────────────────────────────────────────────────────────────
 shag "nginx"
-install -d -m 755 /etc/nginx/snippets
-cp "$REPO/deploy/nginx/snippets/neirolavka-static.conf" /etc/nginx/snippets/
-cp "$REPO/deploy/nginx/snippets/neirolavka-zagolovki.conf" /etc/nginx/snippets/
-cp "$REPO/deploy/nginx/snippets/neirolavka-bot.conf"    /etc/nginx/snippets/
-cp "$REPO/deploy/nginx/snippets/neirolavka-tls.conf"    /etc/nginx/snippets/
-cp "$REPO/deploy/nginx/conf.d-neirolavka-szhatie.conf"  /etc/nginx/conf.d/neirolavka-szhatie.conf
-
-# HTTP/2 объявляется по-разному до и после nginx 1.25.1: раньше
-# параметром listen, потом отдельной директивой. Пишем то, что понимает
-# установленная версия, — иначе конфигурация просто не загрузится.
-NV="$(nginx -v 2>&1 | sed 's|.*/||' | tr -d '[:space:]')"
-starshe() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ] && [ "$1" != "$2" ]; }
-if starshe "$NV" "1.25.1"; then
-  printf '# http2 включается параметром listen: nginx %s\n' "$NV" > /etc/nginx/snippets/neirolavka-http2.conf
-  H2_STARYY=да
-else
-  printf 'http2 on;\n' > /etc/nginx/snippets/neirolavka-http2.conf
-  H2_STARYY=нет
-fi
-ok "nginx $NV, http2 $( [ "$H2_STARYY" = да ] && echo 'параметром listen' || echo 'директивой' )"
-
-polozhit_konfig() {              # какой файл из репозитория
-  local src="$1" dst=/etc/nginx/sites-available/neirolavka.conf
-  cp "$src" "$dst"
-  if [ "$H2_STARYY" = да ]; then
-    sed -i 's/^\(\s*\)listen 443 ssl\(.*\);$/\1listen 443 ssl http2\2;/' "$dst"
-    sed -i 's/^listen \[::\]:443 ssl;$/listen [::]:443 ssl http2;/' /etc/nginx/snippets/neirolavka-listen6-443.conf
-  fi
-  ln -sfn "$dst" /etc/nginx/sites-enabled/neirolavka.conf
-  rm -f /etc/nginx/sites-enabled/default
-}
+NEIRO_NGINX_V="$(nginx -v 2>&1 | sed 's|.*/||' | tr -d '[:space:]')"
+ok "nginx $NEIRO_NGINX_V, http2 $(neiro_starshe "$NEIRO_NGINX_V" 1.25.1 && echo 'параметром listen' || echo 'директивой')"
 
 # Какую конфигурацию ставить, решает наличие сертификата: боевая на него
 # ссылается, и без него nginx просто не поднимется.
 if [ -f "/etc/letsencrypt/live/$DOMEN/fullchain.pem" ]; then
-  polozhit_konfig "$REPO/deploy/nginx/neirolavka.conf"
-  ok "сертификат на месте — поставлена боевая конфигурация с https"
+  SAYT=neirolavka.conf
+  ok "сертификат на месте — ставлю боевую конфигурацию с https"
 else
-  polozhit_konfig "$REPO/deploy/nginx/neirolavka.http.conf"
-  ok "сертификата ещё нет — поставлена конфигурация первого этапа (только http)"
+  SAYT=neirolavka.http.conf
+  ok "сертификата ещё нет — ставлю конфигурацию первого этапа (только http)"
 fi
 
-nginx -t
+if ! neiro_postavit "$SAYT" "$REPO"; then
+  vni "конфигурация nginx не поставлена. Сайт остался на прежней —"
+  vni "рабочей — конфигурации, ничего не сломано."
+  exit 1
+fi
+
 systemctl enable --now nginx > /dev/null
 systemctl reload nginx
-ok "nginx проверен и перезагружен"
+ok "nginx перезагружен"
 
 # ─────────────────────────────────────────────────────────────────────
 # 10. Что дальше
@@ -355,16 +388,9 @@ echo
 echo "   Отпечаток сервера — вписать в секрет SSH_KNOWN_HOSTS на GitHub:"
 ssh-keyscan -t ed25519 -H "$IP4" 2>/dev/null | sed 's/^/     /'
 echo
-if [ "$NOVYY" = да ]; then
-  echo "   ЗАКРЫТЫЙ КЛЮЧ ВЫКЛАДКИ — в секрет SSH_PRIVATE_KEY на GitHub."
-  echo "   Печатается один раз; потом его видно только на сервере."
-  echo "   ─────────────────────────────────────────────────────────"
-  cat "$KLYUCH"
-  echo "   ─────────────────────────────────────────────────────────"
-else
-  echo "   Ключ выкладки уже существовал. Если секрет на GitHub потерян:"
-  echo "     sudo cat $KLYUCH"
-fi
+echo "   Ключ выкладки ($( [ "$NOVYY" = да ] && echo 'создан сейчас' || echo 'был раньше, тот же самый' ))"
+echo "   напечатан выше — в секрет SSH_PRIVATE_KEY. Повторно:"
+echo "     sudo cat $KLYUCH"
 echo
 echo "   Дальше: поменять A-записи @ и www на $IP4, дождаться,"
 echo "   и запустить  sudo bash scripts/server-tls.sh"
