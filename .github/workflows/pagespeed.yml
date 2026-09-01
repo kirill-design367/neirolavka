@@ -1,0 +1,45 @@
+name: PageSpeed на боевом адресе
+
+# Медиана десяти прогонов Lighthouse в мобильном профиле, снятая
+# С БЕГУНКА GitHub по настоящему адресу — то есть через настоящую сеть,
+# настоящий TLS и настоящий nginx, а не по локальной выдаче.
+#
+# Рядом печатается benchmarkIndex: балл производительности Lighthouse
+# считает моделью, откалиброванной по скорости машины, и без этого
+# числа результат не с чем сравнивать. Сравнивать два прогона
+# с РАЗНЫХ машин нельзя вовсе.
+
+on:
+  workflow_dispatch:
+    inputs:
+      adres:
+        description: 'Какой адрес мерить'
+        default: 'https://neirolavka.ru/'
+        required: false
+      progonov:
+        description: 'Сколько прогонов'
+        default: '10'
+        required: false
+
+jobs:
+  zamer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Какой браузер меряет
+        run: |
+          google-chrome-stable --version 2>/dev/null \
+            || google-chrome --version 2>/dev/null \
+            || echo 'системного Chrome нет — chrome-launcher поищет сам'
+
+      - name: Замер
+        run: node scripts/lighthouse-median.mjs "${{ inputs.adres || 'https://neirolavka.ru/' }}" "${{ inputs.progonov || '10' }}"

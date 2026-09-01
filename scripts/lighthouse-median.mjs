@@ -5,14 +5,33 @@
  *
  * Запуск: node scripts/lighthouse-median.mjs http://localhost:4173/neirolavka/ 10
  */
+import fs from 'node:fs';
 import lighthouse from 'lighthouse';
 import * as chromeLauncher from 'chrome-launcher';
 
 const URL = process.argv[2];
 const RUNS = Number(process.argv[3] ?? 10);
 
+// Браузер ищем, а не прописываем: в этом контейнере лежит Chromium
+// от Playwright, на бегунке GitHub — системный Chrome. Прибитый путь
+// работал бы ровно в одном месте из двух.
+const NAYTI_BRAUZER = () => {
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+  for (const p of [
+    '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+  ]) {
+    if (fs.existsSync(p)) return p;
+  }
+  // chrome-launcher найдёт сам, если не нашли мы.
+  return undefined;
+};
+
 const chrome = await chromeLauncher.launch({
-  chromePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  chromePath: NAYTI_BRAUZER(),
   chromeFlags: ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage'],
 });
 
