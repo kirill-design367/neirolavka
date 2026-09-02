@@ -59,6 +59,14 @@ for (const theme of ['light', 'dark']) {
   await ctx.addInitScript((t) => localStorage.setItem('neirolavka-theme', t), theme);
   const page = await ctx.newPage();
   await page.goto(URL, { waitUntil: 'load' });
+  // Пузыри лежат закреплённым холстом по всему окну и видны на любой
+  // высоте прокрутки — в том числе за прозрачным блоком витрины.
+  // Замер ниже вычитает два снимка друг из друга, и порог у него —
+  // доли уровня на пиксель: между снимками пузыри проезжают, их дрейф
+  // ложится на всю площадь кадра и записывается в счёт холсту теней.
+  // Прячем на ВСЁ время замера, а не между снимками: иначе первый
+  // снимок уже содержит краску, которой во втором не будет.
+  await page.addStyleTag({ content: 'canvas.bubbles{display:none!important}' });
   // Сцена поднимается по первому действию человека — шевелим мышью.
   await page.mouse.move(300, 300);
   await page.mouse.move(304, 304);

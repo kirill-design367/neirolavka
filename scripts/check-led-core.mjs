@@ -50,6 +50,12 @@ for (const [w, theme, name] of [
   await ctx.addInitScript((t) => localStorage.setItem('neirolavka-theme', t), theme);
   const page = await ctx.newPage();
   await page.goto(URL, { waitUntil: 'networkidle' });
+  // Тот же холст пузырей: он закреплён по окну, лежит за содержимым
+  // и виден на любой высоте прокрутки. «Фон» здесь берётся ОДНОЙ
+  // точкой из угла снимка — заехавший в этот угол пузырь уводит опору,
+  // и вся краска капли дальше считается от неверного нуля, вплоть до
+  // вердикта «капли на снимке нет». Прячем до первого снимка.
+  await page.addStyleTag({ content: 'canvas.bubbles{display:none!important}' });
   await page.evaluate(() => document.querySelector('.steps').scrollIntoView({ block: 'center' }));
   await page.waitForTimeout(1400);
 

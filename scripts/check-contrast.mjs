@@ -224,6 +224,106 @@ for (const theme of ['light', 'dark']) {
   await ctx.close();
 }
 
+// ─── Краска пузырей под текстом ────────────────────────────────────
+//
+// Оба прохода выше берут фон ВЫЧИСЛЕННЫЙ: стопку элементов под точкой
+// и их объявленные заливки. Холст пузырей в эту стопку не попадает
+// никогда — у него pointer-events: none, и elementsFromPoint его
+// не видит, — а с тех пор как он лежит под всей страницей, краска
+// пузыря оказывается ровно между текстом и фоном страницы.
+//
+// Без этого прохода проверка уверенно печатала бы «нарушений нет»,
+// меряя чистый --c-bg под буквами, за которыми на самом деле плавает
+// краска. Ровно то молчание, ради которого проверки и пишут.
+//
+// Меряется по настоящим пикселям и по ОКНУ, а не по одной точке.
+// Одна точка здесь не годится: краска пузыря — это отдельные точки
+// с просветами между ними, и ядро одной точки темнее того, что
+// глаз видит на месте буквы. Берётся среднее по квадрату 6×6 px —
+// примерно размер прогала внутри глифа, — и худший такой квадрат
+// в коробке блока. Сам текст на время замера скрыт: иначе самым
+// тёмным квадратом окажется он сам.
+const otn = (a, b) => {
+  const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const L = (c) => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+  const la = L(a), lb = L(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+};
+const { PNG } = await import('pngjs');
+/** Блоки, под которыми виден фон страницы, а значит и пузыри.
+ *  Плашки, карточки и чек непрозрачны — краска за ними не видна
+ *  вовсе, и мерить там нечего. */
+// Заголовок первого экрана сюда НЕ входит намеренно: он залит
+// градиентом через background-clip, его собственный color прозрачен,
+// и мерить контраст по нему нечем. Градиентный текст разбирает
+// основной проход выше, по опорным точкам градиента.
+const NAD_FONOM = ['.hero__lead', '.shop__title', '.shop__lead',
+                   '.steps__title', '.step__title', '.step__text', '.footer__title'];
+for (const theme of ['light', 'dark']) {
+  const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU' });
+  await ctx.addInitScript((t) => localStorage.setItem('neirolavka-theme', t), theme);
+  const page = await ctx.newPage();
+  await page.goto(URL, { waitUntil: 'networkidle' });
+  await page.mouse.move(700, 500);
+  await page.waitForTimeout(2400);
+  if (!(await page.evaluate(() => !!document.querySelector('canvas.bubbles')))) {
+    console.log(`\n── ${theme} / краска пузырей: холста нет, проверять нечего`);
+    bad++; await ctx.close(); continue;
+  }
+  console.log(`\n── ${theme} / текст на краске пузырей`);
+  let hudshee = null;
+  let promeryano = 0;
+  for (const sel of NAD_FONOM) {
+    const el = page.locator(sel).first();
+    if (!(await el.count())) continue;
+    await el.scrollIntoViewIfNeeded().catch(() => {});
+    await page.waitForTimeout(700);
+    const dano = await el.evaluate((n) => {
+      const b = n.getBoundingClientRect();
+      const c = getComputedStyle(n).color.match(/\d+/g).slice(0, 3).map(Number);
+      const px = parseFloat(getComputedStyle(n).fontSize);
+      const w = getComputedStyle(n).fontWeight;
+      return { b: { x: b.x, y: b.y, w: b.width, h: b.height }, c, px, w };
+    }).catch(() => null);
+    if (!dano) continue;
+    const kadr = {
+      x: Math.max(0, Math.round(dano.b.x)),
+      y: Math.max(0, Math.round(dano.b.y)),
+      width: Math.round(Math.min(1512 - Math.max(0, dano.b.x), dano.b.w)),
+      height: Math.round(Math.min(900 - Math.max(0, dano.b.y), dano.b.h)),
+    };
+    if (kadr.width < 12 || kadr.height < 12) continue;
+    // Прячем САМ текст, а не всё вокруг: нужен фон ровно под ним.
+    await el.evaluate((n) => { n.dataset.pryachu = '1'; n.style.visibility = 'hidden'; });
+    await page.waitForTimeout(120);
+    const png = PNG.sync.read(await page.screenshot({ clip: kadr }));
+    await el.evaluate((n) => { n.style.visibility = ''; delete n.dataset.pryachu; });
+    const W = png.width, H = png.height, OKNO = 6;
+    let hud = null, hudR = 99;
+    const nado = dano.px >= 24 || (dano.px >= 18.66 && Number(dano.w) >= 700) ? 3 : 4.5;
+    for (let y = 0; y + OKNO <= H; y += 2) {
+      for (let x = 0; x + OKNO <= W; x += 2) {
+        let r = 0, g = 0, b2 = 0;
+        for (let j = 0; j < OKNO; j++) for (let i2 = 0; i2 < OKNO; i2++) {
+          const k = ((y + j) * W + (x + i2)) * 4;
+          r += png.data[k]; g += png.data[k + 1]; b2 += png.data[k + 2];
+        }
+        const n2 = OKNO * OKNO;
+        const sred = [r / n2, g / n2, b2 / n2];
+        const rr = otn(dano.c, sred);
+        if (rr < hudR) { hudR = rr; hud = sred.map((v) => Math.round(v)); }
+      }
+    }
+    promeryano++;
+    const zapis = { sel, r: hudR, need: nado, fon: hud, c: dano.c };
+    if (!hudshee || hudR / nado < hudshee.r / hudshee.need) hudshee = zapis;
+    if (hudR < nado) { console.log(`  НЕТ ${hudR.toFixed(2)}:1 (нужно ${nado}) — «${sel}» на rgb(${hud})`); bad++; }
+  }
+  if (!promeryano) { console.log('  ни один блок не промерян — проба устарела, поправьте селекторы'); bad++; }
+  else console.log(`  промерено блоков ${promeryano}, наименьший запас ${hudshee.r.toFixed(2)}:1 при пороге ${hudshee.need} — «${hudshee.sel}» на rgb(${hudshee.fon})`);
+  await ctx.close();
+}
+
 await browser.close();
 console.log(bad ? `\nВсего нарушений: ${bad}` : '\nКонтраст в порядке во всех сочетаниях');
 process.exit(bad ? 1 : 0);

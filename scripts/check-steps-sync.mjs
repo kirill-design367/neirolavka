@@ -55,6 +55,14 @@ for (const vp of VIEWS) {
   await ctx.addInitScript((t) => localStorage.setItem('neirolavka-theme', t), vp.theme);
   const page = await ctx.newPage();
   await page.goto(URL, { waitUntil: 'networkidle' });
+  // Холст пузырей закреплён по окну и виден на любой высоте прокрутки,
+  // поэтому он попадает в КАЖДЫЙ снимок этой проверки. Пузыри плывут
+  // сами по себе, и разница между опорным снимком и пробным набирается
+  // их дрейфом, а не светом цифры: порог в 2 уровня из 255 такой дрейф
+  // перекрывает без труда. Прячем на ВСЁ время замера, а не между
+  // снимками, — иначе проверка объявляет преждевременное свечение там,
+  // где через коробку цифры просто проехал пузырь.
+  await page.addStyleTag({ content: 'canvas.bubbles{display:none!important}' });
   await page.evaluate(() => document.querySelector('.steps').scrollIntoView({ block: 'center' }));
   await page.waitForTimeout(1400);
 
