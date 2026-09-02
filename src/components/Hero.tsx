@@ -1,6 +1,5 @@
 'use client';
 
-import { Bubbles } from '@/components/Bubbles';
 import { useMergedRefs, useParallax, useReveal } from '@/lib/motion';
 
 const CHIPS = [
@@ -16,10 +15,6 @@ export function Hero() {
 
   return (
     <section className="hero" ref={ref}>
-      {/* Пузыри лежат под содержимым первого экрана и мышь не ловят:
-          попадание по ним ищется по координатам в самом компоненте. */}
-      <Bubbles />
-
       <p className="hero__eyebrow" data-reveal>
         Лавка доступа к нейросетям
       </p>

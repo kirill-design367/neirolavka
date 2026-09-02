@@ -71,9 +71,6 @@ jobs:
       - name: Отзывы — стык ленты, остановка под курсором, листание
         run: node scripts/check-reviews.mjs "$ADRES"
 
-      - name: Пузыри — число, отклик, лопание, отложенность
-        run: node scripts/check-bubbles.mjs "$ADRES"
-
       - name: Темы — вспышка при загрузке и prefers-reduced-motion
         run: node scripts/check-theme-motion.mjs "$ADRES"
 
