@@ -372,9 +372,16 @@ for (const r of RAZRESHENIYA) {
     // без отклика ноль выйдет в обеих.
     let luchshiy = null;
     for (let popytka = 0; popytka < 2; popytka++) {
-      await page.mouse.move(box.x + 4, box.y + 4);
+      // Курсор паркуется ВЫШЕ первого экрана, а не в его углу.
+      //
+      // Пока он парковался внутри секции, модуль честно считал его
+      // наведённым: нажим оставался единицей, кольцевой сдвиг гонял
+      // пузыри, и «тихие» кадры тихими не были — мнимый дрейф
+      // доходил до 18 % и съедал вердикт. Выше секции нажим
+      // отпускает за 220 мс, отсюда и пауза.
+      await page.mouse.move(4, 4);
       await tolkoHolst(page, 'hidden');
-      await page.waitForTimeout(420);
+      await page.waitForTimeout(600);
       const mera = async () => razmahOblaka(
         await snyat(page, box), (cx - box.x) * r.dsf, (cy - box.y) * r.dsf, predel,
       );
