@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next';
 import { akt, golos } from '@/lib/fonts';
-import { Bubbles } from '@/components/Bubbles';
 import { THEME_BAR, themeInitScript } from '@/lib/theme';
 import './globals.css';
 
@@ -44,16 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Тема проставляется до первой отрисовки — вспышки не бывает. */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body>
-        {/* Пузыри лежат под ВСЕМ содержимым страницы и мышь не ловят.
-            Холст стоит первым ребёнком body и закреплён по окну:
-            отрицательный z-index кладёт его над фоном страницы и под
-            всё остальное, а isolation на body не даёт ему провалиться
-            под сам фон. Попадание по пузырю ищется по координатам —
-            см. src/lib/bubbles-gl.ts. */}
-        <Bubbles />
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
