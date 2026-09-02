@@ -396,8 +396,8 @@ for (const r of RAZRESHENIYA) {
     // выходило 13.2 % сигнала при 9.8 % шага, то есть меньше
     // полутора «сигм». Вторая выборка это разводит; у сборки
     // без отклика ноль выйдет в обеих.
-    let luchshiy = null;
-    for (let popytka = 0; popytka < 2; popytka++) {
+    const opyty = [];
+    for (let popytka = 0; popytka < 3; popytka++) {
       // Курсор паркуется ВЫШЕ первого экрана, а не в его углу.
       //
       // Пока он парковался внутри секции, модуль честно считал его
@@ -433,9 +433,23 @@ for (const r of RAZRESHENIYA) {
       const r2 = pokoy[pokoy.length - 1];
       const signal = r3 / r2 - 1;
       const zapas = signal - shum;
-      if (!luchshiy || zapas > luchshiy.zapas) luchshiy = { signal, shum, r2, r3, zapas };
-      if (signal >= OTKLIK_MIN && signal >= shum * 2) break;
+      opyty.push({ signal, shum, r2, r3, zapas });
     }
+    // Вердикт по МЕДИАНЕ трёх независимых замеров, а не по лучшему
+    // и не по одному. Один замер изредка ловит соседний пузырь,
+    // въехавший в окно, — тогда середина краски прыгает и мнимый
+    // дрейф подскакивает до 7 %. «Лучший из двух» тут не помогает:
+    // он и завышает на удачной выборке, и не спасает, когда обе
+    // неудачны. Медиана трёх устойчива к одному выбросу и остаётся
+    // честной: у сборки без отклика она даст около нуля.
+    const luchshiy = opyty.length
+      ? {
+        signal: med(opyty.map((o) => o.signal)),
+        shum: med(opyty.map((o) => o.shum)),
+        r2: med(opyty.map((o) => o.r2)),
+        r3: med(opyty.map((o) => o.r3)),
+      }
+      : null;
     if (!luchshiy) {
       bida('краски вокруг найденной середины не набралось');
     } else {
