@@ -62,14 +62,6 @@ const ctx = await browser.newContext({
 await ctx.addInitScript((t) => localStorage.setItem('neirolavka-theme', t), THEME);
 const page = await ctx.newPage();
 await page.goto(URL, { waitUntil: 'networkidle' });
-// Холст пузырей убирается из кадра, как и в остальных попиксельных
-// проверках. Здесь он мешает не краской — карточка непрозрачна, —
-// а нагрузкой: слой во весь экран перерисовывается каждый второй кадр,
-// и на медленной машине снимок парящей карточки застаёт её в другой
-// доле пикселя. На бегунке это подняло «цену парения» с 1.217 до
-// 1.362 при пороге 1.35 — то есть проверка покраснела за то, что
-// меряет не она.
-await page.addStyleTag({ content: 'canvas.bubbles{display:none!important}' });
 
 // Первое движение мыши поднимает отложенные куски (сцену и пузыри).
 await page.mouse.move(760, 300);
