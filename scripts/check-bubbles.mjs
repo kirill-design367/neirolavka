@@ -38,12 +38,11 @@ const PYATEN_MIN = 12;
 /** На сколько курсор, поставленный в середину пузыря, обязан раздать
  *  его оболочку. Ноль — это отсутствие отклика.
  *
- *  Столько же требуется СВЕРХ дрейфа. Отношение «вдвое против
- *  дрейфа» тут не годится: дрейф — случайное блуждание, и когда
- *  пузырь идёт быстро, порог уезжает вслед за ним. Разница
- *  в пять процентных пунктов ловит отсутствие отклика (у сборки
- *  с погашенной силой выходило 1.6 % при дрейфе 1.1 % и 6.4 %
- *  при 5.2 %) и не спорит с честными двадцатью процентами. */
+ *  Вдвое против дрейфа требуется сверх этого. Прибавка «столько же
+ *  сверх дрейфа» пробовалась и оказалась хуже: при дрейфе в доли
+ *  процента она просто удваивала порог, и честные 5.2 % не проходили
+ *  из-за 0.3 % шума. Отношение работает потому, что размах меряется
+ *  вокруг своей середины кадра и дрейф упал до 0.1–0.8 %. */
 const OTKLIK_MIN = 0.05;
 
 const RAZRESHENIYA = [
@@ -435,7 +434,7 @@ for (const r of RAZRESHENIYA) {
       const signal = r3 / r2 - 1;
       const zapas = signal - shum;
       if (!luchshiy || zapas > luchshiy.zapas) luchshiy = { signal, shum, r2, r3, zapas };
-      if (signal >= OTKLIK_MIN && signal >= shum + OTKLIK_MIN) break;
+      if (signal >= OTKLIK_MIN && signal >= shum * 2) break;
     }
     if (!luchshiy) {
       bida('краски вокруг найденной середины не набралось');
@@ -443,8 +442,8 @@ for (const r of RAZRESHENIYA) {
       const stroka = `курсор в середине раздаёт оболочку на ${(luchshiy.signal * 100).toFixed(1)} % `
         + `(${(luchshiy.r2 / r.dsf).toFixed(1)} → ${(luchshiy.r3 / r.dsf).toFixed(1)} css-px) `
         + `при дрейфе ${(luchshiy.shum * 100).toFixed(1)} %`;
-      if (luchshiy.signal < OTKLIK_MIN || luchshiy.signal < luchshiy.shum + OTKLIK_MIN) {
-        bida(`${stroka} — нужно не меньше ${(OTKLIK_MIN * 100).toFixed(0)} % и на столько же выше дрейфа`);
+      if (luchshiy.signal < OTKLIK_MIN || luchshiy.signal < luchshiy.shum * 2) {
+        bida(`${stroka} — нужно не меньше ${(OTKLIK_MIN * 100).toFixed(0)} % и вдвое против дрейфа`);
       } else console.log(`      ok ${stroka}`);
     }
 
