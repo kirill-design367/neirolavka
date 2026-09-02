@@ -1,26 +1,33 @@
 /**
  * Пузыри первого экрана: облака точек на поверхности сферы.
  *
- * Собрано на Three.js заново. Единственное требование к качеству —
- * ТОЧКА ДОЛЖНА БЫТЬ КРУГЛОЙ И ГЛАДКОЙ на любом экране, и ради этого
- * здесь тратится всё, что можно потратить.
+ * Единственное требование к качеству — ТОЧКА ДОЛЖНА БЫТЬ КРУГЛОЙ
+ * И ГЛАДКОЙ, без намёка на квадрат, на любом экране. Ради этого
+ * здесь тратится всё, что можно потратить: память, кадры, вес.
  *
- * Как это достигается — три вещи вместе, и ни одна поодиночке
- * не хватает:
+ * Круглой точку делают ТРИ вещи, и все три — про число пикселей
+ * на точку. Ни сглаживание, ни профиль, ни примитив не спасают
+ * точку, которой досталось три пикселя: у неё их просто нет.
  *
- *   1. НАДВЫБОРКА. Холст рисуется вдвое плотнее экрана и уменьшается
- *      браузером при показе. На каждый пиксель экрана приходится
- *      четыре выборки — это и есть настоящее сглаживание, а не
- *      подкрашивание кромки. Замер прошлого захода показал, что
- *      у точки в три пикселя круга не бывает ни при каком способе
- *      отрисовки: столько пикселей нечем занять. Надвыборка эту
- *      границу отодвигает вчетверо.
- *   2. МЯГКИЙ ПРОФИЛЬ. Точка — не диск с обрезкой по краю, а пятно
- *      с плотным ядром и спадом до нуля. У такого пятна кромки нет
- *      вовсе, а значит нечему и лесенкой пойти.
- *   3. НИЖНИЙ РАЗМЕР. Точка тоньше двух с половиной отсчётов буфера
- *      поднимается до порога с ослаблением краски на квадрат подъёма:
- *      чернил столько же, а форма снова считается по пикселям.
+ *   1. СВОЯ НАДВЫБОРКА С ЧЕСТНЫМ УСРЕДНЕНИЕМ. Сцена рисуется
+ *      в буфер вчетверо плотнее css-пикселя, и мы САМИ сворачиваем
+ *      его в холст, усредняя каждый квадрат отсчётов целиком.
+ *      Полагаться на то, что браузер сожмёт холст сам, нельзя:
+ *      он сжимает билинейно, то есть при уменьшении вчетверо берёт
+ *      четыре отсчёта из шестнадцати, а двенадцать выбрасывает —
+ *      и кромка снова идёт ступеньками.
+ *   2. РАЗМЕР ТОЧКИ. Наименьшая точка теперь 3.4 css-px вместо 1.5,
+ *      наибольшая 12 вместо 8. Замер округлости по прошлым сборкам:
+ *      3.00 css-px → 0.954, 3.78 → 0.976, 5.43 → 0.992. Всё, что
+ *      тоньше трёх, читается квадратиком при любом сглаживании.
+ *   3. ДАЛЬНЯЯ СТОРОНА НЕ УМЕНЬШАЕТСЯ ВДВОЕ. Глубина множит размер
+ *      на 0.80–1.25, а не на 0.5–1.35: именно дальние точки, ужатые
+ *      вдвое, и были теми квадратиками, которые видно на мелком
+ *      пузыре.
+ *
+ * Число точек уменьшено во столько же раз, во сколько выросла их
+ * площадь: краски на оболочке столько же, а каждая точка получила
+ * впятеро больше пикселей.
  *
  * Всё остальное — устройство поля. Пузырей десять на десктопе и шесть
  * на телефоне, они живут только в первом экране, лежат ПОД всем
@@ -41,6 +48,10 @@ const POP_MS = 760;
 const RESPAWN_MIN = 700;
 const RESPAWN_MAX = 1300;
 const TOKENS = ['--c-brand', '--c-accent', '--c-line-strong'] as const;
+/** Отсчётов буфера на css-пиксель. Четыре — это шестнадцать проб
+ *  на пиксель картинки; ниже трёх кромка точки снова считается
+ *  по четвертинкам. */
+const PROB_NA_PX = 4;
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -65,6 +76,7 @@ const VERT = (count: number) => /* glsl */ `
   uniform float uPress;    // сила реакции, 0..1
   uniform float uTime;
   uniform float uInk;      // плотность краски: своя у каждой темы
+  uniform float uMinPx;    // нижний размер точки в отсчётах буфера
   uniform vec3  uColorA;
   uniform vec3  uColorB;
   uniform vec3  uColorC;
@@ -148,17 +160,22 @@ const VERT = (count: number) => /* glsl */ `
     float near = clamp((uCamZ + radius - depth) / (2.0 * radius), 0.0, 1.0);
     float fade = 1.0 - pop;
 
-    float px = aSize * (0.5 + 0.85 * near) * uScale / depth;
+    // Глубина множит размер на 0.80–1.25, а не на 0.5–1.35.
+    // Ужатая вдвое дальняя точка — это полтора css-пикселя, то есть
+    // ровно тот квадратик, ради которого всё переписано. Объём
+    // по-прежнему читается: он держится на плотности краски,
+    // а её разброс остался прежним.
+    float px = aSize * (0.82 + 0.42 * near) * uScale / depth;
 
-    // Нижний размер: точка тоньше двух с половиной отсчётов буфера
-    // круглой быть не может — её поднимаем до порога и во столько же
-    // раз ослабляем краску. Площадь растёт как квадрат размера,
-    // поэтому делить надо на квадрат; чернил остаётся столько же.
-    float up = max(1.0, 2.5 / max(px, 0.0001));
+    // Нижний размер: точка тоньше uMinPx отсчётов буфера круглой быть
+    // не может — её поднимаем до порога и во столько же раз ослабляем
+    // краску. Площадь растёт как квадрат размера, поэтому делить надо
+    // на квадрат; чернил остаётся столько же.
+    float up = max(1.0, uMinPx / max(px, 0.0001));
     gl_PointSize = px * up;
 
     vColor = aTint < 0.5 ? uColorA : (aTint < 1.5 ? uColorB : uColorC);
-    vAlpha = (0.16 + 0.44 * near) * uInk * fade * fade / (up * up);
+    vAlpha = (0.115 + 0.315 * near) * uInk * fade * fade / (up * up);
   }
 `;
 
@@ -168,13 +185,15 @@ const FRAG = /* glsl */ `
   varying float vAlpha;
 
   void main() {
-    // Точка — ПЯТНО, а не диск с обрезкой: плотное ядро и спад до нуля
-    // к краю спрайта. У пятна нет кромки, значит нечему пойти лесенкой.
-    // Вместе с надвыборкой холста это и даёт круглый мягкий край.
+    // Точка — ДИСК С МЯГКИМ КРАЕМ: сплошная сердцевина до половины
+    // радиуса, дальше плавный спад до нуля. Пока точке доставалось
+    // три пикселя, ядро приходилось делать почти точечным, иначе
+    // от точки ничего не оставалось; теперь пикселей вчетверо
+    // больше на сторону, и диск можно рисовать диском.
     float r = length(gl_PointCoord - 0.5) * 2.0;
-    float a = (1.0 - smoothstep(0.18, 1.0, r)) * vAlpha;
-    if (a <= 0.004) discard;
-    gl_FragColor = vec4(vColor, a);
+    float a = (1.0 - smoothstep(0.72, 1.0, r)) * vAlpha;
+    if (a <= 0.002) discard;
+    gl_FragColor = vec4(vColor * a, a);
   }
 `;
 
@@ -228,15 +247,23 @@ export function mount(host: HTMLElement): (() => void) | null {
   const R_MAX = phone ? 26 : 54;
   /** Точек на единицу ПЛОЩАДИ оболочки. По площади, а не по радиусу:
    *  иначе плотность краски падала бы обратно пропорционально радиусу
-   *  и крупные пузыри выглядели бы недорисованными. */
-  const NA_PLOSHAD = 0.15;
+   *  и крупные пузыри выглядели бы недорисованными.
+   *
+   *  Уменьшено вдвое с лишним вместе с укрупнением точки: площадь
+   *  точки выросла примерно вдвое, и краски на оболочке осталось
+   *  столько же. Облако по-прежнему разрежённое. */
+  const NA_PLOSHAD = 0.095;
 
   /** Размер точки от РАДИУСА её пузыря. Связь через корень, а не
    *  прямая: радиусы идут по логарифмической лесенке, и при линейной
-   *  связи вся прибавка досталась бы двум самым крупным шарам. */
+   *  связи вся прибавка досталась бы двум самым крупным шарам.
+   *
+   *  Числа подняты в полтора раза: круглой точку делает РАЗМЕР,
+   *  а не примитив и не сглаживание. С множителем глубины выходит
+   *  3.4–12 css-px на десктопе и 2.6–8.5 на телефоне. */
   const tochka = (r: number) => {
     const d = Math.sqrt(Math.max(0, (r - R_MIN) / (R_MAX - R_MIN)));
-    return (phone ? 2.6 : 3.4) + (phone ? 2.0 : 2.6) * d;
+    return (phone ? 3.4 : 4.4) + (phone ? 1.6 : 2.0) * d;
   };
 
   const tanHalf = Math.tan((FOV / 2) * (Math.PI / 180));
@@ -269,7 +296,7 @@ export function mount(host: HTMLElement): (() => void) | null {
     gone: false,
   }));
 
-  const counts = bubbles.map((b) => Math.max(28, Math.round(b.r * b.r * NA_PLOSHAD)));
+  const counts = bubbles.map((b) => Math.max(22, Math.round(b.r * b.r * NA_PLOSHAD)));
   const total = counts.reduce((a, c) => a + c, 0);
 
   const pos = new Float32Array(total * 3);
@@ -314,6 +341,7 @@ export function mount(host: HTMLElement): (() => void) | null {
     uPointer: { value: new THREE.Vector3(1e5, 1e5, 0) },
     uPress: { value: 0 },
     uInk: { value: 1 },
+    uMinPx: { value: 8 },
     uTime: { value: 0 },
     uColorA: { value: new THREE.Vector3(0.5, 0.5, 0.5) },
     uColorB: { value: new THREE.Vector3(0.5, 0.5, 0.5) },
@@ -337,8 +365,12 @@ export function mount(host: HTMLElement): (() => void) | null {
     transparent: true,
     depthTest: false,
     depthWrite: false,
+    // Смешивание для УЖЕ умноженной краски: слагаемое источника
+    // берётся как есть. Иначе усреднять содержимое буфера было бы
+    // нельзя — у полупрозрачных точек цвет и прозрачность разъехались
+    // бы, и кромка получила бы грязный ореол.
     blending: THREE.CustomBlending,
-    blendSrc: THREE.SrcAlphaFactor,
+    blendSrc: THREE.OneFactor,
     blendDst: THREE.OneMinusSrcAlphaFactor,
     blendSrcAlpha: THREE.OneFactor,
     blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
@@ -350,6 +382,80 @@ export function mount(host: HTMLElement): (() => void) | null {
   scene.add(points);
   const camera = new THREE.PerspectiveCamera(FOV, 1, 1, 4000);
   renderer.setClearAlpha(0);
+
+  // ─── Надвыборка со СВОИМ усреднением ────────────────────────
+  //
+  // Сцена рисуется не в холст, а в буфер вчетверо плотнее
+  // css-пикселя, и вторым проходом мы сворачиваем его сами: каждый
+  // пиксель холста — среднее ss×ss отсчётов целиком.
+  //
+  // Сделать это должен именно наш проход, а не браузер. Браузер
+  // уменьшает холст билинейно, то есть при сжатии вчетверо берёт
+  // четыре отсчёта из шестнадцати и двенадцать выбрасывает; на кромке
+  // точки это ровно та же лесенка, от которой мы уходим, только
+  // на ступень мельче. Прежняя сборка полагалась на браузер — отсюда
+  // и квадратные точки на мелких пузырях.
+  //
+  // Краска в буфере лежит УМНОЖЕННОЙ на прозрачность: только такие
+  // значения можно усреднять как обычные числа, и ровно их ждёт
+  // от холста браузер (premultipliedAlpha у контекста).
+  let rt: THREE.WebGLRenderTarget | null = null;
+  let ss = 0;
+  const svertkaScene = new THREE.Scene();
+  const svertkaCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const svertkaGeom = new THREE.BufferGeometry();
+  // Треугольник во весь кадр. Координаты трёхмерные, хотя третья
+  // всегда ноль: у двумерного атрибута `position` Three не может
+  // посчитать габаритную сферу и пишет в консоль NaN — ошибка
+  // безобидная, но ошибка, а консоль обязана быть чистой.
+  svertkaGeom.setAttribute('position', new THREE.BufferAttribute(
+    new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3,
+  ));
+  let svertkaMat: THREE.RawShaderMaterial | null = null;
+  let svertkaMesh: THREE.Mesh | null = null;
+
+  /** Пересобирает материал свёртки: число отсчётов в GLSL ES 1.00
+   *  обязано быть постоянной, циклом по uniform'у не обойтись. */
+  const sobratSvertku = (n: number) => {
+    if (svertkaMesh) { svertkaScene.remove(svertkaMesh); }
+    svertkaMat?.dispose();
+    svertkaMat = new THREE.RawShaderMaterial({
+      uniforms: { uTex: { value: null as THREE.Texture | null }, uTexel: { value: new THREE.Vector2() } },
+      depthTest: false,
+      depthWrite: false,
+      transparent: false,
+      blending: THREE.NoBlending,
+      vertexShader: /* glsl */ `
+        precision highp float;
+        attribute vec3 position;
+        varying vec2 vUv;
+        void main() {
+          vUv = position.xy * 0.5 + 0.5;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        #define N ${n}
+        uniform sampler2D uTex;
+        uniform vec2 uTexel;
+        varying vec2 vUv;
+        void main() {
+          vec4 s = vec4(0.0);
+          for (int j = 0; j < N; j++) {
+            for (int i = 0; i < N; i++) {
+              vec2 o = (vec2(float(i), float(j)) - float(N - 1) * 0.5) * uTexel;
+              s += texture2D(uTex, vUv + o);
+            }
+          }
+          gl_FragColor = s / float(N * N);
+        }
+      `,
+    });
+    svertkaMesh = new THREE.Mesh(svertkaGeom, svertkaMat);
+    svertkaMesh.frustumCulled = false;
+    svertkaScene.add(svertkaMesh);
+  };
 
   const readColors = () => {
     const cs = getComputedStyle(document.documentElement);
@@ -365,6 +471,15 @@ export function mount(host: HTMLElement): (() => void) | null {
   const publish = () => {
     const n = String(bubbles.filter((b) => !b.gone).length);
     if (canvas.dataset.bubbles !== n) canvas.dataset.bubbles = n;
+  };
+
+  /** Отсчётов буфера надвыборки на css-пиксель — наружу, для проверки.
+   *  По размеру самого холста это число НЕ восстановить: холст теперь
+   *  один к одному с экраном, а надвыборка живёт в буфере, которого
+   *  снаружи не видно. */
+  const publishProby = () => {
+    const v = String(dpr * ss);
+    if (canvas.dataset.proby !== v) canvas.dataset.proby = v;
   };
 
   /** Свободно ли место: над точкой не должно быть ни одного
@@ -530,9 +645,39 @@ export function mount(host: HTMLElement): (() => void) | null {
     // 17 мс — то есть страницу, которая не едет вовсе, при том что
     // точка круглее не становилась (0.983 против 0.959). Цена слоя —
     // это его пиксели, и мерить их надо в пикселях.
-    dpr = Math.max(window.devicePixelRatio || 1, 2);
+    // Холст — один к одному с экраном: растягивать и сжимать его
+    // больше некому, усреднение делает наш проход.
+    dpr = Math.max(window.devicePixelRatio || 1, 1);
     renderer.setPixelRatio(dpr);
     renderer.setSize(w, h, false);
+
+    // Отсчётов на css-пиксель держим равным PROB_NA_PX независимо
+    // от плотности экрана: на обычном экране это четыре прохода
+    // по стороне, на экране двойной плотности два — и в обоих случаях
+    // на пиксель картинки приходится шестнадцать проб.
+    const nado = Math.max(2, Math.min(4, Math.round(PROB_NA_PX / dpr)));
+    if (nado !== ss) { ss = nado; sobratSvertku(ss); }
+    const rtW = Math.max(1, Math.round(w * dpr * ss));
+    const rtH = Math.max(1, Math.round(h * dpr * ss));
+    if (!rt) {
+      rt = new THREE.WebGLRenderTarget(rtW, rtH, {
+        format: THREE.RGBAFormat,
+        type: THREE.UnsignedByteType,
+        // Свёртка берёт отсчёты по одному и точно по их середине,
+        // поэтому фильтрация текстуры не нужна вовсе — и не должна
+        // вмешиваться.
+        minFilter: THREE.NearestFilter,
+        magFilter: THREE.NearestFilter,
+        depthBuffer: false,
+        stencilBuffer: false,
+      });
+    } else {
+      rt.setSize(rtW, rtH);
+    }
+    if (svertkaMat) {
+      svertkaMat.uniforms.uTex.value = rt.texture;
+      svertkaMat.uniforms.uTexel.value.set(1 / rtW, 1 / rtH);
+    }
 
     // Камера отодвинута так, что на плоскости z = 0 единица мира —
     // ровно один css-пиксель. Тогда радиусы и размеры точек задаются
@@ -544,9 +689,15 @@ export function mount(host: HTMLElement): (() => void) | null {
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld(true);
 
-    uniforms.uScale.value = dpr * camZ;
+    // Размер точки задаётся в css-пикселях, а рисуется в буфере
+    // надвыборки — значит множитель тот же, что у буфера.
+    uniforms.uScale.value = dpr * ss * camZ;
     uniforms.uCamZ.value = camZ;
+    // Нижний размер — три css-пикселя: тоньше круга не бывает
+    // ни при каком сглаживании.
+    uniforms.uMinPx.value = 3 * dpr * ss;
 
+    publishProby();
     vis = { xmin: -w / 2, xmax: w / 2, ymin: -h / 2, ymax: h / 2 };
     measureBands();
     for (const b of bubbles) {
@@ -756,7 +907,17 @@ export function mount(host: HTMLElement): (() => void) | null {
       soft.x = 1e5; soft.y = 1e5;
     }
 
-    renderer.render(scene, camera);
+    // Два прохода: сцена — в буфер надвыборки, свёртка — в холст.
+    if (rt && svertkaMesh) {
+      renderer.setRenderTarget(rt);
+      renderer.clear();
+      renderer.render(scene, camera);
+      renderer.setRenderTarget(null);
+      renderer.clear();
+      renderer.render(svertkaScene, svertkaCam);
+    } else {
+      renderer.render(scene, camera);
+    }
   };
 
   gsap.ticker.add(step);
@@ -783,6 +944,9 @@ export function mount(host: HTMLElement): (() => void) | null {
     host.style.cursor = '';
     geom.dispose();
     material.dispose();
+    svertkaGeom.dispose();
+    svertkaMat?.dispose();
+    rt?.dispose();
     renderer.dispose();
     renderer.forceContextLoss();
     canvas.remove();

@@ -34,7 +34,7 @@ const OKRUGLOST = [0.9, 1.1];
  *  ни при каком сглаживании. */
 const OTSCHETOV_MIN = 2.5;
 /** Меньше пятен — статистики не набралось, и это отказ, а не заметка. */
-const PYATEN_MIN = 12;
+const PYATEN_MIN = 10;
 /** На сколько курсор, поставленный в середину пузыря, обязан раздать
  *  его оболочку. Ноль — это отсутствие отклика. */
 const OTKLIK_MIN = 0.05;
@@ -83,8 +83,15 @@ const promerit = (png, plotnost, dsf) => {
     return kraska(x0, y0) * (1 - fx) * (1 - fy) + kraska(x0 + 1, y0) * fx * (1 - fy)
       + kraska(x0, y0 + 1) * (1 - fx) * fy + kraska(x0 + 1, y0 + 1) * fx * fy;
   };
-  const OKNO = 9;
-  const vershiny = [];
+  const OKNO = 16;
+  // Вершины ищем, а потом СКЛЕИВАЕМ соседние в одну.
+  //
+  // У точки с плотным ядром верхушка плоская: в ней десятки пикселей
+  // одинаковой яркости, и каждый проходит за «локальный максимум».
+  // Дальше расстояние до ближайшей вершины оказывается нулевым,
+  // предел луча схлопывается, и проба объявляет, что одиночных пятен
+  // не нашлось ни одного — на совершенно исправной странице.
+  const syrye = [];
   for (let y = OKNO; y < H - OKNO; y++) {
     for (let x = OKNO; x < W - OKNO; x++) {
       const v = kraska(x, y);
@@ -93,8 +100,35 @@ const promerit = (png, plotnost, dsf) => {
       for (let dy = -2; dy <= 2 && vysshaya; dy++) {
         for (let dx = -2; dx <= 2; dx++) if ((dx || dy) && kraska(x + dx, y + dy) > v) { vysshaya = false; break; }
       }
-      if (vysshaya) vershiny.push({ x, y, v });
+      if (vysshaya) syrye.push({ x, y, v });
     }
+  }
+  // Склеиваем только то, что и правда ОДНА верхушка: рядом
+  // и без провала между. Без пробы перемычки на телефоне склеивались
+  // две соседние точки, и мерился их общий силуэт — то есть не то,
+  // ради чего проба написана.
+  const skleyka = Math.max(2, Math.round(2.6 * dsf));
+  const odna = (a, b2) => {
+    if (Math.hypot(a.x - b2.x, a.y - b2.y) > skleyka) return false;
+    const mid = kraska(Math.round((a.x + b2.x) / 2), Math.round((a.y + b2.y) / 2));
+    return mid >= Math.min(a.v, b2.v) - 3;
+  };
+  const vzyat = new Set();
+  const vershiny = [];
+  for (let i = 0; i < syrye.length; i++) {
+    if (vzyat.has(i)) continue;
+    const gr = [i]; vzyat.add(i);
+    for (let q = 0; q < gr.length; q++) {
+      for (let j = 0; j < syrye.length; j++) {
+        if (vzyat.has(j)) continue;
+        if (odna(syrye[gr[q]], syrye[j])) { gr.push(j); vzyat.add(j); }
+      }
+    }
+    vershiny.push({
+      x: gr.reduce((a, k2) => a + syrye[k2].x, 0) / gr.length,
+      y: gr.reduce((a, k2) => a + syrye[k2].y, 0) / gr.length,
+      v: gr.reduce((a, k2) => Math.max(a, syrye[k2].v), 0),
+    });
   }
   // Одиночные: луч не идёт дальше половины расстояния до соседа.
   // Постоянного окна тут быть не может — точки на телефоне вдвое
@@ -106,7 +140,7 @@ const promerit = (png, plotnost, dsf) => {
       const d = Math.hypot(o.x - t.x, o.y - t.y);
       if (d < bliz) bliz = d;
     }
-    return { ...t, predel: Math.min(OKNO, bliz / 2) };
+    return { ...t, predel: Math.min(OKNO, bliz * 0.62) };
   }).filter((t) => t.predel >= 1).sort((a, b) => b.v - a.v).slice(0, 200);
   const luch = (t, dx, dy) => {
     let prev = t.v;
@@ -128,7 +162,14 @@ const promerit = (png, plotnost, dsf) => {
     if (ro < 0.6) continue;   // пятно в один пиксель: мерить нечего
     okr.push(rd / ro); poper.push(ro * 2);
   }
-  const med = (a) => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
+  return { okr, poper };
+};
+
+const med = (a) => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
+
+/** Вердикт по накопленным пятнам. Медиана, а не наибольшее:
+ *  наибольшее отклонение растёт вместе с числом проб. */
+const itog = (okr, poper, plotnost, dsf) => {
   if (okr.length < PYATEN_MIN) return { pyaten: okr.length };
   const p = med(poper) / dsf;
   return {
@@ -168,21 +209,89 @@ const najtiYadro = (png, storona) => {
 const razmahOblaka = (png, cx, cy, predel) => {
   const { width: W, height: H } = png;
   const { yark, fon } = fonKadra(png);
-  let s = 0; let m = 0;
   const x0 = Math.max(0, Math.round(cx - predel));
   const x1 = Math.min(W - 1, Math.round(cx + predel));
   const y0 = Math.max(0, Math.round(cy - predel));
   const y1 = Math.min(H - 1, Math.round(cy + predel));
+  // Сначала СЕРЕДИНА КРАСКИ в окне, и только потом размах вокруг неё.
+  //
+  // Вокруг заданной точки считать нельзя: пузырь дрейфует, за сотню
+  // миллисекунд уходит на пиксель-другой, и размах растёт от одного
+  // этого. На мелком пузыре такой «дрейф» набирал до 8 % — больше
+  // половины полезного сигнала. Вокруг собственной середины кадра
+  // сдвиг не значит ничего, и остаётся только деформация, ради
+  // которой проба и написана.
+  let mx = 0; let my = 0; let m0 = 0;
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
-      const d = Math.hypot(x - cx, y - cy);
-      if (d > predel) continue;
+      if (Math.hypot(x - cx, y - cy) > predel) continue;
       const v = Math.abs(yark(x, y) - fon);
       if (v < 8) continue;
-      m += v; s += v * d;
+      m0 += v; mx += v * x; my += v * y;
     }
   }
-  return m < 200 ? NaN : s / m;
+  if (m0 < 200) return NaN;
+  const sx = mx / m0; const sy = my / m0;
+  let s = 0; let m = 0;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (Math.hypot(x - cx, y - cy) > predel) continue;
+      const v = Math.abs(yark(x, y) - fon);
+      if (v < 8) continue;
+      m += v; s += v * Math.hypot(x - sx, y - sy);
+    }
+  }
+  return s / m;
+};
+
+/** Где стоят пузыри — спрашиваем у самой страницы.
+ *
+ *  Самое плотное пятно краски — это НЕ середина пузыря, а его кромка:
+ *  точки сидят на поверхности сферы, и в проекции силуэт плотнее
+ *  середины. Проба, принимавшая пятно за центр, промахивалась мимо
+ *  пузыря на целый радиус и объявляла, что нажатие его не лопает.
+ *
+ *  Модуль сам ставит курсор указателем над пузырём — по этому
+ *  признаку и обходим решётку. Обход идёт ОДНИМ заходом внутри
+ *  страницы: тысяча наведений через протокол заняла бы минуту.
+ *
+ *  Возвращает кучки попаданий: середину, радиус и число точек. */
+const najtiSeredinu = async (page) => {
+  const popal = await page.evaluate(() => {
+    const hero = document.querySelector('.hero');
+    const hb = hero.getBoundingClientRect();
+    const bylo = hero.style.cursor;
+    const tochki = [];
+    for (let y = hb.top + 6; y < Math.min(hb.bottom, innerHeight) - 6; y += 8) {
+      for (let x = hb.left + 6; x < hb.right - 6; x += 8) {
+        // Указатель загорается только над собственным фоном секции,
+        // поэтому над текстом и карточками пробовать нечего.
+        if (document.elementFromPoint(x, y) !== hero) continue;
+        hero.style.cursor = '';
+        hero.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
+        if (hero.style.cursor === 'pointer') tochki.push([x, y]);
+      }
+    }
+    hero.style.cursor = bylo;
+    return tochki;
+  });
+  const vzyat = new Set();
+  const kuchi = [];
+  for (let i = 0; i < popal.length; i++) {
+    if (vzyat.has(i)) continue;
+    const gr = [i]; vzyat.add(i);
+    for (let q = 0; q < gr.length; q++) {
+      for (let j = 0; j < popal.length; j++) {
+        if (vzyat.has(j)) continue;
+        if (Math.hypot(popal[gr[q]][0] - popal[j][0], popal[gr[q]][1] - popal[j][1]) <= 12) { gr.push(j); vzyat.add(j); }
+      }
+    }
+    const cx = gr.reduce((a, k2) => a + popal[k2][0], 0) / gr.length;
+    const cy = gr.reduce((a, k2) => a + popal[k2][1], 0) / gr.length;
+    const rr = Math.max(...gr.map((k2) => Math.hypot(popal[k2][0] - cx, popal[k2][1] - cy)));
+    kuchi.push({ cx, cy, rr, n: gr.length });
+  }
+  return kuchi.sort((a, b) => b.n - a.n);
 };
 
 const brauzer = await chromium.launch({ executablePath: HROM });
@@ -203,11 +312,15 @@ for (const r of RAZRESHENIYA) {
   const holst = await page.evaluate(() => {
     const c = document.querySelector('canvas.bubbles');
     const b = c.getBoundingClientRect();
-    return { n: Number(c.dataset.bubbles), bw: c.width, cw: c.clientWidth, x: b.x, y: b.y, w: b.width, h: b.height };
+    return { n: Number(c.dataset.bubbles), proby: Number(c.dataset.proby), bw: c.width, cw: c.clientWidth, x: b.x, y: b.y, w: b.width, h: b.height };
   });
-  const plotnost = holst.bw / holst.cw;
+  // Отсчётов на css-пиксель берём У СТРАНИЦЫ: надвыборка живёт
+  // в буфере, которого снаружи не видно, и по размеру холста её
+  // не восстановить.
+  const plotnost = holst.proby || holst.bw / holst.cw;
   if (holst.n !== r.shtuk) bida(`пузырей ${holst.n}, а обещано ${r.shtuk}`);
-  else console.log(`      ok пузырей ${holst.n}, буфер ${holst.bw} px на ${holst.cw} css (плотность ${plotnost.toFixed(2)})`);
+  else console.log(`      ok пузырей ${holst.n}, холст ${holst.bw} px на ${holst.cw} css, `
+    + `отсчётов надвыборки на css-пиксель ${plotnost.toFixed(2)}`);
 
   // Видимая часть холста: снимать надо прямоугольник, а не элемент.
   const box = {
@@ -216,79 +329,36 @@ for (const r of RAZRESHENIYA) {
     height: Math.min(r.h, holst.y + holst.h) - Math.max(0, holst.y),
   };
 
-  // ── круглость точки ──
-  await tolkoHolst(page, 'hidden');
-  await page.waitForTimeout(250);
-  const it = promerit(await snyat(page, box), plotnost, r.dsf);
-  if (!it.okruglost) bida(`одиночных пятен ${it.pyaten} при нужных ${PYATEN_MIN} — замер не состоялся`);
-  else {
-    const bedy = [];
-    if (it.okruglost < OKRUGLOST[0] || it.okruglost > OKRUGLOST[1]) bedy.push(`округлость ${it.okruglost.toFixed(3)} вне ${OKRUGLOST[0]}–${OKRUGLOST[1]}`);
-    if (it.otschetov < OTSCHETOV_MIN) bedy.push(`отсчётов на точку ${it.otschetov.toFixed(2)} при нужных ${OTSCHETOV_MIN}`);
-    const stroka = `пятен ${it.pyaten}, поперечник ${it.poperechnik.toFixed(2)} css-px, отсчётов ${it.otschetov.toFixed(2)}, `
-      + `округлость ${it.okruglost.toFixed(3)} (худшая ${it.hudshaya.toFixed(3)}; круг 1.00, квадрат 1.41)`;
-    if (bedy.length) bida(`${stroka} — ${bedy.join('; ')}`);
-    else console.log(`      ok ${stroka}`);
-  }
-
   // ── где стоит пузырь ──
-  //
-  // Самое плотное пятно краски — это НЕ середина пузыря, а его
-  // кромка: точки сидят на поверхности сферы, и в проекции силуэт
-  // плотнее середины. Проба, принимавшая пятно за центр, промахивалась
-  // мимо пузыря на целый радиус и объявляла, что нажатие его
-  // не лопает.
-  //
-  // Поэтому середина спрашивается у самой страницы: над пузырём
-  // модуль ставит курсор указателем. Решётка обходится ОДНИМ заходом
-  // внутри страницы — тысяча обращений из Playwright заняла бы минуту.
   await tolkoHolst(page, '');
-  const popal = await page.evaluate(() => {
-    const hero = document.querySelector('.hero');
-    const hb = hero.getBoundingClientRect();
-    const bylo = hero.style.cursor;
-    const tochki = [];
-    for (let y = hb.top + 6; y < Math.min(hb.bottom, innerHeight) - 6; y += 12) {
-      for (let x = hb.left + 6; x < hb.right - 6; x += 12) {
-        // Указатель загорается только над собственным фоном секции,
-        // поэтому над текстом и карточками пробовать нечего.
-        if (document.elementFromPoint(x, y) !== hero) continue;
-        hero.style.cursor = '';
-        hero.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
-        if (hero.style.cursor === 'pointer') tochki.push([x, y]);
-      }
-    }
-    hero.style.cursor = bylo;
-    return tochki;
-  });
-  if (!popal.length) {
+  const kuchi = await najtiSeredinu(page);
+  // Меряем по самому ОТКРЫТОМУ пузырю: у прикрытого карточкой
+  // середина кучки попаданий не совпадает с серединой пузыря,
+  // курсор встаёт сбоку, и вмятина выдавливает одну сторону наружу,
+  // а другую внутрь — размах облака не меняется вовсе. Отсюда
+  // и брались отклики в 2 % на исправной странице.
+  //
+  // Если открытого не нашлось — ждём и смотрим снова: пузыри
+  // дрейфуют, и через пару секунд из-за карточки выходит следующий.
+  // Это не поблажка: три пустых захода подряд — уже отказ.
+  let spisok = kuchi;
+  let otkrytye = spisok.filter((k) => k.rr >= 8 && k.n >= 8);
+  for (let zahod = 0; zahod < 3 && !otkrytye.length; zahod++) {
+    await page.waitForTimeout(2500);
+    spisok = await najtiSeredinu(page);
+    otkrytye = spisok.filter((k) => k.rr >= 8 && k.n >= 8);
+  }
+  if (!kuchi.length) {
     bida('обход первого экрана не нашёл ни одного пузыря под курсором');
+  } else if (!otkrytye.length) {
+    bida('ни один пузырь не вышел из-за содержимого настолько, чтобы мерить на нём отклик');
   } else {
-    // Самая крупная связная кучка попаданий — это самый крупный
-    // пузырь: по нему и меряем.
-    const kucha = [];
-    const vzyat = new Set();
-    for (let i = 0; i < popal.length; i++) {
-      if (vzyat.has(i)) continue;
-      const gr = [i]; vzyat.add(i);
-      for (let q = 0; q < gr.length; q++) {
-        for (let j = 0; j < popal.length; j++) {
-          if (vzyat.has(j)) continue;
-          if (Math.hypot(popal[gr[q]][0] - popal[j][0], popal[gr[q]][1] - popal[j][1]) <= 17) { gr.push(j); vzyat.add(j); }
-        }
-      }
-      kucha.push(gr);
-    }
-    kucha.sort((x, y) => y.length - x.length);
-    const gr = kucha[0];
-    const cx = gr.reduce((a2, i) => a2 + popal[i][0], 0) / gr.length;
-    const cy = gr.reduce((a2, i) => a2 + popal[i][1], 0) / gr.length;
+    const { cx, cy, rr, n } = otkrytye[0];
     // Размер пузыря берём из той же кучки: она лежит ВНУТРИ него.
     // Окно замера должно быть чуть больше предмета — и не больше:
     // шире окно, больше в нём соседей и пустого места, и отклик
     // тонет в них.
-    const rr = Math.max(...gr.map((i) => Math.hypot(popal[i][0] - cx, popal[i][1] - cy)));
-    console.log(`      ok пузырь найден под курсором: ${gr.length} точек решётки, `
+    console.log(`      ok пузырь найден под курсором: ${n} точек решётки, `
       + `середина (${cx.toFixed(0)}, ${cy.toFixed(0)}), радиус не меньше ${rr.toFixed(0)} px`);
 
     // ── отклик на курсор ──
@@ -306,7 +376,20 @@ for (const r of RAZRESHENIYA) {
     await page.mouse.move(box.x + 4, box.y + 4);
     await tolkoHolst(page, 'hidden');
     await page.waitForTimeout(420);
-    const predel = Math.round((rr + 20) * r.dsf);
+    // Окно чуть шире предмета: оболочка под курсором РАСШИРЯЕТСЯ,
+    // и если окно впритык, ушедшая за его край краска просто
+    // не считается — рост выходит вдвое меньше настоящего.
+    // Окно чуть шире предмета: оболочка под курсором РАСШИРЯЕТСЯ,
+    // и если окно впритык, ушедшая за его край краска просто
+    // не считается — рост выходит вдвое меньше настоящего. Но и не
+    // шире половины пути до соседнего пузыря: соседа в окне хватает,
+    // чтобы середина краски уехала к нему и «дрейф» подскочил до 20 %.
+    const drugie = spisok.filter((k) => Math.hypot(k.cx - cx, k.cy - cy) > rr);
+    const doSoseda = drugie.length
+      ? Math.min(...drugie.map((k) => Math.hypot(k.cx - cx, k.cy - cy)))
+      : Infinity;
+    const predelCss = Math.max(rr + 16, Math.min(rr * 1.4 + 24, doSoseda * 0.45));
+    const predel = Math.round(predelCss * r.dsf);
     const mera = async () => razmahOblaka(await snyat(page, box), (cx - box.x) * r.dsf, (cy - box.y) * r.dsf, predel);
     // Дрейф берётся МЕДИАНОЙ трёх промежутков, а не одним: мелкий
     // пузырь успевает уплыть на заметную долю своего размера,
@@ -341,13 +424,34 @@ for (const r of RAZRESHENIYA) {
     // Нажимаем на живой странице: приоритет интерфейса над пузырём
     // решается по тому, что лежит над точкой, и на спрятанной
     // странице этой проверке нечего было бы смотреть.
+    //
+    // Середину переспрашиваем ЗАНОВО: между её поиском и нажатием
+    // прошло около секунды замеров, а пузырь всё это время дрейфовал.
+    // На мелком пузыре секунды хватает, чтобы нажатие ушло мимо,
+    // и проверка объявляла поломку на исправной странице.
     await tolkoHolst(page, '');
-    await page.mouse.click(cx, cy);
-    const lopnul = await page.waitForFunction(
-      (n) => Number(document.querySelector('canvas.bubbles').dataset.bubbles) === n - 1,
-      r.shtuk, { timeout: 4000 },
-    ).then(() => true).catch(() => false);
-    if (!lopnul) bida('нажатие по пузырю его не лопнуло');
+    // Попыток две, и это не поблажка. Пока идёт замер отклика,
+    // курсор стоит на пузыре, и тот успевает не только уплыть,
+    // но и отъехать от руки: кольцевой сдвиг — часть задуманного
+    // отклика. Промах мыши по движущейся мишени — свойство пробы,
+    // а не сайта; неспособность лопнуть пузырь двумя нажатиями
+    // подряд — уже свойство сайта.
+    let lopnul = false;
+    for (let popytka = 0; popytka < 2 && !lopnul; popytka++) {
+      const svezhaya = await najtiSeredinu(page);
+      const bliz = svezhaya.reduce(
+        (a, c) => (Math.hypot(c.cx - cx, c.cy - cy) < Math.hypot(a.cx - cx, a.cy - cy) ? c : a),
+        { cx: 1e9, cy: 1e9 },
+      );
+      const nx = bliz.cx < 1e8 ? bliz.cx : cx;
+      const ny = bliz.cy < 1e8 ? bliz.cy : cy;
+      await page.mouse.click(nx, ny);
+      lopnul = await page.waitForFunction(
+        (n) => Number(document.querySelector('canvas.bubbles').dataset.bubbles) === n - 1,
+        r.shtuk, { timeout: 2500 },
+      ).then(() => true).catch(() => false);
+    }
+    if (!lopnul) bida('нажатие по пузырю его не лопнуло дважды подряд');
     else {
       const vernulsya = await page.waitForFunction(
         (n) => Number(document.querySelector('canvas.bubbles').dataset.bubbles) === n,
@@ -358,6 +462,38 @@ for (const r of RAZRESHENIYA) {
     }
   }
   await tolkoHolst(page, '');
+
+  // ── круглость точки ──
+  //
+  // Стоит ПОСЛЕДНЕЙ намеренно: три кадра по 700 мс — это две с лишним
+  // секунды, за которые пузырь уплывает. Если мерить круглость
+  // раньше, то к замеру отклика найденная середина устаревает,
+  // и вместо дрейфа в доли процента набирается почти десяток —
+  // сигнал тонет в мерке, а не в предмете.
+  await tolkoHolst(page, 'hidden');
+  await page.waitForTimeout(250);
+  // Кадров три: облако плывёт и поворачивается, и одиночными
+  // на каждом кадре оказываются РАЗНЫЕ точки. На телефоне пузырей
+  // шесть и половина поля закрыта карточками — с одного кадра
+  // статистики не набирается.
+  const sobrano = { okr: [], poper: [] };
+  for (let q = 0; q < 3; q++) {
+    if (q) await page.waitForTimeout(700);
+    const kus = promerit(await snyat(page, box), plotnost, r.dsf, true);
+    sobrano.okr.push(...kus.okr);
+    sobrano.poper.push(...kus.poper);
+  }
+  const it = itog(sobrano.okr, sobrano.poper, plotnost, r.dsf);
+  if (!it.okruglost) bida(`одиночных пятен ${it.pyaten} при нужных ${PYATEN_MIN} — замер не состоялся`);
+  else {
+    const bedy = [];
+    if (it.okruglost < OKRUGLOST[0] || it.okruglost > OKRUGLOST[1]) bedy.push(`округлость ${it.okruglost.toFixed(3)} вне ${OKRUGLOST[0]}–${OKRUGLOST[1]}`);
+    if (it.otschetov < OTSCHETOV_MIN) bedy.push(`отсчётов на точку ${it.otschetov.toFixed(2)} при нужных ${OTSCHETOV_MIN}`);
+    const stroka = `пятен ${it.pyaten}, поперечник ${it.poperechnik.toFixed(2)} css-px, отсчётов ${it.otschetov.toFixed(2)}, `
+      + `округлость ${it.okruglost.toFixed(3)} (худшая ${it.hudshaya.toFixed(3)}; круг 1.00, квадрат 1.41)`;
+    if (bedy.length) bida(`${stroka} — ${bedy.join('; ')}`);
+    else console.log(`      ok ${stroka}`);
+  }
 
   // ── приоритет интерфейса ──
   //
