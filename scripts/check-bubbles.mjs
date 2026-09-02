@@ -243,8 +243,12 @@ const najtiSeredinu = async (page) => {
     const hb = hero.getBoundingClientRect();
     const bylo = hero.style.cursor;
     const tochki = [];
-    for (let y = hb.top + 6; y < Math.min(hb.bottom, innerHeight) - 6; y += 12) {
-      for (let x = hb.left + 6; x < hb.right - 6; x += 12) {
+    // Шаг мелкий: на телефоне первый экран узкий и почти весь занят
+    // текстом и карточками, свободного фона остаётся полоса. При шаге
+    // в двенадцать пикселей на пузырь приходилось две-три пробы,
+    // кучка выходила вырожденной, и мерить было не на чем.
+    for (let y = hb.top + 4; y < Math.min(hb.bottom, innerHeight) - 4; y += 7) {
+      for (let x = hb.left + 4; x < hb.right - 4; x += 7) {
         // Указатель загорается только над собственным фоном секции,
         // поэтому над текстом и карточками пробовать нечего.
         if (document.elementFromPoint(x, y) !== hero) continue;
@@ -264,7 +268,7 @@ const najtiSeredinu = async (page) => {
     for (let q = 0; q < gr.length; q++) {
       for (let j = 0; j < popal.length; j++) {
         if (vzyat.has(j)) continue;
-        if (Math.hypot(popal[gr[q]][0] - popal[j][0], popal[gr[q]][1] - popal[j][1]) <= 17) { gr.push(j); vzyat.add(j); }
+        if (Math.hypot(popal[gr[q]][0] - popal[j][0], popal[gr[q]][1] - popal[j][1]) <= 11) { gr.push(j); vzyat.add(j); }
       }
     }
     const cx = gr.reduce((a, k2) => a + popal[k2][0], 0) / gr.length;
@@ -325,7 +329,7 @@ for (const r of RAZRESHENIYA) {
   // не набирается вовсе. Если такого нет — ждём и смотрим снова:
   // пузыри дрейфуют и через пару секунд выходят из-за карточки.
   // Три пустых захода подряд — уже отказ.
-  const godnye = (spisok) => spisok.filter((k) => k.n >= 4 && k.rr >= 8);
+  const godnye = (spisok) => spisok.filter((k) => k.n >= 6 && k.rr >= 8);
   for (let zahod = 0; zahod < 3 && !godnye(kuchi).length; zahod++) {
     await page.waitForTimeout(2500);
     kuchi = await najtiSeredinu(page);
