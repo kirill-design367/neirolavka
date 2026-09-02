@@ -216,21 +216,44 @@ const najtiYadro = (png, storona) => {
 const razmahOblaka = (png, cx, cy, predel) => {
   const { width: W, height: H } = png;
   const { yark, fon } = fonKadra(png);
-  let s = 0; let m = 0;
   const x0 = Math.max(0, Math.round(cx - predel));
   const x1 = Math.min(W - 1, Math.round(cx + predel));
   const y0 = Math.max(0, Math.round(cy - predel));
   const y1 = Math.min(H - 1, Math.round(cy + predel));
+  // Сначала СЕРЕДИНА КРАСКИ в окне, и только потом размах вокруг неё.
+  //
+  // Вокруг заданной точки считать нельзя: пузырь дрейфует, за сотню
+  // миллисекунд уходит на пиксель-другой, и размах растёт от одного
+  // этого. На мелком пузыре такой мнимый дрейф набирал 5 % — больше
+  // половины полезного сигнала. Вокруг собственной середины кадра
+  // сдвиг не значит ничего, и остаётся только деформация, ради
+  // которой проба и написана.
+  //
+  // Работает это только вместе с мелкой решёткой поиска: пока курсор
+  // ставился в середину грубой кучки, он попадал сбоку, и сжатие
+  // вдоль оси съедало ровно ту часть сигнала, которую освобождал
+  // этот приём.
+  let mx = 0; let my = 0; let m0 = 0;
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
-      const d = Math.hypot(x - cx, y - cy);
-      if (d > predel) continue;
+      if (Math.hypot(x - cx, y - cy) > predel) continue;
       const v = Math.abs(yark(x, y) - fon);
       if (v < 8) continue;
-      m += v; s += v * d;
+      m0 += v; mx += v * x; my += v * y;
     }
   }
-  return m < 200 ? NaN : s / m;
+  if (m0 < 200) return NaN;
+  const sx = mx / m0; const sy = my / m0;
+  let s = 0; let m = 0;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (Math.hypot(x - cx, y - cy) > predel) continue;
+      const v = Math.abs(yark(x, y) - fon);
+      if (v < 8) continue;
+      m += v; s += v * Math.hypot(x - sx, y - sy);
+    }
+  }
+  return s / m;
 };
 
 /** Где стоят пузыри — спрашиваем у самой страницы: над пузырём
