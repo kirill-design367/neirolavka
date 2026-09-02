@@ -74,6 +74,9 @@ jobs:
       - name: Пузыри — число, отклик, лопание, отложенность
         run: node scripts/check-bubbles.mjs "$ADRES"
 
+      - name: Пузыри — кромка точки на трёх разрешениях в обеих темах
+        run: node scripts/check-bubble-edge.mjs "$ADRES"
+
       - name: Темы — вспышка при загрузке и prefers-reduced-motion
         run: node scripts/check-theme-motion.mjs "$ADRES"
 
