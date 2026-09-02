@@ -148,8 +148,8 @@ function spread(m, W, H, cx0, cy0, box) {
 }
 
 for (const vp of [
-  { name: 'десктоп', w: 1512, h: 900, lo: 18, hi: 19, mobile: false },
-  { name: 'мобильная', w: 390, h: 844, lo: 10, hi: 11, mobile: true },
+  { name: 'десктоп', w: 1512, h: 900, lo: 9, hi: 10, mobile: false },
+  { name: 'мобильная', w: 390, h: 844, lo: 5, hi: 6, mobile: true },
 ]) {
   const ctx = await browser.newContext({
     viewport: { width: vp.w, height: vp.h },
