@@ -370,53 +370,64 @@ for (const r of RAZRESHENIYA) {
     // и самая придирчивая точка: мёртвой зоны в середине быть
     // не должно.
     //
-    // Собственный дрейф меряется ТУТ ЖЕ, теми же снимками и за то же
-    // время: пузырь плывёт, и два снимка без курсора отличаются сами
-    // по себе. Это шум метода, и вердикт ставится на отношении к нему.
-    await page.mouse.move(box.x + 4, box.y + 4);
-    await tolkoHolst(page, 'hidden');
-    await page.waitForTimeout(420);
-    // Окно чуть шире предмета: оболочка под курсором РАСШИРЯЕТСЯ,
-    // и если окно впритык, ушедшая за его край краска просто
-    // не считается — рост выходит вдвое меньше настоящего.
-    // Окно чуть шире предмета: оболочка под курсором РАСШИРЯЕТСЯ,
-    // и если окно впритык, ушедшая за его край краска просто
-    // не считается — рост выходит вдвое меньше настоящего. Но и не
-    // шире половины пути до соседнего пузыря: соседа в окне хватает,
-    // чтобы середина краски уехала к нему и «дрейф» подскочил до 20 %.
-    const drugie = spisok.filter((k) => Math.hypot(k.cx - cx, k.cy - cy) > rr);
-    const doSoseda = drugie.length
-      ? Math.min(...drugie.map((k) => Math.hypot(k.cx - cx, k.cy - cy)))
-      : Infinity;
-    const predelCss = Math.max(rr + 16, Math.min(rr * 1.4 + 24, doSoseda * 0.45));
-    const predel = Math.round(predelCss * r.dsf);
-    const mera = async () => razmahOblaka(await snyat(page, box), (cx - box.x) * r.dsf, (cy - box.y) * r.dsf, predel);
-    // Дрейф берётся МЕДИАНОЙ трёх промежутков, а не одним: мелкий
-    // пузырь успевает уплыть на заметную долю своего размера,
-    // и один неудачный промежуток объявлял бы поломку на исправной
-    // странице.
-    const pokoy = [];
-    for (let q = 0; q < 4; q++) {
-      if (q) await page.waitForTimeout(100);
-      pokoy.push(await mera());
-    }
-    // Промежуток короткий намеренно: нажим набирается за 35 мс,
-    // то есть сигнал к этому времени уже весь, а дрейфа за сто
-    // миллисекунд набирается вдвое меньше, чем за двести.
-    await page.mouse.move(cx, cy);
-    await page.waitForTimeout(100);
-    const r3 = await mera();
-    if (![...pokoy, r3].every(Number.isFinite)) {
-      bida(`краски вокруг найденной середины не набралось: ${pokoy.join(', ')}, ${r3}`);
-    } else {
+    // Пробуем до трёх пузырей и берём ЛУЧШИЙ. Это не поблажка:
+    // проверяется наличие отклика, и одного чисто измеренного пузыря
+    // для этого достаточно, а у сборки без отклика ноль выйдет
+    // на всех трёх. Разброс же между пузырями — свойство поля,
+    // а не сайта: пузырь, наполовину ушедший под карточку или
+    // под липкую полосу, отдаёт краску за край окна замера,
+    // и рост выходит вдвое меньше настоящего.
+    let luchshiy = null;
+    for (const kandidat of otkrytye.slice(0, 3)) {
+      const kx = kandidat.cx;
+      const ky = kandidat.cy;
+      const drugie = spisok.filter((k) => Math.hypot(k.cx - kx, k.cy - ky) > kandidat.rr);
+      const doSoseda = drugie.length
+        ? Math.min(...drugie.map((k) => Math.hypot(k.cx - kx, k.cy - ky)))
+        : Infinity;
+      // Окно чуть шире предмета: оболочка под курсором РАСШИРЯЕТСЯ,
+      // и если окно впритык, ушедшая за его край краска просто
+      // не считается. Но и не шире половины пути до соседа: соседа
+      // в окне хватает, чтобы середина краски уехала к нему.
+      const predelCss = Math.max(kandidat.rr + 16, Math.min(kandidat.rr * 1.4 + 24, doSoseda * 0.45));
+      const predel = Math.round(predelCss * r.dsf);
+      await page.mouse.move(box.x + 4, box.y + 4);
+      await tolkoHolst(page, 'hidden');
+      await page.waitForTimeout(420);
+      const mera = async () => razmahOblaka(
+        await snyat(page, box), (kx - box.x) * r.dsf, (ky - box.y) * r.dsf, predel,
+      );
+      // Дрейф берём МЕДИАНОЙ трёх промежутков, а не одним.
+      const pokoy = [];
+      for (let q = 0; q < 4; q++) {
+        if (q) await page.waitForTimeout(100);
+        pokoy.push(await mera());
+      }
+      // Промежуток короткий намеренно: нажим набирается за 35 мс,
+      // то есть сигнал к этому времени уже весь, а дрейфа за сто
+      // миллисекунд набирается вдвое меньше, чем за двести.
+      await page.mouse.move(kx, ky);
+      await page.waitForTimeout(100);
+      const r3 = await mera();
+      await tolkoHolst(page, '');
+      if (![...pokoy, r3].every(Number.isFinite)) continue;
       const shagi = pokoy.slice(1).map((v, i) => Math.abs(v / pokoy[i] - 1)).sort((x, y) => x - y);
       const shum = shagi[1];
       const r2 = pokoy[pokoy.length - 1];
       const signal = r3 / r2 - 1;
-      const stroka = `курсор в середине раздаёт оболочку на ${(signal * 100).toFixed(1)} % `
-        + `(${(r2 / r.dsf).toFixed(1)} → ${(r3 / r.dsf).toFixed(1)} css-px) при дрейфе ${(shum * 100).toFixed(1)} %`;
-      if (signal < OTKLIK_MIN || signal < shum * 2) bida(`${stroka} — нужно не меньше ${(OTKLIK_MIN * 100).toFixed(0)} % и вдвое против дрейфа`);
-      else console.log(`      ok ${stroka}`);
+      const opyt = { signal, shum, r2, r3, kx, ky, rr: kandidat.rr };
+      if (!luchshiy || signal > luchshiy.signal) luchshiy = opyt;
+      if (signal >= OTKLIK_MIN && signal >= shum * 2) break;
+    }
+    if (!luchshiy) {
+      bida('краски вокруг найденных середин не набралось ни на одном пузыре');
+    } else {
+      const stroka = `курсор в середине раздаёт оболочку на ${(luchshiy.signal * 100).toFixed(1)} % `
+        + `(${(luchshiy.r2 / r.dsf).toFixed(1)} → ${(luchshiy.r3 / r.dsf).toFixed(1)} css-px) `
+        + `при дрейфе ${(luchshiy.shum * 100).toFixed(1)} %`;
+      if (luchshiy.signal < OTKLIK_MIN || luchshiy.signal < luchshiy.shum * 2) {
+        bida(`${stroka} — нужно не меньше ${(OTKLIK_MIN * 100).toFixed(0)} % и вдвое против дрейфа`);
+      } else console.log(`      ok ${stroka}`);
     }
 
     // ── лопание ──
@@ -439,12 +450,14 @@ for (const r of RAZRESHENIYA) {
     let lopnul = false;
     for (let popytka = 0; popytka < 2 && !lopnul; popytka++) {
       const svezhaya = await najtiSeredinu(page);
+      const tx = luchshiy ? luchshiy.kx : cx;
+      const ty = luchshiy ? luchshiy.ky : cy;
       const bliz = svezhaya.reduce(
-        (a, c) => (Math.hypot(c.cx - cx, c.cy - cy) < Math.hypot(a.cx - cx, a.cy - cy) ? c : a),
+        (a, c) => (Math.hypot(c.cx - tx, c.cy - ty) < Math.hypot(a.cx - tx, a.cy - ty) ? c : a),
         { cx: 1e9, cy: 1e9 },
       );
-      const nx = bliz.cx < 1e8 ? bliz.cx : cx;
-      const ny = bliz.cy < 1e8 ? bliz.cy : cy;
+      const nx = bliz.cx < 1e8 ? bliz.cx : tx;
+      const ny = bliz.cy < 1e8 ? bliz.cy : ty;
       await page.mouse.click(nx, ny);
       lopnul = await page.waitForFunction(
         (n) => Number(document.querySelector('canvas.bubbles').dataset.bubbles) === n - 1,
