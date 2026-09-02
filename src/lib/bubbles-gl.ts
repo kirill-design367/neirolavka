@@ -264,10 +264,25 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   if (!gl) return null; // WebGL нет — просто ничего не показываем
 
   const phone = window.matchMedia('(max-width: 640px)').matches;
-  // На телефоне пузырей меньше не из скупости к кадрам, а из-за места.
-  // Свободного поля там одна полоса — над строками подзаголовка,
-  // и четырнадцать штук в неё набивались комом.
-  const COUNT = phone ? 11 : 19;
+
+  // Число пузырей — это ПЛОТНОСТЬ НА ЭКРАНЕ, помноженная на новую
+  // площадь. Прежде холст занимал 900×504 на десктопе и 366×733
+  // на телефоне; теперь он во всё окно, и площадь выросла ровно
+  // втрое и в 1.23 раза. Отсюда 19 → 57 и 11 → 14: на глаз плотность
+  // та же, что была, просто поля стало больше.
+  //
+  // Растить число вслед за ДЛИНОЙ страницы нельзя: состояние пузыря
+  // уходит в шейдер массивами `uPos[N]` и `uRot[N]`, то есть 2N
+  // векторов uniform, а WebGL гарантирует всего 128 на вершинный
+  // шейдер. Длину страницы отрабатывает возвращение пузыря с другой
+  // стороны полосы обитания, а не их количество.
+  const HOTIM = phone ? 14 : 57;
+  // Потолок берём у самой машины, а не на веру: на устройстве
+  // с гарантированным минимумом 57 пузырей просто не собрались бы,
+  // и шейдер не слинковался бы вовсе. Восемь векторов оставлены
+  // под матрицы и скаляры.
+  const VEKTOROV = gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS) as number;
+  const COUNT = Math.max(6, Math.min(HOTIM, Math.floor((VEKTOROV - 8) / 2)));
   /** Границы радиусов. Разброс широкий НАМЕРЕННО: пузыри одного
    *  калибра читаются россыпью одинаковых бусин, а не живым полем. */
   const R_MIN = phone ? 10 : 15;
@@ -282,10 +297,23 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   let dpr = 1;
   let camZ = 1;
   let rects: Rect[] = [];
-  /** Видимая часть холста в мировых координатах. Холст выходит левее
-   *  кромки окна, и без этих границ пятая часть пузырей плавала бы
-   *  в отрезанной области: на экране их было бы меньше, чем в коде. */
+  /** Полоса обитания в ПОСТРАНИЧНЫХ координатах: +y вверх, ноль
+   *  у верха документа. Пересчитывается каждый кадр — она едет вместе
+   *  с прокруткой. */
   let vis = { xmin: 0, xmax: 0, ymin: 0, ymax: 0 };
+  /** Запас полосы за кромками окна. Возвращение пузыря обязано
+   *  случаться там, где его не видно. */
+  const ZAPAS = 130;
+  /** Прокрутка и высота документа на текущем кадре: читаются один раз
+   *  в начале такта, а не по ходу — иначе это принудительная
+   *  раскладка по нескольку раз за кадр. */
+  let scrollTop = 0;
+  let docH = 1;
+  /** Что считается рабочим текстом НА ФОНЕ СТРАНИЦЫ. Плашки, карточки
+   *  и чек сюда не входят: они непрозрачны, пузырь за ними не виден
+   *  вовсе и контрасту не мешает. */
+  const TEKST = '.hero__lead, .hero__title, .shop__title, .shop__lead, '
+    + '.steps__title, .step__title, .step__text, .footer__title';
 
   // ─── Пул пузырей ────────────────────────────────────────────
   const bubbles: Bubble[] = [];
@@ -448,35 +476,33 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     if (canvas.dataset.bubbles !== n) canvas.dataset.bubbles = n;
   };
 
-  // ─── Размеры и запретные прямоугольники ─────────────────────
-  const measureBand = () => {
-    // Отсчёт от ХОЛСТА: начало мировых координат лежит в его центре.
-    const cb = canvas.getBoundingClientRect();
-    const pad = 10;
-    const put = (sel: string, keep: number): Rect | null => {
-      const el = host.querySelector(sel);
-      if (!el) return null;
-      const b = el.getBoundingClientRect();
-      if (b.width < 1 || b.height < 1) return null;
+  // ─── Запретные прямоугольники ───────────────────────────────
+  //
+  // Пузыри лежат ПОД содержимым, и краска на буквы не попадает. Но
+  // у текста, стоящего прямо на фоне страницы, фоном становится сам
+  // пузырь, а вместе с ним и контраст: замер по настоящим пикселям
+  // в тёмной теме давал на самой плотной краске 1.54:1 у приглушённого
+  // текста при пороге 4.5. Плотностью краски это не лечится — в
+  // сумерках она СВЕТЛЕЕ фона и идёт навстречу светлому тексту.
+  // Поэтому пузыри обходят рабочий текст по всей странице.
+  //
+  // Дорого (чтение геометрии десятка узлов), поэтому только на
+  // изменение размеров и высоты документа, а не каждый кадр:
+  // относительно СТРАНИЦЫ текст не двигается.
+  const zameritTekst = () => {
+    const sy = window.scrollY;
+    const pad = 6;
+    rects = [...document.querySelectorAll(TEKST)].map((el) => {
+      const q = el.getBoundingClientRect();
+      if (q.width < 4 || q.height < 4) return null;
       return {
-        top: h / 2 - (b.top - cb.top) + pad,
-        bottom: h / 2 - (b.bottom - cb.top) - pad,
-        left: b.left - cb.left - w / 2 - pad,
-        right: b.right - cb.left - w / 2 + pad,
-        keep,
+        top: -(q.top + sy) + pad,
+        bottom: -(q.bottom + sy) - pad,
+        left: q.left - w / 2 - pad,
+        right: q.right - w / 2 + pad,
+        keep: 1.15,
       };
-    };
-    // Блок условий добавлен к запретным не ради текста — он
-    // непрозрачный и сам всё закрывает, — а ради ЩЕЛЕЙ между
-    // карточками. Пузыри, плававшие за ним, высовывались в эти щели
-    // рваными полосками краски, и особенно скверно это выглядело
-    // на телефоне, где карточки идут стопкой во всю ширину: две трети
-    // поля уходило под них, и от четырнадцати пузырей на глазах
-    // оставалось три.
-    rects = [
-      put('.hero__lead', 1.95),
-      put('.terms', 1.05),
-    ].filter(Boolean) as Rect[];
+    }).filter(Boolean) as Rect[];
   };
 
   /** Накрывает ли пузырь какой-нибудь запретный прямоугольник. */
@@ -488,17 +514,34 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     return false;
   };
 
+  /** Полоса обитания в постраничных координатах. Едет с прокруткой:
+   *  сколько бы ни было страницы, рисуется ровно одно окно. */
+  const polosa = () => {
+    vis = {
+      xmin: -w / 2,
+      xmax: w / 2,
+      ymin: -(scrollTop + h + ZAPAS),
+      ymax: -(scrollTop - ZAPAS),
+    };
+  };
+
   /** Ставит пузырь в свободное место: не над строками подзаголовка,
    *  не вплотную к соседям и не туда, где только что лопнул
    *  предыдущий. */
   const place = (b: Bubble, avoid?: { x: number; y: number }) => {
+    // Место ищется по ВСЕЙ полосе: так расставляются пузыри при
+    // запуске и так возвращаются лопнувшие. Стороны у постановки
+    // больше нет — уход за кромку полосы решается переносом
+    // на её высоту прямо в такте, см. ниже.
+    const lo = vis.ymin + b.r * EDGE;
+    const hi = vis.ymax - b.r * EDGE;
     // Попыток стало больше: свободного поля убавилось (добавился
     // запрет на блок условий), а пузырей прибавилось, и прежние
     // двадцать четыре нет-нет да и исчерпывались — тогда срабатывал
     // запасной путь, который запреты не смотрит вовсе.
     for (let i = 0; i < 60; i++) {
       const x = rnd(vis.xmin + b.r * EDGE, vis.xmax - b.r * EDGE);
-      const y = rnd(vis.ymin + b.r * EDGE, vis.ymax - b.r * EDGE);
+      const y = rnd(lo, hi);
       if (inBand(x, y, b.r)) continue;
       if (avoid && Math.hypot(x - avoid.x, y - avoid.y) < 140) continue;
       // Не вплотную к уже стоящим: иначе десяток шаров ставится
@@ -519,20 +562,21 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     // и с тем же запасом от края, что и везде, иначе пузырь окажется
     // ближе к кромке, чем ему позволено, и будет от неё отскакивать.
     b.x = rnd(vis.xmin + b.r * EDGE, vis.xmax - b.r * EDGE);
-    b.y = vis.ymax - b.r * EDGE;
+    b.y = rnd(lo, hi);
     b.z = 0;
   };
 
   const resize = () => {
-    // Геометрия считается от СЕКЦИИ и записывается холсту. Обратной
-    // связи нет: холст ничего не решает сам, он получает готовые
-    // числа. Левый край уходит ровно до кромки окна — ни пикселем
-    // дальше, иначе слой вылезает за экран и это ловит проверка
-    // разрешений.
-    const hb = host.getBoundingClientRect();
-    w = Math.max(1, Math.round(hb.left + hb.width));
-    h = Math.max(1, Math.round(hb.height));
-    canvas.style.left = `${-Math.round(hb.left)}px`;
+    // Холст закреплён по ОКНУ (position: fixed, inset: 0), а пузыри
+    // живут на СТРАНИЦЕ. Разница принципиальная и она про кадры: слой
+    // композитится каждый кадр целиком, и холст во всю высоту
+    // документа был бы втрое больше окна. Постраничные координаты
+    // дают ту же картину при постоянной цене.
+    //
+    // Размеры ставит скрипт, а не CSS: canvas — заменяемый элемент
+    // и при width: auto берёт своё собственное 300×150.
+    w = Math.max(1, Math.round(document.documentElement.clientWidth));
+    h = Math.max(1, Math.round(window.innerHeight));
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
     // Геометрия задана — можно показывать. До этого момента холст
@@ -552,22 +596,14 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     gl.useProgram(program);
     gl.uniformMatrix4fv(uProj, false, proj);
     gl.uniformMatrix4fv(uView, false, view);
-    measureBand();
-    // Видимая часть холста в мировых координатах. По ширине он теперь
-    // ровно от кромки окна до правого края колонки, а вот по высоте
-    // может уходить ниже экрана — там пузырям делать нечего.
-    const vh = window.innerHeight;
-    vis = {
-      xmin: -w / 2,
-      xmax: w / 2,
-      ymin: h / 2 - Math.min(h, vh - hb.top),
-      ymax: h / 2 - Math.max(0, -hb.top),
-    };
     gl.uniform1f(uSizeScale, dpr * camZ);
     gl.uniform1f(uCamZ, camZ);
+    scrollTop = window.scrollY;
+    docH = document.documentElement.scrollHeight;
+    zameritTekst();
+    polosa();
     for (const b of bubbles) {
       b.x = Math.max(vis.xmin + b.r * EDGE, Math.min(vis.xmax - b.r * EDGE, b.x));
-      b.y = Math.max(vis.ymin + b.r * EDGE, Math.min(vis.ymax - b.r * EDGE, b.y));
     }
   };
 
@@ -607,19 +643,49 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   const toward = (cur: number, aim: number, tau: number, dt: number) =>
     cur + (aim - cur) * (1 - Math.exp(-dt / tau));
 
-  const toWorld = (e: PointerEvent) => {
-    const rect = canvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left - w / 2, y: h / 2 - (e.clientY - rect.top) };
-  };
+  /** Экранная точка в ПОСТРАНИЧНЫЕ координаты пузырей. */
+  const toWorld = (e: PointerEvent) => ({
+    x: e.clientX - w / 2,
+    y: -(e.clientY + scrollTop),
+  });
 
-  /** Курсор над самим полем — независимо от того, что лежит сверху. */
-  const inField = (e: PointerEvent) => {
-    const r = canvas.getBoundingClientRect();
-    return e.clientX >= r.left && e.clientX <= r.right
-        && e.clientY >= r.top && e.clientY <= r.bottom;
-  };
+  /** Курсор в окне. Поле теперь во всё окно, так что проверять
+   *  нечего, кроме самого окна. */
+  const inField = (e: PointerEvent) =>
+    e.clientX >= 0 && e.clientX <= w && e.clientY >= 0 && e.clientY <= h;
 
   const INTERACTIVE = 'a, button, input, label, summary, [role="button"], [data-lenis-scrollable]';
+
+  /** Свободна ли точка от содержимого.
+   *
+   *  Пузыри лежат под всем содержимым, и приоритет над ними всегда
+   *  у интерфейса: над кнопкой, ссылкой, карточкой или чеком нажатие
+   *  достаётся им, а не пузырю. Список селекторов для этого не годится
+   *  — он устареет на первой же новой карточке. Признак берётся
+   *  общий: над точкой не должно быть НИ ОДНОГО непрозрачного слоя.
+   *
+   *  Корень и body пропускаем: их заливка — это и есть фон страницы,
+   *  он лежит ПОД холстом. */
+  const svobodno = (cx: number, cy: number) => {
+    for (const el of document.elementsFromPoint(cx, cy)) {
+      if (el === document.body || el === document.documentElement) break;
+      if (el === canvas) continue;
+      const cs = getComputedStyle(el);
+      if (cs.backgroundImage !== 'none') return false;
+      const bg = cs.backgroundColor;
+      if (bg && bg !== 'transparent' && !/rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/.test(bg)) {
+        const m = bg.match(/[\d.]+/g);
+        if (!m || m.length < 4 || Number(m[3]) > 0.05) return false;
+      }
+    }
+    return true;
+  };
+
+  /** Состояние указателя и когда его проверяли: дорогая половина
+   *  (elementsFromPoint и разбор стилей) считается не чаще раза
+   *  в 120 мс — стопка элементов под курсором за кадр не меняется. */
+  let ukazatel = false;
+  let proverenoV = 0;
 
   const hitTest = (x: number, y: number) => {
     let best: Bubble | null = null;
@@ -638,9 +704,16 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     pointer.x = x; pointer.y = y;
     if (pointerSoft.x > 5e4) { pointerSoft.x = pointer.x; pointerSoft.y = pointer.y; }
     pressTo = 1;
-    // Курсор меняем только над собственным фоном секции: над текстом
-    // и ссылками свой курсор, и подменять его нечем и незачем.
-    if (e.target === host) host.style.cursor = hitTest(x, y) ? 'pointer' : '';
+    // Указатель ставится только там, где пузырь ВИДЕН и по нему можно
+    // щёлкнуть: над непрозрачным содержимым нажатие всё равно
+    // достанется ему, и обещать пальцем несуществующее нельзя.
+    const pop = hitTest(x, y);
+    if (!pop) { if (ukazatel) { ukazatel = false; host.style.cursor = ''; } return; }
+    const teper = performance.now();
+    if (teper - proverenoV < 120 && ukazatel) return;
+    proverenoV = teper;
+    const nado = svobodno(e.clientX, e.clientY);
+    if (nado !== ukazatel) { ukazatel = nado; host.style.cursor = nado ? 'pointer' : ''; }
   };
 
   const onLeave = () => {
@@ -648,6 +721,7 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     // разгладиться плавно, а не отпустить скачком. Курсор паркуется
     // сам, когда нажим доедет до нуля.
     pressTo = 0;
+    ukazatel = false;
     host.style.cursor = '';
   };
 
@@ -655,6 +729,9 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     if (!inField(e)) return;
     const el = e.target as HTMLElement | null;
     if (el?.closest(INTERACTIVE)) return;
+    // Над непрозрачным содержимым нажатие достаётся ему: пузыря
+    // за карточкой или чеком всё равно не видно.
+    if (!svobodno(e.clientX, e.clientY)) return;
     const { x, y } = toWorld(e);
     // На касании курсора нет, поэтому реакцию оболочки запускает само
     // касание: палец ведут — пузыри проминаются, как под мышью.
@@ -680,9 +757,9 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   document.addEventListener('pointerleave', onLeave, { passive: true });
 
   // ─── Такт ───────────────────────────────────────────────────
-  let visible = true;
-  const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { rootMargin: '80px' });
-  io.observe(host);
+  // Прежде здесь стоял IntersectionObserver: холст жил в первом
+  // экране, и когда тот уезжал, рисовать было нечего. Теперь холст
+  // закреплён по окну и виден на любой высоте прокрутки.
 
   // Цвета читаются не каждый кадр: чтение переменной с корня — это
   // пересчёт стиля. В покое не читаем вовсе, а на смену темы открываем
@@ -698,7 +775,13 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     const t = time * 1000;
     const dt = prev ? Math.min(0.05, (t - prev) / 1000) : 0;
     prev = t;
-    if (!visible) return;
+
+    // Прокрутка и высота документа читаются РАЗ за кадр: это
+    // принудительная раскладка, и делать её по ходу такта нельзя.
+    scrollTop = window.scrollY;
+    const nowH = document.documentElement.scrollHeight;
+    if (Math.abs(nowH - docH) > 4) { docH = nowH; zameritTekst(); }
+    polosa();
 
     if (t < colorWindow && (frames & 3) === 0) readColors();
     frames++;
@@ -721,7 +804,7 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     }
     gl.useProgram(program);
     gl.uniform1f(uTime, t / 1000);
-    gl.uniform3f(uPointerU, pointer.x, pointer.y, pointer.z);
+    gl.uniform3f(uPointerU, pointer.x, pointer.y + scrollTop + h / 2, pointer.z);
     gl.uniform1f(uPress, press);
 
     for (let i = 0; i < bubbles.length; i++) {
@@ -796,8 +879,33 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
         const k6 = b.r * EDGE;
         if (b.x < vis.xmin + k6) { b.x = vis.xmin + k6; b.dir = Math.PI - b.dir; b.vx = Math.abs(b.vx); }
         if (b.x > vis.xmax - k6) { b.x = vis.xmax - k6; b.dir = Math.PI - b.dir; b.vx = -Math.abs(b.vx); }
-        if (b.y < vis.ymin + k6) { b.y = vis.ymin + k6; b.dir = -b.dir; b.vy = Math.abs(b.vy); }
-        if (b.y > vis.ymax - k6) { b.y = vis.ymax - k6; b.dir = -b.dir; b.vy = -Math.abs(b.vy); }
+        // По вертикали пузырь не отскакивает, а ПЕРЕНОСИТСЯ на высоту
+        // полосы — за кромкой окна, где этого не видно. Иначе полоса,
+        // едущая с прокруткой, тащила бы пузыри за собой, и они
+        // казались бы приклеенными к экрану вместо того, чтобы стоять
+        // на странице.
+        //
+        // Перенос именно НА ВЫСОТУ ПОЛОСЫ, а не «поставить заново
+        // в запас с другой стороны», и разница видна только при
+        // быстрой прокрутке. Полоса едет вместе с окном; прыжок
+        // к витрине сдвигает её сразу на две высоты, и ВСЕ пузыри
+        // разом оказываются снаружи. Постановка заново сваливала их
+        // в запас — то есть за кромку окна, — и человек, вернувшийся
+        // наверх, видел пустую страницу, пока они минуту сползали
+        // обратно в кадр. Перенос сохраняет расстановку: сколько
+        // бы полоса ни прыгнула, поле выглядит так же, как до прыжка.
+        //
+        // Кромка сходится точно: y = ymax + r за вычетом высоты
+        // полосы даёт ровно ymin + r. Цикл нужен на случай прыжка
+        // длиннее одной полосы.
+        const polosaH = vis.ymax - vis.ymin;
+        if (b.y > vis.ymax + b.r) {
+          spin(b);
+          do { b.y -= polosaH; } while (b.y > vis.ymax + b.r);
+        } else if (b.y < vis.ymin - b.r) {
+          spin(b);
+          do { b.y += polosaH; } while (b.y < vis.ymin - b.r);
+        }
 
         // Запретные прямоугольники: строки подзаголовка и блок условий.
         //
@@ -828,9 +936,11 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
         }
       }
 
+      // Постраничная координата → экранная: сцена ничего не знает
+      // о прокрутке, ей отдаётся уже готовое положение в кадре.
       const o4 = i * 4;
       posArr[o4] = b.x;
-      posArr[o4 + 1] = b.y;
+      posArr[o4 + 1] = b.y + scrollTop + h / 2;
       posArr[o4 + 2] = b.z;
       // Пустое место прячем нулевым радиусом: точки схлопываются
       // в центр и гаснут прозрачностью через pop = 1.
@@ -862,7 +972,7 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   gsap.ticker.add(step);
 
   const ro = new ResizeObserver(resize);
-  ro.observe(host);
+  ro.observe(document.documentElement);
 
   const onLost = (e: Event) => {
     e.preventDefault();
@@ -880,7 +990,6 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     document.removeEventListener('pointerleave', onLeave);
     canvas.removeEventListener('webglcontextlost', onLost);
     ro.disconnect();
-    io.disconnect();
     mo.disconnect();
     host.style.cursor = '';
     for (const b of buffers) if (b) gl.deleteBuffer(b);

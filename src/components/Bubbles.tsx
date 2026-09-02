@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { prefersReducedMotion } from '@/lib/motion';
 
 /**
- * Пузыри на фоне названия.
+ * Пузыри на фоне ВСЕЙ страницы.
  *
  * Здесь только оболочка: холст, запуск и уборка. Вся отрисовка живёт
  * в `@/lib/bubbles-gl` и загружается отдельным куском — но СРАЗУ,
@@ -64,8 +64,8 @@ export function Bubbles() {
     // куска не попадёт в тот же кадр, что и первая картина.
     let raf = requestAnimationFrame(() => {
       raf = 0;
-      // Первый экран уже уехал — смотреть на пузыри некому.
-      if (canvas.getBoundingClientRect().bottom <= 0) { canvas.remove(); return; }
+      // Проверки «первый экран уже уехал» здесь больше нет: холст
+      // закреплён по окну и виден на любой высоте прокрутки.
       void load();
     });
 
