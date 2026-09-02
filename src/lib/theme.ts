@@ -13,7 +13,7 @@ export const THEME_TRANSITION_MS = 380;
  * Это было единственное место, где системная тема вообще учитывалась.
  */
 export const THEME_BAR: Record<Theme, string> = {
-  light: '#f4dbc5',
+  light: '#fdfbf9',
   dark: '#0c2223',
 };
 

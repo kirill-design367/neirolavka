@@ -51,8 +51,8 @@ for (const theme of ['light', 'dark']) {
   // Ожидаемый фон вписан числом намеренно: проверка сверяет то, что
   // блокирующий скрипт поставил на первом кадре, с палитрой, а не
   // палитру с самой собой. Меняя --c-bg, поправьте и эти два числа.
-  // Сейчас: светлая #f4dbc5, тёмная сумерки #0c2223.
-  const expect = theme === 'dark' ? '12,34,35' : '244,219,197';
+  // Сейчас: светлая белая #fdfbf9, тёмная сумерки #0c2223.
+  const expect = theme === 'dark' ? '12,34,35' : '253,251,249';
   const ok = first?.theme === theme && first?.bg === expect;
   console.log(`  тема «${theme}»: на первом кадре data-theme=${first?.theme}, --c-bg=${first?.raw} (${first?.bg}), color-scheme=${first?.scheme} → ${ok ? 'вспышки нет' : 'ВСПЫШКА'}`);
   if (!ok) bad++;
