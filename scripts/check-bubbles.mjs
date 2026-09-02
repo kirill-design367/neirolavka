@@ -338,15 +338,22 @@ for (const r of RAZRESHENIYA) {
   // а другую внутрь — размах облака не меняется вовсе. Отсюда
   // и брались отклики в 2 % на исправной странице.
   //
+  // И пузырь должен быть КРУПНЫМ (радиус кучки не меньше 14 px):
+  // на мелком собственный дрейф за сотню миллисекунд сравним
+  // с деформацией, и знак сигнала становится делом случая —
+  // на телефоне один прогон из трёх давал −2.8 % на исправной
+  // сборке. Мелкие пузыри проверяются нажатием и указателем,
+  // деформация меряется на крупных.
+  //
   // Если открытого не нашлось — ждём и смотрим снова: пузыри
   // дрейфуют, и через пару секунд из-за карточки выходит следующий.
   // Это не поблажка: три пустых захода подряд — уже отказ.
   let spisok = kuchi;
-  let otkrytye = spisok.filter((k) => k.rr >= 8 && k.n >= 8);
+  let otkrytye = spisok.filter((k) => k.rr >= 14 && k.n >= 10);
   for (let zahod = 0; zahod < 3 && !otkrytye.length; zahod++) {
     await page.waitForTimeout(2500);
     spisok = await najtiSeredinu(page);
-    otkrytye = spisok.filter((k) => k.rr >= 8 && k.n >= 8);
+    otkrytye = spisok.filter((k) => k.rr >= 14 && k.n >= 10);
   }
   if (!kuchi.length) {
     bida('обход первого экрана не нашёл ни одного пузыря под курсором');
@@ -378,7 +385,7 @@ for (const r of RAZRESHENIYA) {
     // под липкую полосу, отдаёт краску за край окна замера,
     // и рост выходит вдвое меньше настоящего.
     let luchshiy = null;
-    for (const kandidat of otkrytye.slice(0, 3)) {
+    for (const kandidat of otkrytye.slice(0, 4)) {
       const kx = kandidat.cx;
       const ky = kandidat.cy;
       const drugie = spisok.filter((k) => Math.hypot(k.cx - kx, k.cy - ky) > kandidat.rr);
