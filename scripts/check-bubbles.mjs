@@ -289,7 +289,23 @@ const najtiSeredinu = async (page) => {
     const cx = gr.reduce((a, k2) => a + popal[k2][0], 0) / gr.length;
     const cy = gr.reduce((a, k2) => a + popal[k2][1], 0) / gr.length;
     const rr = Math.max(...gr.map((k2) => Math.hypot(popal[k2][0] - cx, popal[k2][1] - cy)));
-    kuchi.push({ cx, cy, rr, n: gr.length });
+    // Насколько кучка СИММЕТРИЧНА. У пузыря, срезанного кромкой поля
+    // или прикрытого карточкой, попадания лежат серпом: середина
+    // такой кучки смещена от настоящей середины пузыря, курсор
+    // встаёт сбоку — и сжатие вдоль оси «курсор → центр» УМЕНЬШАЕТ
+    // облако вместо того, чтобы раздать его. Отсюда −7 % отклика
+    // на исправной сборке.
+    const xs = gr.map((k2) => popal[k2][0]);
+    const ys = gr.map((k2) => popal[k2][1]);
+    const xmin = Math.min(...xs); const xmax = Math.max(...xs);
+    const ymin = Math.min(...ys); const ymax = Math.max(...ys);
+    const shirina = xmax - xmin; const vysota = ymax - ymin;
+    const perekos = Math.max(
+      Math.abs(cx - (xmin + xmax) / 2),
+      Math.abs(cy - (ymin + ymax) / 2),
+    ) / Math.max(1, rr);
+    const storony = shirina > 0 && vysota > 0 ? Math.min(shirina / vysota, vysota / shirina) : 0;
+    kuchi.push({ cx, cy, rr, n: gr.length, perekos, storony });
   }
   return kuchi.sort((a, b) => b.n - a.n);
 };
@@ -338,7 +354,8 @@ for (const r of RAZRESHENIYA) {
   // а другую внутрь — размах облака не меняется вовсе. Отсюда
   // и брались отклики в 2 % на исправной странице.
   //
-  // И пузырь должен быть КРУПНЫМ (радиус кучки не меньше 14 px):
+  // И пузырь должен быть КРУПНЫМ (радиус кучки не меньше 14 px)
+  // и СИММЕТРИЧНЫМ — то есть целиком лежащим на свободном месте:
   // на мелком собственный дрейф за сотню миллисекунд сравним
   // с деформацией, и знак сигнала становится делом случая —
   // на телефоне один прогон из трёх давал −2.8 % на исправной
@@ -349,11 +366,12 @@ for (const r of RAZRESHENIYA) {
   // дрейфуют, и через пару секунд из-за карточки выходит следующий.
   // Это не поблажка: три пустых захода подряд — уже отказ.
   let spisok = kuchi;
-  let otkrytye = spisok.filter((k) => k.rr >= 14 && k.n >= 10);
+  const godnyy = (k) => k.rr >= 14 && k.n >= 10 && k.perekos <= 0.18 && k.storony >= 0.75;
+  let otkrytye = spisok.filter(godnyy);
   for (let zahod = 0; zahod < 3 && !otkrytye.length; zahod++) {
     await page.waitForTimeout(2500);
     spisok = await najtiSeredinu(page);
-    otkrytye = spisok.filter((k) => k.rr >= 14 && k.n >= 10);
+    otkrytye = spisok.filter(godnyy);
   }
   if (!kuchi.length) {
     bida('обход первого экрана не нашёл ни одного пузыря под курсором');
