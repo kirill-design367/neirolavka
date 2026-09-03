@@ -30,7 +30,10 @@ const b = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/
 
 for (const [theme, sel, hide, label] of [
   ['dark', '.referral', '.referral__content', 'реферальный блок'],
-  ['dark', '.term:first-child', '.term__title, .term__text', 'карточка преимущества'],
+  // Карточки условий сняты: проба меряет насыщенность и РАЗБРОС ТОНА
+  // цветной плашки по фазам цикла, а плашка стала ровным деревом —
+  // размах светлоты и разброс тона у неё нули во всех фазах. Печатать
+  // три нуля и называть это проверкой нельзя.
   ['light', '.referral', '.referral__content', 'реферальный блок'],
 ]) {
   const c = await b.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU' });
