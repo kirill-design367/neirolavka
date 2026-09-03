@@ -258,8 +258,27 @@ export function useStepTrack<T extends HTMLElement>() {
       // капли плюс половина цифры — то есть «капля лежит на цифре».
       // Считается здесь, потому что в CSS длину на длину не поделить,
       // а доля зависит от длины дорожки и меняется с шириной окна.
-      const FLASH_PX = 16;
-      root.style.setProperty('--flash', total > 0 ? (FLASH_PX / total).toFixed(5) : '0.032');
+      //
+      // ИЗМЕРЯЕТСЯ, а не пишется числом. Здесь стояло FLASH_PX = 16,
+      // и оно было верно ровно для одной раскладки: на десктопе капля
+      // вдоль хода 22 px, глиф цифры 9.6 → полуокно 15.8, число сходилось.
+      // На телефоне дорожка вертикальная, вдоль хода те же 22 px капли,
+      // но глиф цифры уже 22.4 → полуокно 22.2, а в CSS уезжало 16.
+      // То есть на телефоне цифра гасла на четверть окна раньше, чем
+      // капля с неё сходила, и заметить это было нечем: число выглядело
+      // одинаково правильным в обоих случаях.
+      //
+      // Теперь обе величины берутся из разметки по той же оси, что
+      // и ход. Побочная выгода важнее исходной: размер капли можно
+      // менять в CSS, и окно вспышки поедет за ним само — разойтись
+      // им больше негде.
+      const vdol = (r: DOMRect) => (vertical ? r.height : r.width);
+      const led = root.querySelector<HTMLElement>('.steps__led');
+      const num = root.querySelector<HTMLElement>('.step__num');
+      const flashPx = led && num
+        ? vdol(led.getBoundingClientRect()) / 2 + vdol(num.getBoundingClientRect()) / 2
+        : 16;
+      root.style.setProperty('--flash', total > 0 ? (flashPx / total).toFixed(5) : '0.032');
 
       nodes.forEach((node) => {
         const c = centre(node);

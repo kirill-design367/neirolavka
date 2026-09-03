@@ -34,17 +34,14 @@ export function Hero() {
           своя фаза — иначе три соседки пульсировали бы в такт. */}
       <dl className="terms" data-parallax="1.4">
         <div className="term" data-reveal>
-          <span className="term__lava" aria-hidden="true" />
           <dt className="term__title">Цена видна сразу</dt>
           <dd className="term__text">Никаких «напишите в личку». Сколько показано, столько и платите.</dd>
         </div>
         <div className="term" data-reveal>
-          <span className="term__lava" aria-hidden="true" />
           <dt className="term__title">Оплата привычная</dt>
           <dd className="term__text">Карта российского банка, СБП или USDT — на выбор.</dd>
         </div>
         <div className="term" data-reveal>
-          <span className="term__lava" aria-hidden="true" />
           <dt className="term__title">Доступ в переписке</dt>
           <dd className="term__text">Аккаунт или ключ приходят в чат, и чат остаётся у вас.</dd>
         </div>
