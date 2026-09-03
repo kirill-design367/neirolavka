@@ -53,6 +53,10 @@ const RESPAWN_MAX = 1300;
  *  они держат обводки карточек, шапку, светодиод шагов и подписи. */
 const TOKENS = ['--c-bubble-1', '--c-bubble-2', '--c-bubble-3'] as const;
 
+/** Цвет блика — тоже токен: это ЦВЕТ ЛАМПЫ, и в двух темах она разная.
+ *  Днём светит белый день, вечером — тёплый огонёк лавки. */
+const TOKEN_BLIK = '--c-bubble-blik';
+
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
 /** Цвет из токена — в sRGB-тройку 0..1.
@@ -74,6 +78,7 @@ const vert = (count: number) => /* glsl */ `
   uniform mat4 viewMatrix;
   attribute vec3 position;
 
+  uniform vec2  uHolst;       // размер буфера в пикселях
   uniform float uSizeScale;   // множитель gl_PointSize: dpr * расстояние камеры
   uniform float uCamZ;        // расстояние камеры, оно же глубина плоскости z = 0
   uniform vec3  uPointer;     // курсор в координатах мира
@@ -96,6 +101,8 @@ const vert = (count: number) => /* glsl */ `
 
   varying vec3  vColor;
   varying float vAlpha;
+  varying float vSize;
+  varying vec2  vSeredina;
 
   vec3 spin(vec3 p, float ax, float ay) {
     float s = sin(ax), c = cos(ax);
@@ -180,7 +187,8 @@ const vert = (count: number) => /* glsl */ `
     world += spin(aVel, R.y, R.x) * radius * pop;
 
     vec4 mv = viewMatrix * vec4(world, 1.0);
-    gl_Position = projectionMatrix * mv;
+    vec4 clip = projectionMatrix * mv;
+    gl_Position = clip;
 
     float depth = max(-mv.z, 1.0);
 
@@ -196,6 +204,19 @@ const vert = (count: number) => /* glsl */ `
 
     vColor = aTint < 0.5 ? uColorA : (aTint < 1.5 ? uColorB : uColorC);
     vAlpha = (0.14 + 0.42 * near) * uInk * fade * fade;
+    // Размер уходит во фрагментный: по нему считается ширина мягкой
+    // кромки, чтобы она была одинаковой в ЭКРАННЫХ пикселях и у точки
+    // в два пикселя, и у точки в шесть.
+    vSize = gl_PointSize;
+    // Середина точки в ПИКСЕЛЯХ буфера. По ней фрагментный шейдер
+    // сам считает смещение от центра — см. там же, почему не
+    // gl_PointCoord.
+    //
+    // Берём СВОЮ переменную clip, а не читаем обратно gl_Position:
+    // в GLSL ES 1.00 это выходная переменная, и чтение её после записи
+    // спецификацией не обещано. Работать может, а может и вернуть
+    // что угодно — от драйвера.
+    vSeredina = (clip.xy / clip.w * 0.5 + 0.5) * uHolst;
   }
 `;
 
@@ -203,14 +224,94 @@ const FRAG = /* glsl */ `
   precision mediump float;
   varying vec3  vColor;
   varying float vAlpha;
+  varying float vSize;
+  varying vec2  vSeredina;
+
+  uniform vec3  uBlik;   // цвет блика: свет, а не белила
+  uniform float uSila;   // сколько блика подмешивать, число из токена
+
+  // ОДИН ИСТОЧНИК СВЕТА НА ВСЮ СЦЕНУ.
+  //
+  // Направление в ЭКРАННЫХ координатах и одно и то же для каждой
+  // точки — в этом весь смысл. Стоило бы взять направление от чего-то
+  // своего у каждой точки (от её места на оболочке, от курсора,
+  // от фазы), и блики смотрели бы вразнобой: получилась бы россыпь
+  // самостоятельных бусин, а не поле, освещённое одной лампой.
+  // Объём собирается именно из того, что блики согласованы.
+  //
+  // Свет сверху-слева и чуть на зрителя: так лежит свет почти на всех
+  // фотографиях предметов, и глаз читает такую расстановку объёмом
+  // без раздумий. Снизу он читался бы вывернутым наизнанку.
+  const vec3 SVET = vec3(-0.46, 0.55, 0.70);
 
   void main() {
-    // Край считается на пиксель, а не берётся из картинки: ступеньки
-    // не бывает ни при каком размере точки.
-    float d = length(gl_PointCoord - 0.5);
-    float a = smoothstep(0.5, 0.1, d) * vAlpha;
+    // Смещение от середины точки считаем ЧЕРЕЗ gl_FragCoord, а не
+    // через gl_PointCoord, и это главная поправка всей затеи.
+    //
+    // У gl_PointCoord ориентация оси Y на практике оказалась не той,
+    // о которой говорит здравый смысл: с очевидным минусом у p.y блик
+    // уезжал в НИЗ-СПРАВА, без минуса — в ВЕРХ-СПРАВА, то есть и по
+    // горизонтали
+    // он стоял зеркально к заданному направлению света. Спорить
+    // об ориентации с реализацией бессмысленно, а подгонять знаки
+    // «пока не совпадёт» опасно вдвойне: подобранное на программном
+    // рендерере контейнера могло разъехаться на настоящей видеокарте
+    // у человека, и блики смотрели бы не туда именно там, где
+    // проверить некому.
+    //
+    // gl_FragCoord определён однозначно: начало в левом НИЖНЕМ углу
+    // буфера, значит +Y это вверх экрана при любой реализации.
+    // Середину точки вершинный шейдер отдаёт в тех же пикселях.
+    vec2 p = (gl_FragCoord.xy - vSeredina) / max(vSize * 0.5, 0.5);
+    float r2 = dot(p, p);
+    if (r2 > 1.0) discard;
+
+    float r = sqrt(r2);
+
+    // Мягкая кромка. Её ширина считается ОТ РАЗМЕРА ТОЧКИ, чтобы
+    // в экранных пикселях она была одинаковой у крупных и у мелких:
+    // фиксированная доля радиуса у точки в два пикселя даёт кромку
+    // в полпикселя — то есть ступеньку, ради отсутствия которой
+    // всё и считается на пиксель. Ниже 0.30 доля не опускается:
+    // силуэт обязан оставаться мягким, иначе шарик превращается
+    // в вырезанный кружок.
+    float soft = max(2.0 / max(vSize, 2.0), 0.30);
+    float a = (1.0 - smoothstep(1.0 - soft, 1.0, r)) * vAlpha;
     if (a <= 0.012) discard;
-    gl_FragColor = vec4(vColor, a);
+
+    // Нормаль полусферы: у шара, повёрнутого к зрителю, это
+    // (x, y, sqrt(1 - x² - y²)). Обе оси уже в экранных направлениях,
+    // переворачивать нечего.
+    vec3 n = vec3(p.x, p.y, sqrt(max(1.0 - r2, 0.0001)));
+    vec3 L = normalize(SVET);
+
+    // Рассеянный свет ЗАВЁРНУТ (lambert * 0.5 + 0.5), а не обрезан
+    // нулём. Обрезанный даёт чёрную половину и читается не объёмом,
+    // а дыркой; завёрнутый оставляет теневую сторону цветной, просто
+    // темнее — так выглядит предмет, вокруг которого есть воздух.
+    float lit = dot(n, L) * 0.5 + 0.5;
+
+    // Коэффициенты подобраны так, чтобы СРЕДНЯЯ яркость по кружку
+    // осталась прежней: 0.55 + 0.90 * 0.5 = 1.0. Тёмная сторона
+    // уходит в 0.55 от цвета, светлая выходит в 1.45 — точка не стала
+    // ни бледнее, ни темнее в среднем, у неё появились стороны.
+    vec3 col = vColor * (0.55 + 0.90 * lit);
+
+    // Блик по Блинну — Фонгу: половинный вектор между светом
+    // и зрителем (зритель по оси Z). Степень высокая, поэтому пятно
+    // маленькое и плотное — такое и читается «металлом», а не
+    // «подсвеченным шариком».
+    vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
+    float sp = pow(max(dot(n, H), 0.0), 34.0);
+
+    // Отблеск на кромке с теневой стороны: у металла свет,
+    // пришедший со стороны, обегает силуэт узкой каймой. Без неё шарик
+    // читается матовым — резиновым, а не блестящим.
+    float rim = pow(1.0 - abs(n.z), 3.0) * smoothstep(0.62, 0.05, lit) * 0.5;
+
+    col = mix(col, uBlik, clamp((sp + rim) * uSila, 0.0, 1.0));
+
+    gl_FragColor = vec4(col, a);
   }
 `;
 
@@ -464,6 +565,9 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
   const uPress = U('uPress');
   const uTime = U('uTime');
   const uInk = U('uInk');
+  const uHolst = U('uHolst');
+  const uBlik = U('uBlik');
+  const uSila = U('uSila');
   const uColorA = U('uColorA');
   const uColorB = U('uColorB');
   const uColorC = U('uColorC');
@@ -490,6 +594,8 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     gl.uniform3fv(uColorA, c[0]);
     gl.uniform3fv(uColorB, c[1]);
     gl.uniform3fv(uColorC, c[2]);
+    gl.uniform3fv(uBlik, readRgb(cs.getPropertyValue(TOKEN_BLIK)));
+    gl.uniform1f(uSila, parseFloat(cs.getPropertyValue('--bubbles-blik')) || 0);
   };
 
   /** Число целых пузырей — единственная наружная примета состояния:
@@ -617,6 +723,9 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     canvas.height = Math.round(h * dpr);
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.useProgram(program);
+    // Размер буфера нужен фрагментному шейдеру: по нему он переводит
+    // середину точки в пиксели и считает от неё нормаль шарика.
+    gl.uniform2f(uHolst, canvas.width, canvas.height);
     gl.uniformMatrix4fv(uProj, false, proj);
     gl.uniformMatrix4fv(uView, false, view);
     gl.uniform1f(uSizeScale, dpr * camZ);
