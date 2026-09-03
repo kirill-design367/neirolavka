@@ -13,7 +13,7 @@ import { chromium } from 'playwright';
 const URL = process.argv[2];
 const browser = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
 
-const AUDIT = () => {
+const AUDIT = async () => {
   // Цвет разбираем не регулярным выражением, а холстом: браузер сам
   // переводит любой синтаксис — color-mix в oklab, color(srgb ...), lab —
   // в готовые каналы. Разбор строки на этих записях врал.
@@ -49,15 +49,74 @@ const AUDIT = () => {
   // Фон определяем попаданием в точку, а не обходом предков:
   // подложки блоков лежат отдельными слоями с z-index -1, и по дереву
   // предков их не найти — обход давал бы фон страницы вместо подложки.
+  // Ловит ли элемент мышь. Такой, что не ловит, elementsFromPoint
+  // пропускает, хотя нарисован он честно, — и «не нашёлся в стопке»
+  // для него не значит «невидим».
+  //
+  // Свойство НАСЛЕДУЕМОЕ, поэтому спрашивать надо у самого элемента,
+  // а не обходить предков. Обход давал ложное «не ловит» там, где
+  // предок отключил мышь, а потомок включил обратно: у витрины
+  // в объёме держатель камеры стоит pointer-events: none, а карточка
+  // внутри него — auto. Из-за обхода строки тарифов внутри закрытых
+  // створок снова получали выдуманный фон, хотя мышь они ловят.
+  const skvoznoy = (el) => getComputedStyle(el).pointerEvents === 'none';
+
   const bgOf = (el, x, y) => {
     const stack = document.elementsFromPoint(x, y);
     const from = stack.indexOf(el);
+    // ЭЛЕМЕНТА В ТОЧКЕ НЕТ — значит, он там не нарисован, и фона
+    // у него в этой точке не существует.
+    //
+    // Прежде здесь стояло `from >= 0 ? stack.slice(from) : stack`,
+    // то есть при промахе брался ВЕСЬ стек: фоном текста становилось
+    // то, что лежит на этом месте вместо него. Так строки тарифов
+    // внутри закрытой створки получали фоном карточку витрины,
+    // на которой они не лежат: overflow: hidden режет отрисовку,
+    // но коробку потомка не трогает, и точка замера падает мимо
+    // всего нарисованного. Замер сообщал о паре, которой на экране
+    // нет ни одного кадра, — и поймать это можно было только сменой
+    // цвета карточки: пока она была светлой, выдуманная пара давала
+    // 10.70:1 и молчала.
+    //
+    // Исключение одно: элемент, который сам или чей предок не ловит
+    // мышь. Он нарисован, просто невидим для elementsFromPoint —
+    // для него оставляем прежний путь.
+    if (from < 0 && !skvoznoy(el)) return null;
     const below = from >= 0 ? stack.slice(from) : stack;
     let acc = null;
     for (const node of below) {
       const c = parse(getComputedStyle(node).backgroundColor);
       if (c.a > 0) acc = acc ? over(acc, c) : c;
       if (acc && acc.a >= 1) return acc;
+      // ПОДЛОЖКИ-ПСЕВДОЭЛЕМЕНТЫ. elementsFromPoint не возвращает
+      // ::before и ::after никогда, а половина подложек в проекте
+      // сделана именно ими: капсула шапки — это .nav__inner::before
+      // с background: var(--c-surface) и opacity: var(--nav-p).
+      // Проверка смотрела СКВОЗЬ непрозрачную капсулу на то, что под
+      // ней, и объявляла счётчик шапки нечитаемым (1.89:1 на карточке
+      // условий), хотя на экране он лежит на капсуле. Поймать это
+      // можно было только сменой цвета того, что под шапкой: пока там
+      // было дерево, выдуманная пара давала 5.09:1 и молчала.
+      for (const psevdo of ['::before', '::after']) {
+        const ps = getComputedStyle(node, psevdo);
+        if (ps.content === 'none') continue;
+        const pc = parse(ps.backgroundColor);
+        const op = Number(ps.opacity);
+        if (!(pc.a > 0) || !(op > 0)) continue;
+        // Считаем только те, что накрывают точку: у позиционированного
+        // псевдоэлемента вычисленные left/top/width/height уже в px
+        // от коробки родителя.
+        const nr = node.getBoundingClientRect();
+        const px = nr.left + (parseFloat(ps.left) || 0);
+        const py = nr.top + (parseFloat(ps.top) || 0);
+        const pw = parseFloat(ps.width) || 0;
+        const ph = parseFloat(ps.height) || 0;
+        if (ps.position === 'static' || pw <= 0 || ph <= 0) continue;
+        if (x < px || x > px + pw || y < py || y > py + ph) continue;
+        const eff = { r: pc.r, g: pc.g, b: pc.b, a: pc.a * op };
+        acc = acc ? over(acc, eff) : eff;
+        if (acc.a >= 1) return acc;
+      }
     }
     const body = parse(getComputedStyle(document.body).backgroundColor);
     return acc ? over(acc, body) : body;
@@ -77,6 +136,25 @@ const AUDIT = () => {
       p = p.parentElement;
     }
     return acc ?? parse(getComputedStyle(document.body).backgroundColor);
+  };
+
+  // Пересечение коробки элемента со всеми предками, которые режут
+  // содержимое. null — от элемента на экране не осталось ничего.
+  const vidimyRect = (el) => {
+    const r0 = el.getBoundingClientRect();
+    let [l, t, rt, b] = [r0.left, r0.top, r0.right, r0.bottom];
+    let p = el.parentElement;
+    while (p) {
+      const cs = getComputedStyle(p);
+      if (cs.overflowX !== 'visible' || cs.overflowY !== 'visible') {
+        const pr = p.getBoundingClientRect();
+        l = Math.max(l, pr.left); t = Math.max(t, pr.top);
+        rt = Math.min(rt, pr.right); b = Math.min(b, pr.bottom);
+        if (rt - l < 1 || b - t < 1) return null;
+      }
+      p = p.parentElement;
+    }
+    return { left: l, top: t, right: rt, bottom: b, width: rt - l, height: b - t };
   };
 
   const out = [];
@@ -110,11 +188,36 @@ const AUDIT = () => {
 
   for (const { el, text, eff, group } of targets) {
     el.scrollIntoView({ block: 'center', behavior: 'instant' });
-    const rect = el.getBoundingClientRect();
+    // ДАЁМ СТРАНИЦЕ ДОЕХАТЬ И ПЕРЕСЧИТАТЬ СТИЛЬ, а не меряем в тот же
+    // тик. Прокрутка здесь сглажена Lenis, и часть оформления считается
+    // от неё же: капсула шапки проявляется переменной --nav-p на первых
+    // 120 px. Без кадра между прокруткой и замером счётчик шапки
+    // измерялся с ПРОЗРАЧНОЙ капсулой над содержимым, до которого
+    // страница на самом деле доезжает только когда капсула уже
+    // непрозрачна: замер давал 1.89:1 на паре, которой на экране
+    // не бывает. Проба по пикселям на всей прокрутке даёт у того же
+    // счётчика 6.64:1 на телефоне и 6.76:1 на десктопе.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    // Коробка ВИДИМОЙ части, а не коробка элемента.
+    //
+    // overflow: hidden у предка обрезает ОТРИСОВКУ, но коробку
+    // потомка не трогает: строка тарифа внутри закрытой створки
+    // по-прежнему отдаёт свои 174×85, хотя на экране от неё
+    // остаётся полоска в 16 px. Точка замера падала в середину
+    // такой коробки — то есть мимо всего, что нарисовано, —
+    // elementsFromPoint не находил там саму строку и возвращал
+    // стопку без неё. Фоном текста оказывалась КАРТОЧКА, на которой
+    // строка не лежит: замер сообщал о паре, которой на экране нет.
+    //
+    // Поймать это можно было только сменой цвета карточки: пока она
+    // была светлой, выдуманная пара давала 10.70:1 и молчала.
+    const rect = vidimyRect(el);
+    if (!rect) { skippedCount++; continue; }
     const x = Math.min(Math.max(rect.left + Math.min(rect.width / 2, 40), 1), innerWidth - 1);
     const y = Math.min(Math.max(rect.top + rect.height / 2, 1), innerHeight - 1);
     const cs = getComputedStyle(el);
     let bg = bgOf(el, x, y);
+    if (!bg) { skippedCount++; continue; }
     // Группа с прозрачностью рисуется целиком, а потом смешивается
     // с тем, что за ней. Значит и текст, и его подложка приходят
     // к глазу приглушёнными — меряем то, что видно, а не то,
