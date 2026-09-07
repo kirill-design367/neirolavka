@@ -1,13 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { formatPrice, getCatalog, type Product } from '@/lib/catalog';
+import { formatPrice, getCatalog, priceFrom, type Product } from '@/lib/catalog';
 import { useOrder } from '@/lib/order';
 import { prefersReducedMotion, useReveal } from '@/lib/motion';
 import type { Shelf } from '@/lib/shelf-gl';
 
+/** Цена там, где её ещё нет. Одна строка на весь проект. */
+const BEZ_CENY = 'уточняется';
+
 /**
- * Витрина: три карточки продуктов.
+ * Витрина: шесть карточек продуктов.
  *
  * Разметка здесь ПЛОСКАЯ и рабочая сама по себе — обычные карточки
  * с тарифами и кнопками. Объём добавляется поверх: когда блок
@@ -36,7 +39,11 @@ function Card({
   cardRef: (el: HTMLElement | null) => void;
 }) {
   const { planId, choosePlan } = useOrder();
-  const from = product.plans.reduce((a, p) => Math.min(a, p.priceRub), Infinity);
+  // Цены может не быть вовсе — тогда строка честно говорит об этом,
+  // а не показывает выдуманный рубль. Появится цена в каталоге —
+  // строка станет «от N ₽» сама, разметку править не придётся.
+  const from = priceFrom(product);
+  const urovney = product.plans.length > 0;
 
   return (
     <article
@@ -66,7 +73,13 @@ function Card({
         <span className="pcard__fold">
           <span className="pcard__foldin">
             <span className="pcard__from">
-              от <span className="tnum">{formatPrice(from)}</span>
+              {from === null ? (
+                <>Цена {BEZ_CENY}</>
+              ) : (
+                <>
+                  от <span className="tnum">{formatPrice(from)}</span>
+                </>
+              )}
             </span>
           </span>
         </span>
@@ -87,13 +100,21 @@ function Card({
               aria-pressed={planId === plan.id}
             >
               <span className="tariff__short">{plan.short}</span>
-              <span className="tariff__note">{plan.note}</span>
-              <span className="tariff__price tnum">{formatPrice(plan.priceRub)}</span>
+              {plan.note && <span className="tariff__note">{plan.note}</span>}
+              <span className={`tariff__price${plan.priceRub === null ? ' tariff__price--soon' : ' tnum'}`}>
+                {plan.priceRub === null ? BEZ_CENY : formatPrice(plan.priceRub)}
+              </span>
               <span className="tariff__mark" aria-hidden="true" />
             </button>
           ))}
-          {product.plans.length === 1 && (
-            <p className="pcard__single">Годового тарифа у этого продукта нет.</p>
+          {/* У продукта без уровней внутри створки нечего нажимать,
+              и пустая створка читалась бы недоделкой. Поэтому здесь
+              сказано, ПОЧЕМУ выбирать нечего: подписка одна, и она
+              уже в чеке — выбор совершило само нажатие по карточке. */}
+          {!urovney && (
+            <p className="pcard__single">
+              Уровней подписки нет — она одна. Выбранное уже в чеке.
+            </p>
           )}
         </div>
       </div>
@@ -251,8 +272,8 @@ export function Shop() {
           Что берём
         </h2>
         <p className="shop__hint" data-reveal>
-          Три продукта на полке. Нажатие разворачивает карточку и показывает сроки
-          с ценами — цена видна до перехода в бот, а не после.
+          Шесть продуктов на полке. Нажатие разворачивает карточку и показывает
+          уровни подписки — выбранное сразу попадает в чек.
         </p>
       </div>
 

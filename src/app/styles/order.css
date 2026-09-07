@@ -98,6 +98,15 @@
   white-space: nowrap;
 }
 
+/* Цена, которой ещё нет, — во всех трёх местах чека одинаково:
+   слово вместо числа, приглушённое и без табличных цифр. Ноль
+   в этих местах читался бы как «бесплатно». */
+.order__item-price--soon {
+  font-size: var(--t-label);
+  font-weight: 400;
+  color: var(--c-muted);
+}
+
 .order__item-note {
   margin-top: 0.125rem;
   font-size: var(--t-micro);
@@ -183,6 +192,13 @@
   font-size: var(--t-title);
   font-weight: 700;
   letter-spacing: -0.01em;
+}
+
+.order__total-value--soon {
+  font-size: var(--t-label);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--c-muted);
 }
 
 /* Кнопка в бот — ТОТ ЖЕ КАМЕНЬ, что у плашки «Лавка доступа
@@ -336,6 +352,12 @@
 .bar__total {
   font-size: var(--t-body);
   font-weight: 700;
+}
+
+.bar__total--soon {
+  font-size: var(--t-label);
+  font-weight: 400;
+  color: var(--c-muted);
 }
 
 .bar__empty {

@@ -1,5 +1,5 @@
 /**
- * Витрина продуктов: три карточки по дуге в трёхмерной сцене плюс
+ * Витрина продуктов: карточки по дуге в трёхмерной сцене плюс
  * слой настоящего HTML поверх неё.
  *
  * Проверка отвечает на четыре вопроса, и на каждый — числом:
@@ -26,6 +26,7 @@ if (!URL) { console.error('нужен адрес'); process.exit(2); }
 
 const browser = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
 let bad = 0;
+let kartochekVScene = 0;
 const ok = (s) => console.log(`  ok   ${s}`);
 const no = (s) => { bad++; console.log(`  НЕТ  ${s}`); };
 
@@ -73,7 +74,8 @@ const geometry = async (page) => page.evaluate(() => {
     box: { top: r.top, bottom: r.bottom, left: r.left, right: r.right },
     cards: [...document.querySelectorAll('.pcard')].map((el) => {
       const b = el.getBoundingClientRect();
-      return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, w: b.width, h: b.height };
+      return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, w: b.width, h: b.height,
+               z: Number(getComputedStyle(el).zIndex) || 0 };
     }),
     overflow: document.documentElement.scrollWidth - window.innerWidth,
   };
@@ -106,23 +108,52 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
     } else {
       const up = Math.max(...g.cards.map((c) => g.box.top - c.top));
       const down = Math.max(...g.cards.map((c) => c.bottom - g.box.bottom));
-      ok(`все три карточки внутри блока: наибольший выход сверху ${up.toFixed(0)} px, снизу ${down.toFixed(0)} px`);
+      ok(`все ${g.cards.length} карточек внутри блока: наибольший выход сверху ${up.toFixed(0)} px, снизу ${down.toFixed(0)} px`);
     }
-    if (g.overflow > 0) no(`страница шире экрана на ${g.overflow} px`); else ok('по горизонтали ничего не вылезает');
+    if (g.overflow > 0) no(`страница шире экрана на ${g.overflow} px`); else ok('страница не шире экрана');
 
-    // Карточки не должны сливаться в одну кучу: при раскладке по дуге
-    // и стопкой соседи стоят врозь.
-    const pairs = [];
-    for (let i = 0; i < g.cards.length; i++) for (let j = i + 1; j < g.cards.length; j++) {
-      const a = g.cards[i], b = g.cards[j];
-      const dx = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
-      const dy = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
-      const share = (dx * dy) / Math.min(a.w * a.h, b.w * b.h);
-      pairs.push(share);
+    // Карточка обязана оставаться в СВОЁМ блоке и по горизонтали.
+    //
+    // Прежде проверялась только вертикаль, и это молчало ровно там,
+    // где ломается дуга: на широком экране витрина делит строку
+    // с панелью заказа, и уехавшая вбок карточка лезет под панель,
+    // не расширяя страницу. Поймать это можно было только глазами.
+    const outX = g.cards
+      .map((c, i) => ({ i, l: g.box.left - c.left, r: c.right - g.box.right }))
+      .filter((c) => c.l > 2 || c.r > 2);
+    if (outX.length) {
+      for (const c of outX) no(`карточка ${c.i + 1} вылезает вбок: слева ${c.l.toFixed(0)} px, справа ${c.r.toFixed(0)} px`);
+    } else {
+      const zapas = Math.min(...g.cards.map((c) => Math.min(c.left - g.box.left, g.box.right - c.right)));
+      ok(`по горизонтали карточки в блоке: наименьший запас ${zapas.toFixed(0)} px`);
     }
-    const worst = Math.max(...pairs);
-    if (worst > 0.5) no(`карточки перекрывают друг друга на ${(worst * 100).toFixed(0)} % площади`);
-    else ok(`соседи различимы: наибольшее перекрытие ${(worst * 100).toFixed(0)} % площади`);
+
+    // НИ ОДНА КАРТОЧКА НЕ СПРЯТАНА ЦЕЛИКОМ.
+    //
+    // Прежнее правило — «перекрытие не больше половины» — было
+    // написано для трёх карточек, которые в дугу помещались, не
+    // задевая друг друга. Шесть в ту же колонку так не помещаются
+    // никак: одна середина занимает 286 px из 736. Значит вопрос
+    // не «есть ли перекрытие», а «остался ли от карточки хоть
+    // край»: продукт, спрятанный на 100 %, нельзя ни увидеть,
+    // ни нажать.
+    //
+    // Считается перекрытие теми, кто СПЕРЕДИ: порядок держит
+    // z-index, и карточка позади прячется только под теми, у кого
+    // он больше.
+    const covered = g.cards.map((a, i) => {
+      let worstOne = 0;
+      g.cards.forEach((b, j) => {
+        if (i === j || b.z <= a.z) return;
+        const dx = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+        const dy = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+        worstOne = Math.max(worstOne, (dx * dy) / (a.w * a.h));
+      });
+      return worstOne;
+    });
+    const worst = Math.max(...covered);
+    if (worst > 0.97) no(`карточка ${covered.indexOf(worst) + 1} закрыта соседом на ${(worst * 100).toFixed(0)} % — её не видно и не нажать`);
+    else ok(`каждая карточка видна: наибольшее закрытие передним соседом ${(worst * 100).toFixed(0)} % площади`);
 
     // 2. Текст остаётся текстом.
     const texts = await page.evaluate(() => ({
@@ -130,14 +161,29 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
       prices: [...document.querySelectorAll('.tariff__price')].map((e) => e.textContent.trim()),
       selectable: getComputedStyle(document.querySelector('.pcard__name')).userSelect !== 'none',
     }));
-    if (texts.names.length === 3 && texts.names.every((t) => t.length > 2)) ok(`названия читаются из DOM: ${texts.names.join(', ')}`);
-    else no(`названий в DOM ${texts.names.length}: ${JSON.stringify(texts.names)}`);
-    if (texts.prices.length >= 1 && texts.prices.every((t) => /\d/.test(t))) ok(`цены — текст: ${texts.prices.join(' · ')}`);
-    else no(`цены не читаются: ${JSON.stringify(texts.prices)}`);
+    kartochekVScene = g.cards.length;
+    if (texts.names.length === g.cards.length && texts.names.every((t) => t.length > 2)) {
+      ok(`названия читаются из DOM: ${texts.names.join(', ')}`);
+    } else {
+      no(`названий в DOM ${texts.names.length} при ${g.cards.length} карточках: ${JSON.stringify(texts.names)}`);
+    }
+    // Цена — ТЕКСТ, а не текстура внутри WebGL. Цифра в ней не
+    // обязательна: пока прайса нет, в этом месте стоит слово
+    // «уточняется», и требовать от него цифру значило бы требовать
+    // выдуманную цену.
+    if (texts.prices.length >= 1 && texts.prices.every((t) => t.length > 2)) {
+      ok(`цены — текст: ${texts.prices.join(' · ')}`);
+    } else {
+      no(`цены не читаются: ${JSON.stringify(texts.prices)}`);
+    }
 
     // 3. Наведение выводит боковую карточку вперёд и возвращает назад.
     if (!phone) {
-      const side = page.locator('.pcard').nth(2);
+      // Наводимся на ПЕРВОГО соседа выбранной, а не на третью
+      // карточку по счёту: дальние в колоде закрыты передними,
+      // и середина их коробки приходится на чужую карточку —
+      // наведение уходило бы не туда, а проверка мерила бы покой.
+      const side = page.locator('.pcard').nth(1);
       const before = (await side.boundingBox()).width;
       // Наводимся мышью по координатам, а не locator.hover(): карточки
       // микропарят, а hover ждёт «стабильности» элемента, которой
@@ -181,8 +227,18 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
       const t = (sel) => document.querySelector(sel)?.innerText ?? '';
       return `${t('.order__paper')} ${t('.bar')}`.replace(/\s+/g, ' ').trim();
     });
-    if (/ChatGPT/.test(order) && /₽/.test(order)) ok(`выбор доехал до панели заказа: ${order.slice(0, 90)}`);
-    else no(`панель заказа не приняла выбор: ${JSON.stringify(order.slice(0, 120))}`);
+    // Сверяем с ИМЕНЕМ той карточки, по которой нажали, а не
+    // с зашитым в проверку словом: каталог меняется, и зашитое имя
+    // однажды перестанет встречаться — проверка покраснеет на
+    // исправном сайте. Цена может быть и словом «уточняется»:
+    // пока прайса нет, требовать ₽ значит требовать выдуманную цену.
+    const imya = await page.evaluate(() =>
+      document.querySelector('.pcard--active .pcard__name')?.textContent?.trim() ?? '');
+    if (imya && order.includes(imya) && /₽|уточняется/.test(order)) {
+      ok(`выбор доехал до панели заказа: ${order.slice(0, 90)}`);
+    } else {
+      no(`панель заказа не приняла выбор «${imya}»: ${JSON.stringify(order.slice(0, 120))}`);
+    }
 
     if (errors.length) no(`ошибок в консоли ${errors.length}: ${errors[0]}`); else ok('ошибок в консоли нет');
     await ctx.close();
@@ -213,7 +269,10 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
     // на порядок крупнее дыхания.
     await page.mouse.move(4, 4);
     await page.waitForTimeout(1400);
-    const series = [[], [], []];
+    // Рядов столько, сколько карточек: зашитая тройка падала
+    // с TypeError, как только продуктов стало шесть.
+    const skolko = await page.evaluate(() => document.querySelectorAll('.pcard').length);
+    const series = Array.from({ length: skolko }, () => []);
     for (let i = 0; i < 34; i++) {
       const r = await page.evaluate(() => [...document.querySelectorAll('.pcard')]
         .map((c) => { const b = c.getBoundingClientRect(); return [b.left, b.top]; }));
@@ -333,7 +392,11 @@ for (const [w, h, phone] of [[1512, 900, false], [390, 844, true]]) {
     };
   });
 
-  const target = 2;
+  // Нажимаем ПЕРВОГО соседа выбранной, а не третью карточку
+  // по счёту: в колоде из шести дальние закрыты передними, и клик
+  // в середину их коробки достаётся чужой карточке — проверка
+  // ловила бы «нажали 3, выбрана 2» на исправной витрине.
+  const target = 1;
   await tap(page, page.locator('.pcard').nth(target).locator('.pcard__face'));
 
   const probes = [];
@@ -374,6 +437,10 @@ for (const [w, h, phone] of [[1512, 900, false], [390, 844, true]]) {
 }
 
 // ─── Плоская витрина: без WebGL и при выключенном движении ─────────
+//
+// Сколько карточек должно быть, проверка не знает и знать не может:
+// каталог живёт в коде сайта. Берём то число, которое видела сцена
+// выше, — если плоский вид потеряет карточку, это вылезет здесь.
 for (const [label, opts, init] of [
   ['без WebGL', {}, () => {
     HTMLCanvasElement.prototype.getContext = function () { return null; };
@@ -390,22 +457,56 @@ for (const [label, opts, init] of [
   const g = await geometry(page);
   if (g.d3) no('сцена поднялась там, где её быть не должно');
   else ok('объёма нет — остаётся плоская витрина');
-  if (g.cards.length === 3) ok('все три карточки на месте'); else no(`карточек ${g.cards.length}`);
+  if (g.cards.length === kartochekVScene) ok(`все ${g.cards.length} карточек на месте`);
+  else no(`карточек ${g.cards.length}, а в сцене было ${kartochekVScene}`);
 
-  await tap(page, page.locator('.pcard').nth(2).locator('.pcard__face'));
-  await page.waitForTimeout(500);
-  await tap(page, page.locator('.pcard--active .tariff').first());
-  await page.waitForTimeout(500);
-  const order = await page.evaluate(() => {
+  const chek = () => page.evaluate(() => {
     const t = (sel) => document.querySelector(sel)?.innerText ?? '';
     return `${t('.order__paper')} ${t('.bar')}`.replace(/\s+/g, ' ').trim();
   });
-  if (/Seedance/.test(order)) ok(`тариф выбирается и без сцены: ${order.slice(0, 90)}`);
-  else no(`выбор не работает: ${JSON.stringify(order.slice(0, 120))}`);
+  const nomera = await page.evaluate(() => {
+    const c = [...document.querySelectorAll('.pcard')];
+    return {
+      sUrovnyami: c.findIndex((el) => el.querySelector('.tariff')),
+      bezUrovney: c.findIndex((el) => !el.querySelector('.tariff')),
+      imena: c.map((el) => el.querySelector('.pcard__name').textContent.trim()),
+    };
+  });
 
-  const plans = await page.evaluate(() => [...document.querySelectorAll('.pcard')].map((c) => c.querySelectorAll('.tariff').length));
-  if (plans[2] === 1) ok('у Seedance ровно один тариф — годового нет и не выдумано');
-  else no(`тарифов у Seedance ${plans[2]}`);
+  // 1. Продукт С УРОВНЯМИ: карточка, потом уровень.
+  if (nomera.sUrovnyami < 0) {
+    no('в каталоге нет ни одного продукта с уровнями — проба устарела');
+  } else {
+    await tap(page, page.locator('.pcard').nth(nomera.sUrovnyami).locator('.pcard__face'));
+    await page.waitForTimeout(500);
+    await tap(page, page.locator('.pcard--active .tariff').first());
+    await page.waitForTimeout(500);
+    const order = await chek();
+    const imya = nomera.imena[nomera.sUrovnyami];
+    if (order.includes(imya)) ok(`уровень выбирается и без сцены: ${order.slice(0, 90)}`);
+    else no(`выбор уровня не работает («${imya}»): ${JSON.stringify(order.slice(0, 120))}`);
+  }
+
+  // 2. Продукт БЕЗ УРОВНЕЙ покупается САМОЙ КАРТОЧКОЙ.
+  //
+  // Это новое свойство каталога и главное, что здесь стоит стеречь:
+  // у Claude Pro и Seedance уровней нет вовсе, и если чек ждёт
+  // выбора уровня, такой продукт нельзя купить в принципе.
+  if (nomera.bezUrovney < 0) {
+    no('в каталоге нет ни одного продукта без уровней — проба устарела');
+  } else {
+    await tap(page, page.locator('.pcard').nth(nomera.bezUrovney).locator('.pcard__face'));
+    await page.waitForTimeout(600);
+    const order = await chek();
+    const imya = nomera.imena[nomera.bezUrovney];
+    const vnutri = await page.evaluate(() =>
+      document.querySelectorAll('.pcard--active .tariff').length);
+    if (order.includes(imya) && vnutri === 0) {
+      ok(`продукт без уровней покупается самой карточкой: «${imya}» в чеке, кнопок уровня 0`);
+    } else {
+      no(`продукт без уровней не попал в чек («${imya}», кнопок уровня ${vnutri}): ${JSON.stringify(order.slice(0, 120))}`);
+    }
+  }
   await ctx.close();
 }
 

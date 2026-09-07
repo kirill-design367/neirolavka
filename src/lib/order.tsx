@@ -1,18 +1,27 @@
 'use client';
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { findPlan, getCatalog, type PaymentMethod, type Plan, type Product } from '@/lib/catalog';
+import { findPlan, findProduct, getCatalog, priceOf, type PaymentMethod, type Plan, type Product } from '@/lib/catalog';
 
 type OrderState = {
   /** Выбранный продукт на витрине. null — не выбран ни один. */
   openProductId: string | null;
   planId: string | null;
   paymentId: PaymentMethod['id'] | null;
-  /** Выбранный тариф вместе с продуктом, либо null. */
-  selection: { product: Product; plan: Plan } | null;
+  /**
+   * Что уедет в чек: продукт и уровень подписки.
+   *
+   * `plan` равен null у продуктов БЕЗ уровней (Claude Pro, Seedance):
+   * у них покупается сам продукт, и выбор считается сделанным сразу
+   * по нажатию на карточку. Раньше выбор всегда был выбором тарифа,
+   * и продукт без тарифов просто нельзя было купить.
+   */
+  selection: { product: Product; plan: Plan | null } | null;
   payment: PaymentMethod | null;
   total: number;
-  /** Выбор полон: тариф и способ оплаты. */
+  /** Известна ли цена выбранного. Пока прайса нет — всюду false. */
+  priceKnown: boolean;
+  /** Выбор полон: продукт (с уровнем, если они есть) и способ оплаты. */
   ready: boolean;
   /** Бот заведён и по ссылке есть куда идти. */
   botReady: boolean;
@@ -36,11 +45,19 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   );
   const [planId, setPlanId] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<PaymentMethod['id'] | null>(null);
+  // Нажимал ли человек по карточке вообще.
+  //
+  // Первый продукт РАСКРЫТ сразу, но не выбран: у продукта без
+  // уровней выбор совпадает с раскрытием, и без этого флага чек
+  // оказался бы заполненным ещё до единого нажатия — то есть
+  // за человека. Флаг поднимается только из chooseProduct.
+  const [tronul, setTronul] = useState(false);
 
   // Выбор ДЕРЖИТСЯ, пока не выбран другой продукт: повторное нажатие
   // по выбранной карточке ничего не сворачивает. Витрина, с которой
   // можно случайно снять выбор, заставляет выбирать дважды.
   const chooseProduct = useCallback((id: string) => {
+    setTronul(true);
     setOpenProductId((current) => {
       if (current === id) return current;
       // Сменили продукт — снимаем выбор тарифа с прежнего, иначе
@@ -69,9 +86,21 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<OrderState>(() => {
     const found = planId ? findPlan(planId) : null;
-    const selection = found ? { product: found.product, plan: found.plan } : null;
+    // Продукт без уровней покупается сам по себе — как только человек
+    // по нему нажал. Продукт с уровнями ждёт выбора уровня.
+    const golyy = tronul && openProductId ? findProduct(openProductId) : null;
+    const selection = found
+      ? { product: found.product, plan: found.plan as Plan | null }
+      : golyy && golyy.plans.length === 0
+        ? { product: golyy, plan: null }
+        : null;
     const payment = catalog.payments.find((p) => p.id === paymentId) ?? null;
-    const total = selection ? selection.plan.priceRub : 0;
+    // Цены может не быть вовсе — тогда в итоге ноль, а чек показывает
+    // «цена уточняется». Считать ноль ценой нельзя, поэтому наружу
+    // уходит ещё и признак «цена известна».
+    const price = selection ? priceOf(selection.product, selection.plan) : null;
+    const total = price ?? 0;
+    const priceKnown = price !== null;
     const ready = Boolean(selection && payment);
 
     // Пока адрес бота пуст, ссылки не собираются вовсе: вести
@@ -91,7 +120,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       // «=» и «&» на подчёркивание.
       if (catalog.botStartPayload) {
         const params = new URLSearchParams();
-        if (selection) params.set('tovar', selection.plan.id);
+        if (selection) params.set('tovar', selection.plan?.id ?? selection.product.id);
         if (payment) params.set('oplata', payment.id);
         const start = params.toString().replace(/[=&]/g, '_').slice(0, 64);
         if (start) botHref = `${catalog.botUrl}?start=${start}`;
@@ -105,6 +134,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       selection,
       payment,
       total,
+      priceKnown,
       ready,
       botReady,
       botHref,
@@ -113,7 +143,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       choosePayment,
       reset,
     };
-  }, [catalog.botUrl, catalog.botStartPayload, catalog.payments, openProductId, paymentId, planId, chooseProduct, choosePlan, choosePayment, reset]);
+  }, [catalog.botUrl, catalog.botStartPayload, catalog.payments, openProductId, paymentId, planId, tronul, chooseProduct, choosePlan, choosePayment, reset]);
 
   return <OrderContext.Provider value={value}>{children}</OrderContext.Provider>;
 }

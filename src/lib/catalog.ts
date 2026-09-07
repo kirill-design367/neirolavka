@@ -6,8 +6,12 @@
  * достаточно заменить тело getCatalog() на запрос к API — типы и все
  * вызывающие компоненты остаются нетронутыми.
  *
- * Цены неполные: месяц стоит 1990 ₽, а всё, чего в прайсе ещё нет,
- * стоит 1 ₽ — так по всему проекту помечено «цены пока нет».
+ * ЦЕН ПОКА НЕТ, и это записано явным `null`, а не рублём-заглушкой.
+ * Прежде «цены ещё нет» изображалось значением 1 ₽: на экране это
+ * выглядело настоящей ценой, и отличить «стоит рубль» от «мы не знаем»
+ * было нельзя ни человеку, ни коду. Теперь `null` — это `null`, а
+ * вписать цену значит поменять ОДНО слово в этом файле: разметка,
+ * чек и вся логика выбора уже умеют и то и другое состояние.
  */
 
 /** Способ оплаты. Сайт его не обрабатывает — значение уезжает в бот. */
@@ -17,31 +21,46 @@ export type PaymentMethod = {
   caption: string;
 };
 
-/** Один тариф — срок подписки. */
+/**
+ * Уровень подписки — «Pro», «Premier», «Standard».
+ *
+ * Это НЕ срок. Прежде тарифом был срок («1 месяц», «1 год»), и от той
+ * поры остались бы поля `months` и расчёт даты доступа; их больше нет.
+ * Срок подписки владелец не объявлял, а выдумывать его нельзя.
+ */
 export type Plan = {
   id: string;
-  /** Короткая подпись на кнопке тарифа: «1 месяц», «1 год». */
+  /** Короткая подпись на кнопке уровня: «Pro». */
   short: string;
-  /** Полное название для панели заказа: «Claude Pro, 1 год». */
+  /** Полное название для панели заказа: «Kling AI, Pro». */
   title: string;
-  /** Строка под названием: что именно человек получает. */
-  note: string;
-  /** Цена в рублях. Там, где прайса ещё нет, стоит 1. */
-  priceRub: number;
-  /** Срок подписки в месяцах. */
-  months: number;
+  /** Строка под названием: что даёт уровень. Пока не объявлена. */
+  note?: string;
+  /** Цена в рублях. `null` — цены ещё нет. */
+  priceRub: number | null;
 };
 
 export type Product = {
-  id: 'claude' | 'chatgpt' | 'seedance';
+  id: string;
   /** Имя продукта. Латиница здесь допустима: это имя бренда. */
   name: string;
   /** Одна строка о том, что это и кому. */
   tagline: string;
   /** Что человек получает — одной строкой на карточке. */
   note: string;
-  /** Тарифы. У Seedance годового нет вообще, и выдумывать его нельзя. */
+  /**
+   * Уровни подписки. ПУСТО — значит уровней нет вовсе и подписка
+   * одна: у Claude Pro и Seedance это так, и дорисовывать им уровень
+   * ради симметрии карточек запрещено. Такой продукт покупается
+   * нажатием по самой карточке.
+   */
   plans: Plan[];
+  /**
+   * Цена самой подписки — только для продуктов БЕЗ уровней.
+   * У продукта с уровнями цена лежит на уровне и это поле не читается.
+   * `null` — цены ещё нет.
+   */
+  priceRub: number | null;
 };
 
 /** Отзыв. Пока это примеры оформления: настоящие приедут из бота. */
@@ -90,69 +109,56 @@ export type Catalog = {
   reviews: Review[];
 };
 
-/** Цена, которой ещё нет. По всему проекту такие стоят рублём. */
-const NET_CENY = 1;
-const MESYAC = 1990;
+/**
+ * Цены, которой ещё нет. Отдельное имя, а не голый `null` по тексту:
+ * так видно, что пустота здесь намеренная, и так её легче заменить.
+ */
+const NET_CENY = null;
 
-const plans = (id: string, name: string, year: boolean): Plan[] => {
-  const list: Plan[] = [
-    {
-      id: `${id}-1m`,
-      short: '1 месяц',
-      title: `${name}, 1 месяц`,
-      note: 'Продлевать самому',
-      priceRub: MESYAC,
-      months: 1,
-    },
-  ];
-  if (year) {
-    list.push({
-      id: `${id}-1y`,
-      short: '1 год',
-      title: `${name}, 1 год`,
-      note: 'Сразу на год, без продлений',
-      priceRub: NET_CENY,
-      months: 12,
-    });
-  }
-  return list;
-};
+/** Собрать уровни подписки одного продукта из коротких подписей. */
+const urovni = (id: string, name: string, urovniSpisok: string[]): Plan[] =>
+  urovniSpisok.map((short) => ({
+    id: `${id}-${short.toLowerCase()}`,
+    short,
+    title: `${name}, ${short}`,
+    priceRub: NET_CENY,
+  }));
 
 const REVIEWS: Review[] = [
   {
     id: 'r1',
     author: 'Артём',
-    bought: 'Claude Pro, 6 месяцев',
-    text: 'Брал на полгода, чтобы не возвращаться к этому вопросу. Доступ пришёл в боте минут через пять, зашёл со своей почты, всё на месте.',
+    bought: 'Claude Pro',
+    text: 'Брал, чтобы не возвращаться к этому вопросу. Доступ пришёл в боте минут через пять, зашёл со своей почты, всё на месте.',
   },
   {
     id: 'r2',
     author: 'Нина',
-    bought: 'Claude Pro, 1 месяц',
-    text: 'Сначала взяла на месяц — проверить, что это не развод. Проверила, продлила. Оплатила через СБП, никаких данных карты никуда не вводила.',
+    bought: 'ChatGPT, Plus',
+    text: 'Сначала взяла попробовать — проверить, что это не развод. Проверила, продлила. Оплатила через СБП, никаких данных карты никуда не вводила.',
   },
   {
     id: 'r3',
     author: 'Дмитрий',
-    bought: 'Пакет 20 млн токенов',
-    text: 'Нужен был ключ к API под рабочий скрипт. Выдали ключ, лимит совпал с заявленным. Отдельно порадовало, что цена сразу видна и не меняется на последнем шаге.',
+    bought: 'Gemini AI, Pro',
+    text: 'Нужен был доступ под рабочие задачи. Аккаунт выдали в тот же час, всё открылось с первого раза. Отдельно порадовало, что цена сразу видна и не меняется на последнем шаге.',
   },
   {
     id: 'r4',
     author: 'Соня',
-    bought: 'Claude Pro, 12 месяцев',
-    text: 'Год вышел заметно дешевле помесячной оплаты. Написала в бот с вопросом про продление — ответили в тот же вечер.',
+    bought: 'Kling AI, Premier',
+    text: 'Старший уровень вышел заметно выгоднее младшего. Написала в бот с вопросом про продление — ответили в тот же вечер.',
   },
   {
     id: 'r5',
     author: 'Павел',
-    bought: 'Пакет 5 млн токенов',
+    bought: 'Suno AI, Pro',
     text: 'Платил в USDT, сеть TON. Зачлось быстрее, чем я успел закрыть кошелёк.',
   },
   {
     id: 'r6',
     author: 'Марина',
-    bought: 'Claude Pro, 3 месяца',
+    bought: 'Seedance',
     text: 'До этого покупала у перекупа в личке и потеряла деньги. Тут хотя бы понятно, за что платишь и что будет дальше.',
   },
 ];
@@ -170,25 +176,55 @@ const CATALOG: Catalog = {
   ],
   products: [
     {
+      id: 'kling',
+      name: 'Kling AI',
+      tagline: 'Генератор видео',
+      note: 'Ролики по описанию и по кадру',
+      plans: urovni('kling', 'Kling AI', ['Pro', 'Premier', 'Standard']),
+      priceRub: NET_CENY,
+    },
+    {
+      id: 'suno',
+      name: 'Suno AI',
+      tagline: 'Генератор музыки',
+      note: 'Треки по описанию, со словами и без',
+      plans: urovni('suno', 'Suno AI', ['Pro', 'Premier']),
+      priceRub: NET_CENY,
+    },
+    {
+      id: 'gemini',
+      name: 'Gemini AI',
+      tagline: 'Ассистент Google',
+      note: 'Текст, картинки и работа с документами',
+      plans: urovni('gemini', 'Gemini AI', ['Plus', 'Pro', 'Ultra']),
+      priceRub: NET_CENY,
+    },
+    {
+      id: 'chatgpt',
+      name: 'ChatGPT',
+      tagline: 'Голос, картинки и привычный интерфейс',
+      note: 'Старшие модели, голосовой режим, работа с изображениями',
+      plans: urovni('chatgpt', 'ChatGPT', ['Plus', 'Go']),
+      priceRub: NET_CENY,
+    },
+    {
+      // Уровней нет — и это не пустое место в прайсе, а свойство
+      // продукта: подписка одна. Карточка покупается нажатием
+      // по ней самой.
       id: 'claude',
       name: 'Claude Pro',
       tagline: 'Полноценный ИИ-ассистент',
       note: 'Sonnet и Opus, проекты, загрузка файлов',
-      plans: plans('claude-pro', 'Claude Pro', true),
-    },
-    {
-      id: 'chatgpt',
-      name: 'ChatGPT Plus',
-      tagline: 'Голос, картинки и привычный интерфейс',
-      note: 'Старшие модели, голосовой режим, работа с изображениями',
-      plans: plans('chatgpt-plus', 'ChatGPT Plus', true),
+      plans: [],
+      priceRub: NET_CENY,
     },
     {
       id: 'seedance',
-      name: 'Seedance 2.5',
+      name: 'Seedance',
       tagline: 'Видео по тексту и по картинке',
       note: 'Генерация роликов, продление сцен, свои референсы',
-      plans: plans('seedance-25', 'Seedance 2.5', false),
+      plans: [],
+      priceRub: NET_CENY,
     },
   ],
 };
@@ -202,7 +238,7 @@ export function getCatalog(): Catalog {
   return CATALOG;
 }
 
-/** Найти тариф по идентификатору во всём каталоге. */
+/** Найти уровень подписки по идентификатору во всём каталоге. */
 export function findPlan(planId: string): { product: Product; plan: Plan } | null {
   for (const product of getCatalog().products) {
     const plan = product.plans.find((p) => p.id === planId);
@@ -211,19 +247,30 @@ export function findPlan(planId: string): { product: Product; plan: Plan } | nul
   return null;
 }
 
+/** Найти продукт по идентификатору. */
+export function findProduct(productId: string): Product | null {
+  return getCatalog().products.find((p) => p.id === productId) ?? null;
+}
+
 /**
- * Дата, до которой будет открыт доступ, если оплатить сегодня.
- *
- * Считается только на клиенте: сборка статическая, и вшитая на этапе
- * сборки дата протухла бы через неделю.
+ * Цена выбранного: у продукта с уровнями она на уровне, у продукта
+ * без уровней — на самом продукте. `null` там, где цены ещё нет.
  */
-export function accessUntil(months: number, from: Date): string {
-  const till = new Date(from);
-  till.setMonth(till.getMonth() + months);
-  return till.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+export function priceOf(product: Product, plan: Plan | null): number | null {
+  return plan ? plan.priceRub : product.priceRub;
+}
+
+/**
+ * Наименьшая известная цена продукта — та, что показывается строкой
+ * «от N ₽» на свёрнутой карточке. `null`, пока ни одной цены нет.
+ */
+export function priceFrom(product: Product): number | null {
+  const known = (product.plans.length ? product.plans.map((p) => p.priceRub) : [product.priceRub])
+    .filter((v): v is number => typeof v === 'number');
+  return known.length ? Math.min(...known) : null;
 }
 
 /** «1 ₽», «1 234 ₽» — с неразрывным пробелом перед знаком. */
 export function formatPrice(rub: number): string {
-  return `${rub.toLocaleString('ru-RU')} ₽`;
+  return `${rub.toLocaleString('ru-RU')} ₽`;
 }
