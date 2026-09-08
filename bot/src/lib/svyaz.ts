@@ -18,10 +18,16 @@
  * настоящим соединением, печатаем, что вышло, и ставим предпочтение.
  * IPv6 предпочитаем, но не прибиваем: если однажды он отвалится,
  * а IPv4 разблокируют, проба это увидит и переключит.
+ *
+ * И главное правило, купленное двадцатью минутами молчания на боевом:
+ * НЕПОДТВЕРЖДЁННЫЙ ПУТЬ — ЭТО НЕ ВЫБОР. Если не ответил ни один,
+ * бот не объявляет «иду по IPv4» и не садится на него до следующей
+ * проверки: порядок возвращается к предпочтению, а поиск продолжается.
  */
 
 import { request } from 'node:https';
 import { setDefaultResultOrder } from 'node:dns';
+import { setDefaultAutoSelectFamily } from 'node:net';
 import { zhurnal } from './zhurnal.js';
 
 export type Semeystvo = 4 | 6;
@@ -77,6 +83,33 @@ export function probaSemeystva(
   });
 }
 
+/**
+ * Путь, который на этом сервере работает. Предпочтение, а не догма:
+ * выбор всё равно делается пробой, но при неизвестности возвращаемся
+ * СЮДА, а не туда, где оказались в прошлый раз.
+ */
+export const PREDPOCHTENIE: Semeystvo = 6;
+
+/** Поставить порядок адресов под выбранное семейство. */
+export function postavitPoryadok(s: Semeystvo): void {
+  setDefaultResultOrder(s === 6 ? 'ipv6first' : 'ipv4first');
+}
+
+/**
+ * Соединяться сразу по обоим семействам и брать то, что ответит
+ * первым (RFC 8305, «счастливые глазки»).
+ *
+ * Это вторая линия обороны, независимая от нашего выбора: даже если
+ * порядок адресов оказался неверным, соединение уходит на живой путь
+ * через четверть секунды вместо того, чтобы молчать до таймаута.
+ * В Node 22 это умолчание, но объявляем ЯВНО: умолчания меняются
+ * от версии к версии, а зависимость от них — тот же «пока везёт»,
+ * из-за которого этот модуль и появился.
+ */
+export function nastroitSokety(): void {
+  setDefaultAutoSelectFamily(true);
+}
+
 export type Vybor = { vybrano: Semeystvo | null; proby: Proba[] };
 
 /**
@@ -95,16 +128,43 @@ export async function vybratPut(
   const shest = await proba(host, 6);
   proby.push(shest);
   if (shest.ok) {
-    setDefaultResultOrder('ipv6first');
+    postavitPoryadok(6);
     return { vybrano: 6, proby };
   }
   const chetyre = await proba(host, 4);
   proby.push(chetyre);
   if (chetyre.ok) {
-    setDefaultResultOrder('ipv4first');
+    postavitPoryadok(4);
     return { vybrano: 4, proby };
   }
+  // Не ответил никто. Это НЕ повод остаться там, где стояли: если
+  // прошлый выбор был запасным IPv4, на нём и залипнем — а он на этом
+  // сервере заблокирован постоянно. Возвращаем порядок к тому пути,
+  // который здесь единственный живой, и честно говорим, что выбора нет.
+  postavitPoryadok(PREDPOCHTENIE);
   return { vybrano: null, proby };
+}
+
+/**
+ * Сообщить присмотру, что запрос оборвался.
+ *
+ * Шов между слоем запросов и присмотром за путём. Обрыв исходящего
+ * запроса — самый ранний и самый честный признак, что путь умер:
+ * ждать очередной проверки по расписанию значит держать человека
+ * в молчании ровно столько, сколько до неё осталось.
+ */
+let naObryv: (() => void) | null = null;
+
+export function slushatObryvy(f: (() => void) | null): void {
+  naObryv = f;
+}
+
+export function soobshchitObObryve(): void {
+  try {
+    naObryv?.();
+  } catch (e) {
+    zhurnal.oshibka('присмотр за связью не отозвался на обрыв:', e);
+  }
 }
 
 /** Одна строка про каждую пробу — в журнал. */
@@ -114,7 +174,10 @@ export function rasskazat(host: string, v: Vybor): void {
     else zhurnal.vnimanie(`${host} по IPv${p.semeystvo}: ${p.oshibka} (${p.ms} мс)`);
   }
   if (v.vybrano === null) {
-    zhurnal.oshibka(`${host} не отвечает ни по IPv6, ни по IPv4`);
+    zhurnal.oshibka(
+      `${host} не отвечает ни по IPv6, ни по IPv4. Путь НЕ выбран: ` +
+        `порядок адресов вернул к IPv${PREDPOCHTENIE} и продолжаю искать.`,
+    );
   } else {
     zhurnal.info(`иду в ${host} по IPv${v.vybrano}`);
   }

@@ -27,7 +27,7 @@ import { proveritKlyuch } from './lib/shifr.js';
 import { zhurnal, skryt } from './lib/zhurnal.js';
 import { sobrat } from './bot/index.js';
 import { proveritKomandu } from './bot/uvedomleniya.js';
-import { vybratPut, rasskazat } from './lib/svyaz.js';
+import { vybratPut, rasskazat, nastroitSokety } from './lib/svyaz.js';
 import type { Semeystvo } from './lib/svyaz.js';
 import { zapustit as zapustitPrismotr } from './jobs/svyaz.js';
 import { sozdatServer } from './server.js';
@@ -51,7 +51,7 @@ import { sozdatBota } from './lavka.js';
  */
 const UZEL_TELEGRAM = 'api.telegram.org';
 
-async function dozhdatsyaTelegram(l: Lavka): Promise<Semeystvo> {
+async function dozhdatsyaTelegram(l: Lavka): Promise<Semeystvo | null> {
   const nachalo = Date.now();
   for (let popytka = 1; ; popytka += 1) {
     // Путь выбирается ЗАНОВО на каждой попытке, а не один раз при
@@ -65,7 +65,15 @@ async function dozhdatsyaTelegram(l: Lavka): Promise<Semeystvo> {
       if (popytka > 1) {
         zhurnal.info(`Telegram ответил с ${popytka}-й попытки, ждали ${Math.round((Date.now() - nachalo) / 1000)} с`);
       }
-      return vybor.vybrano ?? 4;
+      // ВОЗВРАЩАЕМ РОВНО ТО, ЧТО ПОДТВЕРДИЛОСЬ, включая «ничего».
+      //
+      // Здесь стояло `vybor.vybrano ?? 4`, и это стоило двадцати минут
+      // молчания на боевом: обе пробы не ответили, getMe при этом
+      // прошёл (счастливые глазки нашли живой адрес сами) — и бот
+      // объявлял себя работающим по IPv4, который на этом сервере
+      // заблокирован постоянно. Присмотр верил числу и проверял
+      // именно четвёрку — раз в десять минут.
+      return vybor.vybrano;
     } catch (e) {
       zhurnal.vnimanie(
         `Telegram недоступен с этого сервера (попытка ${popytka}, ` +
@@ -80,6 +88,10 @@ async function dozhdatsyaTelegram(l: Lavka): Promise<Semeystvo> {
 }
 
 async function glavnaya(): Promise<void> {
+  // Счастливые глазки — до первого исходящего запроса: соединение
+  // должно уметь уйти на живой путь само, даже если наш выбор ошибся.
+  nastroitSokety();
+
   const n = prochitat(process.env);
   // Регистрируем секреты до первой строки журнала: дальше они
   // не смогут просочиться даже через чужую трассировку.
@@ -165,11 +177,20 @@ async function glavnaya(): Promise<void> {
   await proveritKomandu(l).catch((e) => zhurnal.oshibka('проверка команды не прошла:', e));
 
   sostoyanie.gotov = true;
-  sostoyanie.shag = `на связи по IPv${putDoTelegram}`;
+  sostoyanie.shag =
+    putDoTelegram === null
+      ? 'на связи, путь не подтверждён — ищу'
+      : `на связи по IPv${putDoTelegram}`;
 
   zapustitNapominaniya(l);
   zapustitOzhidanieKodov(l);
-  zapustitPrismotr(l, putDoTelegram);
+  // Присмотр держит состояние пути и правит строку /health на ходу:
+  // «жив» без указания пути ничего не говорит, когда путь потерян.
+  const prismotr = zapustitPrismotr(l, putDoTelegram);
+  setInterval(() => {
+    const p = prismotr.put();
+    sostoyanie.shag = p === null ? 'на связи, путь не подтверждён — ищу' : `на связи по IPv${p}`;
+  }, 5_000).unref();
 
   const ostanovka = (signal: string) => {
     zhurnal.info(`${signal}: останавливаюсь`);
