@@ -163,8 +163,11 @@ function spread(m, W, H, cx0, cy0, box) {
 }
 
 for (const vp of [
-  { name: "десктоп", w: 1512, h: 900, lo: 56, hi: 57, mobile: false },
-  { name: "мобильная", w: 390, h: 844, lo: 13, hi: 14, mobile: true },
+  // Числа — те, что стоят в bubbles-gl.ts: 28 на десктопе и 7
+  // на телефоне. Нижняя граница на единицу меньше: один пузырь может
+  // быть в этот миг лопнут и ещё не вернуться.
+  { name: "десктоп", w: 1512, h: 900, lo: 27, hi: 28, mobile: false },
+  { name: "мобильная", w: 390, h: 844, lo: 6, hi: 7, mobile: true },
 ]) {
   const ctx = await browser.newContext({
     viewport: { width: vp.w, height: vp.h },

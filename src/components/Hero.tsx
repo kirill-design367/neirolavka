@@ -45,7 +45,7 @@ export function Hero() {
         </div>
         <div className="term" data-reveal>
           <dt className="term__title">Доступ в переписке</dt>
-          <dd className="term__text">Аккаунт или ключ приходят в чат, и чат остаётся у вас.</dd>
+          <dd className="term__text">Данные аккаунта приходят в чат, и чат остаётся у вас.</dd>
         </div>
       </dl>
 
