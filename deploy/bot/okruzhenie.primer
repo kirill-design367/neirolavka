@@ -32,7 +32,7 @@ NEIROLAVKA_POMOSHNIKI=
 # здесь — значения по умолчанию для свежей установки.
 NEIROLAVKA_POYAS=Europe/Moscow
 NEIROLAVKA_RABOTA_S=8
-NEIROLAVKA_RABOTA_DO=23
+NEIROLAVKA_RABOTA_DO=22
 NEIROLAVKA_OBESHCHANIE_MINUT=60
 
 # Через сколько минут после просрочки напоминать и сколько раз.

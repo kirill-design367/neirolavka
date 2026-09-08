@@ -10,7 +10,7 @@ import {
   dostupDo,
 } from '../src/lib/vremya.js';
 
-const R = { poyas: 'Europe/Moscow', rabotaS: 8, rabotaDo: 23, obeshchanieMinut: 60 };
+const R = { poyas: 'Europe/Moscow', rabotaS: 8, rabotaDo: 22, obeshchanieMinut: 60 };
 
 test('разбор момента идёт в объявленном поясе, а не в поясе машины', () => {
   // 2026-09-01T05:00:00Z — это 08:00 в Москве.
@@ -28,8 +28,8 @@ test('момент по стенным часам пояса', () => {
 test('рабочее время считается по границам из настроек', () => {
   assert.equal(rabocheeVremya(new Date('2026-09-01T04:59:00Z'), R), false); // 07:59 мск
   assert.equal(rabocheeVremya(new Date('2026-09-01T05:00:00Z'), R), true); // 08:00
-  assert.equal(rabocheeVremya(new Date('2026-09-01T19:59:00Z'), R), true); // 22:59
-  assert.equal(rabocheeVremya(new Date('2026-09-01T20:00:00Z'), R), false); // 23:00
+  assert.equal(rabocheeVremya(new Date('2026-09-01T18:59:00Z'), R), true); // 21:59
+  assert.equal(rabocheeVremya(new Date('2026-09-01T19:00:00Z'), R), false); // 22:00
 });
 
 test('ближайшее открытие: сегодня до открытия, завтра после закрытия', () => {
@@ -57,14 +57,14 @@ test('ночью обещаем утро, а не час', () => {
 });
 
 test('заказ перед закрытием уезжает на утро: час до закрытия не помещается', () => {
-  // 22:50 мск — лавка закрывается через десять минут.
-  const s = srokVydachi(new Date('2026-09-01T19:50:00Z'), R);
+  // 21:50 мск — лавка закрывается через десять минут.
+  const s = srokVydachi(new Date('2026-09-01T18:50:00Z'), R);
   assert.equal(s.utrom, true);
   assert.equal(s.do.toISOString(), '2026-09-02T06:00:00.000Z');
 });
 
 test('заказ ровно за час до закрытия ещё помещается', () => {
-  const s = srokVydachi(new Date('2026-09-01T19:00:00Z'), R); // 22:00 мск
+  const s = srokVydachi(new Date('2026-09-01T18:00:00Z'), R); // 21:00 мск
   assert.equal(s.utrom, false);
 });
 

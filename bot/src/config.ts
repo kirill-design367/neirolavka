@@ -115,7 +115,7 @@ export function razobratKlyuch(stroka: string): Buffer {
  */
 export function prochitat(env: NodeJS.ProcessEnv): Nastroyki {
   const rabotaS = chislo(env, 'NEIROLAVKA_RABOTA_S', 8);
-  const rabotaDo = chislo(env, 'NEIROLAVKA_RABOTA_DO', 23);
+  const rabotaDo = chislo(env, 'NEIROLAVKA_RABOTA_DO', 22);
   if (!Number.isInteger(rabotaS) || !Number.isInteger(rabotaDo) || rabotaS < 0 || rabotaDo > 24 || rabotaS >= rabotaDo) {
     throw new OshibkaNastroyek(
       `часы работы заданы неверно: с ${rabotaS} до ${rabotaDo}. Нужны целые часы, начало меньше конца.`,

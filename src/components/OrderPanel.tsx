@@ -73,9 +73,11 @@ export function OrderPanel() {
                 <p className="order__label" id="sposob-oplaty">
                   Способ оплаты
                 </p>
-                {/* Три способа в строку вместо трёх строк с подписями:
+                {/* Способы в строку вместо строки на каждый:
                     так блок занимает втрое меньше высоты, а подпись
-                    показывается только у выбранного. */}
+                    показывается только у выбранного. Сколько их —
+                    решает каталог, ряд делится поровну между теми,
+                    что пришли. */}
                 <div className="pays" role="group" aria-labelledby="sposob-oplaty">
                   {catalog.payments.map((method) => (
                     <button
