@@ -15,6 +15,9 @@ import * as zakazy from '../db/zakazy.js';
 import * as lyudi from '../db/lyudi.js';
 import * as dostupy from '../db/dostupy.js';
 import * as dialogi from '../db/dialogi.js';
+import * as koshelek from '../db/koshelek.js';
+import * as svoi from '../db/svoi.js';
+import * as kody from '../db/kody.js';
 import { raspisanie } from '../db/nastroyki.js';
 import { rol } from '../db/komanda.js';
 import { srokVydachi } from '../lib/vremya.js';
@@ -102,51 +105,65 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     );
   });
 
-  // Оформление. Здесь появляется заказ — и здесь же начинается всё,
-  // что должно пережить перезапуск бота.
+  // Оформление идёт в ДВА нажатия, и второе — про аккаунт.
+  //
+  // «Оформить заказ» больше не создаёт заказ сразу: сначала человек
+  // говорит, заводим ли мы аккаунт заново или он несёт свой. Пути
+  // разные по цене для человека: во втором он вводит логин и пароль
+  // и должен будет прислать код с почты. Спрашивать об этом после
+  // создания заказа значило бы ставить его перед фактом.
   bot.callbackQuery(/^of:(.+)$/, async (ctx) => {
-    const tgId = ctx.from.id;
-    // Оформляется ВЫБРАННОЕ: уровень подписки — или продукт, у которого
-    // уровней нет вовсе. Второй случай сюда приходит прямо с карточки.
+    await ctx.answerCallbackQuery();
+    const id = ctx.match![1] as string;
+    if (!vybor(id)) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary()));
+    await pravit(ctx, t.VYBOR_AKKAUNTA, klav.vyborAkkaunta(id));
+  });
+
+  // Новый аккаунт: вводить нечего, заказ появляется прямо здесь.
+  bot.callbackQuery(/^nov:(.+)$/, async (ctx) => {
     const v = vybor(ctx.match![1] as string);
     if (!v) {
       await ctx.answerCallbackQuery();
       return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary()));
     }
-    // Кто это, уже записано общим слоем в bot/index.ts.
-    const { zakaz, novy } = zakazy.sozdatIliVernut(l.db, {
-      tgId,
-      produktId: v.product.id,
-      planId: idVybora(v),
-      nazvanie: nazvanieVybora(v),
-      cenaKop: kopeykiVybora(v),
-      // Срока у подписки нет — колонка осталась от прежней структуры,
-      // где тарифом был срок. Ноль значит «не объявлен», и наружу
-      // он не выходит ни одной строкой.
-      mesyacev: 0,
-    });
-
+    const itog = oformit(l, ctx.from.id, v, 'novy');
     // Ответ на нажатие уходит сразу: Telegram крутит часики на кнопке,
-    // пока мы не ответили, и второе нажатие человек делает именно из-за
-    // этого ожидания.
-    await ctx.answerCallbackQuery(novy ? 'Записал' : 'Такой заказ уже есть');
+    // пока мы не ответили, и второе нажатие человек делает именно
+    // из-за этого ожидания.
+    await ctx.answerCallbackQuery(itog.novy ? 'Записал' : 'Такой заказ уже есть');
+    if (!itog.novy) return pravit(ctx, t.zakazUzheEst(itog.zakaz), klav.poslePokupki(itog.zakaz.id));
+    await pravit(ctx, soobshchenieOZakaze(l, itog), klav.poslePokupki(itog.zakaz.id));
+    await soobshchitOZakaze(l, itog.zakaz);
+  });
 
-    if (!novy) {
-      await pravit(ctx, t.zakazUzheEst(zakaz), klav.poslePokupki(zakaz.id));
-      return;
-    }
+  // Свой аккаунт: сначала логин почты и пароль, потом заказ. Иначе
+  // в базе висел бы заказ, по которому нечего делать, а человек
+  // на середине ввода передумал.
+  bot.callbackQuery(/^svoy:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const id = ctx.match![1] as string;
+    if (!vybor(id)) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary()));
+    dialogi.postavit(l.db, ctx.from.id, 'zhdem_pochtu', null, { vybor: id }, l.n.klyuchDostupov);
+    await pravit(ctx, t.PROSIM_POCHTU);
+  });
 
-    const schet = await l.oplata.vystavit(zakaz);
-    const srok = srokVydachi(new Date(), r());
-    if (schet.vneshnyId || schet.adres) {
-      zakazy.zavestiPlatezh(l.db, zakaz.id, l.oplata.imya, schet.vneshnyId, zakaz.cena_kop);
-    }
+  // ── баланс ─────────────────────────────────────────────────────────
 
-    await pravit(ctx, t.zakazPrinyat(zakaz, srok, r(), l.oplata.rabotaet), klav.poslePokupki(zakaz.id));
+  const pokazatBalans = async (ctx: Context, pravkoy: boolean) => {
+    const tgId = ctx.from!.id;
+    const text = t.balansEkran(
+      koshelek.balans(l.db, tgId),
+      koshelek.dvizheniya(l.db, tgId, 10),
+      r().poyas,
+    );
+    if (pravkoy) await pravit(ctx, text);
+    else await ctx.reply(text);
+  };
 
-    // Администратору — сразу, а не после оплаты: пока оплаты в боте нет,
-    // именно он и договаривается с человеком о деньгах.
-    await soobshchitOZakaze(l, zakaz);
+  bot.hears(klav.KNOPKA_BALANS, (ctx) => pokazatBalans(ctx, false));
+  bot.callbackQuery('bal', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await pokazatBalans(ctx, true);
   });
 
   // ── мои заказы ─────────────────────────────────────────────────────
@@ -227,6 +244,180 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     dialogi.postavit(l.db, ctx.from.id, 'zhdem_vopros', null, {}, l.n.klyuchDostupov);
     await ctx.reply(t.NAPISAT_ADMINU);
   });
+}
+
+/**
+ * Оформление заказа: создать, списать с баланса, вернуть итог.
+ *
+ * Отдельно от обработчика нажатия по двум причинам. Первая — путей два
+ * (новый аккаунт и свой), а действие одно, и разъехаться им нельзя.
+ * Вторая — путь со своим аккаунтом приходит не из нажатия, а из конца
+ * разговора: там нет ни callbackQuery, ни правки сообщения.
+ */
+export type Oformlenie = {
+  zakaz: zakazy.Zakaz;
+  novy: boolean;
+  /** Сколько ушло с баланса при оформлении. */
+  spisano: number;
+  /** Что осталось на балансе. */
+  balans: number;
+};
+
+export function oformit(l: Lavka, tgId: number, v: Vybor, vid: zakazy.VidAkkaunta): Oformlenie {
+  const { zakaz, novy } = zakazy.sozdatIliVernut(l.db, {
+    tgId,
+    produktId: v.product.id,
+    planId: idVybora(v),
+    nazvanie: nazvanieVybora(v),
+    cenaKop: kopeykiVybora(v),
+    // Срока у подписки нет — колонка осталась от прежней структуры,
+    // где тарифом был срок. Ноль значит «не объявлен», и наружу
+    // он не выходит ни одной строкой.
+    mesyacev: 0,
+    vidAkkaunta: vid,
+  });
+  if (!novy) return { zakaz, novy, spisano: 0, balans: koshelek.balans(l.db, tgId) };
+
+  // Баланс тратится СРАЗУ и молча только в одну сторону: заплатить.
+  // Хватило целиком — заказ оплачен и администратору подтверждать
+  // нечего; хватило частью — остаток ждёт оплаты, как раньше.
+  const srok = srokVydachi(new Date(), raspisanie(l.db, l.n));
+  const { spisano } = zakazy.oplatitSBalansa(l.db, zakaz.id, srok.do);
+  const svezhy = zakazy.po(l.db, zakaz.id) ?? zakaz;
+
+  // Место под настоящую оплату остатка. Поставщик сейчас заглушка
+  // и не возвращает ничего; когда появится живой, здесь же появится
+  // счёт — и переписывать поток не придётся.
+  if (svezhy.status === 'zhdet_oplaty') {
+    void l.oplata.vystavit(svezhy).then((schet) => {
+      if (schet.vneshnyId || schet.adres) {
+        zakazy.zavestiPlatezh(l.db, svezhy.id, l.oplata.imya, schet.vneshnyId, svezhy.cena_kop - svezhy.oplacheno_kop);
+      }
+    });
+  }
+
+  return { zakaz: svezhy, novy, spisano, balans: koshelek.balans(l.db, tgId) };
+}
+
+/** Что показать покупателю сразу после оформления. */
+export function soobshchenieOZakaze(l: Lavka, o: Oformlenie): string {
+  return t.zakazPrinyat({
+    zakaz: o.zakaz,
+    srok: srokVydachi(new Date(), raspisanie(l.db, l.n)),
+    r: raspisanie(l.db, l.n),
+    oplataRabotaet: l.oplata.rabotaet,
+    spisano: o.spisano,
+    balansKop: o.balans,
+  });
+}
+
+/* ── разговоры покупателя ────────────────────────────────────────── */
+
+/**
+ * Логин почты. Сообщение с ним убирается из переписки: это часть
+ * доступа к чужому аккаунту, и лежать открытым в чате ему незачем.
+ */
+export async function prinyatPochtu(l: Lavka, ctx: Context, text: string): Promise<void> {
+  const d = dialogi.vzyat(l.db, ctx.from!.id, l.n.klyuchDostupov);
+  const vyborId = d?.chernovik['vybor'] ?? '';
+  const pochta = text.trim();
+  await ubrat(ctx);
+  if (!vyborId || !vybor(vyborId)) {
+    dialogi.zabyt(l.db, ctx.from!.id);
+    await ctx.reply(t.TOVAR_PROPAL, { reply_markup: klav.tovary(tovary()) });
+    return;
+  }
+  if (!pochta) {
+    await ctx.reply('Пустое сообщение. Пришлите логин почты одной строкой.');
+    return;
+  }
+  dialogi.postavit(l.db, ctx.from!.id, 'zhdem_parol_akkaunta', null, { vybor: vyborId, pochta }, l.n.klyuchDostupov);
+  await ctx.reply(t.PROSIM_PAROL_AKKAUNTA);
+}
+
+/** Пароль от аккаунта — и вот здесь появляется заказ. */
+export async function prinyatParolAkkaunta(l: Lavka, ctx: Context, text: string): Promise<void> {
+  const tgId = ctx.from!.id;
+  const d = dialogi.vzyat(l.db, tgId, l.n.klyuchDostupov);
+  const vyborId = d?.chernovik['vybor'] ?? '';
+  const pochta = d?.chernovik['pochta'] ?? '';
+  const parol = text.trim();
+  await ubrat(ctx);
+  dialogi.zabyt(l.db, tgId);
+
+  const v = vyborId ? vybor(vyborId) : null;
+  if (!v || !pochta || !parol) {
+    await ctx.reply('Что-то потерялось при вводе. Начните заново — кнопка «Купить доступ».', {
+      reply_markup: klav.tovary(tovary()),
+    });
+    return;
+  }
+
+  const itog = oformit(l, tgId, v, 'svoy');
+  if (!itog.novy) {
+    await ctx.reply(t.zakazUzheEst(itog.zakaz), { reply_markup: klav.poslePokupki(itog.zakaz.id) });
+    return;
+  }
+  // Данные аккаунта ложатся ПОСЛЕ создания заказа: они привязаны
+  // к нему внешним ключом, и без заказа им негде лежать.
+  svoi.polozhit(l.db, itog.zakaz.id, pochta, parol, l.n.klyuchDostupov);
+  zakazy.sobytie(l.db, itog.zakaz.id, 'покупатель передал данные своего аккаунта', tgId);
+
+  await ctx.reply(t.AKKAUNT_PRINYAT);
+  await ctx.reply(soobshchenieOZakaze(l, itog), { reply_markup: klav.poslePokupki(itog.zakaz.id) });
+  await soobshchitOZakaze(l, itog.zakaz);
+}
+
+/**
+ * Код двухфакторной аутентификации.
+ *
+ * Уходит помощнику С НОМЕРОМ ЗАКАЗА в первой строке: помощник ведёт
+ * несколько заказов разом, и код без привязки — это код неизвестно
+ * от чего.
+ */
+export async function prinyatKod(l: Lavka, ctx: Context, text: string, zakazId: number | null): Promise<void> {
+  const tgId = ctx.from!.id;
+  const kod = text.trim();
+  await ubrat(ctx);
+  dialogi.zabyt(l.db, tgId);
+
+  const z = zakazId ? zakazy.po(l.db, zakazId) : null;
+  if (!z || z.tg_id !== tgId || z.status !== 'zhdem_kod') {
+    await ctx.reply('По этому заказу код уже не нужен. Если что-то не так — напишите в поддержку.');
+    return;
+  }
+  if (!kod) {
+    dialogi.postavit(l.db, tgId, 'zhdem_kod', z.id, {}, l.n.klyuchDostupov);
+    await ctx.reply('Пустое сообщение. Пришлите код одной строкой.');
+    return;
+  }
+
+  kody.zapisat(l.db, z.id, kod, l.n.klyuchDostupov);
+  zakazy.prinyatKod(l.db, z.id);
+  const svezhy = zakazy.po(l.db, z.id) ?? z;
+  await ctx.reply(t.kodPrinyat(svezhy));
+
+  const c = lyudi.chelovek(l.db, tgId);
+  await uvedom.komande(
+    l,
+    [
+      `Код по заказу № ${z.id} · ${z.nazvanie}`,
+      `Покупатель: ${lyudi.podpis(c, tgId)}`,
+      '',
+      `Код: ${kod}`,
+    ].join('\n'),
+    klav.kodAdminu(z.id),
+  );
+}
+
+/** Убрать сообщение с секретом из переписки, не поднимая шума. */
+async function ubrat(ctx: Context): Promise<void> {
+  try {
+    await ctx.deleteMessage();
+  } catch {
+    // Telegram не даёт удалять сообщения старше двух суток. Это
+    // гигиена, а не защита: пароль всё равно уже зашифрован в базе.
+  }
 }
 
 /** Вопрос покупателя администратору. Вызывается из общего разбора текста. */

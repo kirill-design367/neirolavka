@@ -33,6 +33,7 @@ import { zapustit as zapustitPrismotr } from './jobs/svyaz.js';
 import { sozdatServer } from './server.js';
 import type { Sostoyanie } from './server.js';
 import { zapustit as zapustitNapominaniya } from './jobs/napominaniya.js';
+import { zapustit as zapustitOzhidanieKodov } from './jobs/kody.js';
 import { zaglushka } from './oplata/zaglushka.js';
 import type { Lavka } from './lavka.js';
 import { sozdatBota } from './lavka.js';
@@ -167,6 +168,7 @@ async function glavnaya(): Promise<void> {
   sostoyanie.shag = `на связи по IPv${putDoTelegram}`;
 
   zapustitNapominaniya(l);
+  zapustitOzhidanieKodov(l);
   zapustitPrismotr(l, putDoTelegram);
 
   const ostanovka = (signal: string) => {

@@ -15,8 +15,8 @@
 
 import { chasSlovami, chasyMinuty, momentSlovami, sklonenie } from './vremya.js';
 import type { Raspisanie, Srok } from './vremya.js';
-import { rubliIli } from './katalog.js';
-import type { Zakaz, StatusZakaza } from '../db/zakazy.js';
+import { rubli, rubliIli } from './katalog.js';
+import type { Zakaz, StatusZakaza, PrichinaOtmeny, VidAkkaunta } from '../db/zakazy.js';
 
 export const NAZVANIE = 'Нейролавка';
 
@@ -98,12 +98,37 @@ export function kogdaPridet(srok: Srok, r: Raspisanie): string {
   return `утром, после ${chasSlovami(r.rabotaS)} по Москве — сейчас лавка закрыта`;
 }
 
-export function zakazPrinyat(zakaz: Zakaz, srok: Srok, r: Raspisanie, oplataRabotaet: boolean): string {
-  const shapka = [`Заказ № ${zakaz.id} записан.`, '', `${zakaz.nazvanie} — ${rubliIli(zakaz.cena_kop)}`];
-  if (oplataRabotaet) {
-    shapka.push('', 'Осталось оплатить — кнопка ниже.');
+/**
+ * Заказ принят.
+ *
+ * Три вещи, которые человек обязан увидеть сразу: что записано,
+ * что стало с деньгами (баланс списывается при оформлении) и что
+ * будет дальше. Про баланс молчать нельзя: списание без объяснения —
+ * это первое, из-за чего пишут в поддержку.
+ */
+export function zakazPrinyat(o: {
+  zakaz: Zakaz;
+  srok: Srok;
+  r: Raspisanie;
+  oplataRabotaet: boolean;
+  /** Сколько ушло с баланса при оформлении. */
+  spisano: number;
+  /** Что осталось на балансе после списания. */
+  balansKop: number;
+}): string {
+  const { zakaz, srok, r, spisano } = o;
+  const strok = [`Заказ № ${zakaz.id} записан.`, '', `${zakaz.nazvanie} — ${rubliIli(zakaz.cena_kop)}`];
+
+  if (spisano > 0) {
+    strok.push('', `С баланса списано ${rubli(spisano)}. Осталось на балансе ${rubli(o.balansKop)}.`);
+  }
+
+  if (zakaz.status !== 'zhdet_oplaty') {
+    strok.push('', 'Заказ оплачен полностью. Помощник возьмёт его в работу — ' + `доступ придёт ${kogdaPridet(srok, r)}.`);
+  } else if (o.oplataRabotaet) {
+    strok.push('', 'Осталось оплатить — кнопка ниже.');
   } else {
-    shapka.push(
+    strok.push(
       '',
       'Оплата в боте пока не подключена, и придумывать её я не буду. ' +
         'Заказ уже у администратора: он напишет вам сюда и скажет, как заплатить.',
@@ -111,8 +136,17 @@ export function zakazPrinyat(zakaz: Zakaz, srok: Srok, r: Raspisanie, oplataRabo
       `После оплаты доступ придёт ${kogdaPridet(srok, r)}.`,
     );
   }
-  shapka.push('', 'Заказ никуда не денется: он записан и виден в разделе «Мои заказы».');
-  return shapka.join('\n');
+
+  if (zakaz.vid_akkaunta === 'svoy') {
+    strok.push(
+      '',
+      'Аккаунт ваш: когда помощник начнёт вход, на вашу почту придёт код ' +
+        'подтверждения — я попрошу прислать его сюда.',
+    );
+  }
+
+  strok.push('', 'Заказ никуда не денется: он записан и виден в разделе «Мои заказы».');
+  return strok.join('\n');
 }
 
 export function zakazUzheEst(zakaz: Zakaz): string {
@@ -169,11 +203,30 @@ export function statusSlovami(s: StatusZakaza): string {
       return 'оплачен, готовим доступ';
     case 'v_rabote':
       return 'в работе';
+    case 'zhdem_kod':
+      return 'ждём код с почты';
+    case 'kod_poluchen':
+      return 'код получен, продолжаем';
     case 'vydan':
       return 'выдан';
     case 'otmenen':
       return 'отменён';
   }
+}
+
+export function prichinaSlovami(p: PrichinaOtmeny): string {
+  switch (p) {
+    case 'ruchnaya':
+      return 'отменён администратором';
+    case 'net_koda':
+      return 'код не пришёл вовремя';
+    case 'nevernyy_parol':
+      return 'пароль от аккаунта не подошёл';
+  }
+}
+
+export function vidAkkauntaSlovami(v: VidAkkaunta): string {
+  return v === 'svoy' ? 'свой аккаунт' : 'новый аккаунт';
 }
 
 export function kartochkaZakaza(z: Zakaz, r: Raspisanie, estDostup: boolean): string {
@@ -182,8 +235,16 @@ export function kartochkaZakaza(z: Zakaz, r: Raspisanie, estDostup: boolean): st
     '',
     z.nazvanie,
     `${rubliIli(z.cena_kop)} · ${statusSlovami(z.status)}`,
+    `Аккаунт: ${vidAkkauntaSlovami(z.vid_akkaunta)}`,
     `Оформлен ${momentSlovami(new Date(z.sozdan), r.poyas)}`,
   ];
+  if (z.s_balansa_kop > 0) strok.push(`С баланса списано ${rubli(z.s_balansa_kop)}`);
+  if (z.status === 'zhdem_kod') {
+    strok.push('', 'Жду код с почты — пришлите его сюда одним сообщением.');
+  }
+  if (z.status === 'otmenen' && z.prichina_otmeny) {
+    strok.push('', `Причина отмены: ${prichinaSlovami(z.prichina_otmeny)}.`);
+  }
   if ((z.status === 'oplachen' || z.status === 'v_rabote') && z.srok_do) {
     strok.push('', `Обещал не позже ${momentSlovami(new Date(z.srok_do), r.poyas)}.`);
   }
@@ -191,6 +252,158 @@ export function kartochkaZakaza(z: Zakaz, r: Raspisanie, estDostup: boolean): st
     strok.push('', 'Оплата в боте пока не подключена — администратор напишет вам сам.');
   }
   if (estDostup) strok.push('', 'Логин и пароль — по кнопке ниже.');
+  return strok.join('\n');
+}
+
+/* ── новый флоу заказа ───────────────────────────────────────────── */
+
+/**
+ * Развилка при оформлении. Два пути описаны ЧЕСТНО: во втором сразу
+ * сказано, что понадобится код с почты, — человек, у которого нет
+ * доступа к этой почте прямо сейчас, должен узнать об этом до того,
+ * как оформит заказ, а не через час, когда его отменят.
+ */
+export const VYBOR_AKKAUNTA = [
+  'Как оформляем?',
+  '',
+  '• Новый аккаунт — вводить ничего не нужно. Мы заведём почту и аккаунт ' +
+    'сами и пришлём вам логин и оба пароля.',
+  '',
+  '• У меня уже есть аккаунт — понадобится логин почты, привязанной ' +
+    'к нейросети, и пароль от самого аккаунта. И ещё одно: когда помощник ' +
+    'будет входить, на эту почту придёт код подтверждения — его надо будет ' +
+    'прислать сюда. Будьте готовы открыть почту.',
+].join('\n');
+
+export const PROSIM_POCHTU = [
+  'Пришлите логин почты, привязанной к аккаунту нейросети.',
+  '',
+  'Одним сообщением. Следующим — пароль от аккаунта.',
+].join('\n');
+
+export const PROSIM_PAROL_AKKAUNTA = [
+  'Теперь пароль от аккаунта в нейросети — одним сообщением.',
+  '',
+  'Сообщение с паролем я уберу из переписки сразу, а сам пароль ' +
+    'храню зашифрованным.',
+].join('\n');
+
+export const AKKAUNT_PRINYAT = [
+  'Записал. Данные зашифрованы, в переписке их больше нет.',
+  '',
+  'Дальше: помощник войдёт в аккаунт, и на вашу почту придёт код ' +
+    'подтверждения. Я попрошу его прислать — держите почту под рукой.',
+].join('\n');
+
+/** Просьба прислать код. Номер заказа в первой строке — не украшение. */
+export function prosimKod(z: Zakaz, minut: number): string {
+  return [
+    `Заказ № ${z.id} · ${z.nazvanie}`,
+    '',
+    'Введите код двухфакторной аутентификации с почты, привязанной к аккаунту.',
+    '',
+    `Ответьте на это сообщение кодом в течение ${sklonenie(minut, 'минуты', 'минут', 'минут')} — ` +
+      'это гарантированное время выполнения заказа. Если код не придёт, ' +
+      'заказ отменится, а деньги вернутся на ваш баланс в боте.',
+  ].join('\n');
+}
+
+export function kodPrinyat(z: Zakaz): string {
+  return [
+    `Код по заказу № ${z.id} получил.`,
+    '',
+    'Передал помощнику, он продолжает. Ждать в чате не нужно — напишу сам.',
+  ].join('\n');
+}
+
+export function vzyatVRabotu(z: Zakaz): string {
+  const hvost =
+    z.vid_akkaunta === 'svoy'
+      ? 'Скоро попрошу код подтверждения с вашей почты — держите её под рукой.'
+      : 'Заводим аккаунт. Логин и пароли пришлю сюда же.';
+  return [`Заказ № ${z.id} взяли в работу.`, '', hvost].join('\n');
+}
+
+/**
+ * Отмена. Три вещи в одном сообщении, и все три обязательны: что
+ * отменено, почему, и куда делись деньги. Молчание про деньги —
+ * ровно то, из-за чего пишут в поддержку.
+ */
+export function zakazOtmenen(
+  z: Zakaz,
+  prichina: PrichinaOtmeny,
+  vernuli: number,
+  balansKop: number,
+): string {
+  const strok = [`Заказ № ${z.id} отменён: ${prichinaSlovami(prichina)}.`];
+  if (prichina === 'net_koda') {
+    strok.push(
+      '',
+      'Код с почты так и не пришёл, а держать заказ дольше обещанного ' +
+        'срока я не могу.',
+    );
+  }
+  if (prichina === 'nevernyy_parol') {
+    strok.push(
+      '',
+      'На вашу почту отправлено письмо для восстановления пароля — ' +
+        'восстановите доступ и оформите заказ заново.',
+    );
+  }
+  if (vernuli > 0) {
+    strok.push('', `Деньги вернулись на баланс: ${rubli(vernuli)}. Сейчас на балансе ${rubli(balansKop)}.`);
+  }
+  strok.push('', 'Если это неожиданность — напишите в поддержку, разберёмся.');
+  return strok.join('\n');
+}
+
+/* ── баланс ──────────────────────────────────────────────────────── */
+
+export function vidDvizheniyaSlovami(vid: string): string {
+  switch (vid) {
+    case 'popolnenie':
+      return 'пополнение';
+    case 'vozvrat':
+      return 'возврат';
+    default:
+      return 'оплата заказа';
+  }
+}
+
+/**
+ * Баланс покупателя.
+ *
+ * Показывается сумма и последние движения. Вывода средств тут нет
+ * и не будет: баланс — способ заплатить в лавке, а не счёт, с которого
+ * забирают деньги. Поэтому и кнопки такой нет — не «спрятана», а
+ * не существует.
+ */
+export function balansEkran(
+  balansKop: number,
+  dvizheniya: { kop: number; vid: string; za_chto: string; kogda: string }[],
+  poyas: string,
+): string {
+  const strok = [`На балансе: ${rubli(balansKop)}`];
+  if (!dvizheniya.length) {
+    strok.push(
+      '',
+      'Движений пока не было. Баланс пополняется при возврате по отменённому ' +
+        'заказу — и администратором, если вы договорились об этом отдельно.',
+      '',
+      'Балансом можно оплатить заказ целиком или частично: при оформлении ' +
+        'он спишется сам.',
+    );
+    return strok.join('\n');
+  }
+  strok.push('', 'Последние движения:');
+  for (const d of dvizheniya) {
+    const znak = d.kop > 0 ? '+' : '−';
+    strok.push(
+      `${znak}${rubli(Math.abs(d.kop))} · ${vidDvizheniyaSlovami(d.vid)} · ` +
+        `${momentSlovami(new Date(d.kogda), poyas)}`,
+    );
+  }
+  strok.push('', 'Балансом оплачивается заказ — целиком или частично, ' + 'при оформлении он спишется сам.');
   return strok.join('\n');
 }
 
@@ -220,6 +433,14 @@ export function pomoshch(r: Raspisanie, botUrl: string): string {
     'Что-то не входит. Проверьте, что копируете пароль целиком, без пробела в конце. ' +
       'Не помогло — напишите, разберёмся.',
     '',
+    'Баланс. Кнопка «Баланс» внизу. Им оплачивается заказ — целиком или частично, ' +
+      'при оформлении он спишется сам. Деньги попадают на баланс возвратом ' +
+      'по отменённому заказу или от администратора, если вы договорились отдельно.',
+    '',
+    'Свой аккаунт. При оформлении можно выбрать «у меня уже есть аккаунт»: тогда ' +
+      'помощник войдёт в него сам, а вам придёт просьба прислать код с почты. ' +
+      'Если код не прислать вовремя, заказ отменится, а деньги вернутся на баланс.',
+    '',
     'Что я про вас знаю: ваш Telegram и ваши заказы. Телефон, почту и данные карты ' +
       'я не спрашиваю и не храню.',
     botUrl ? `\nСайт: ${botUrl}` : '',
@@ -243,7 +464,7 @@ export const VOPROS_PRINYAT = [
 export const NE_PONYAL = [
   'Не понял сообщение.',
   '',
-  'Внизу есть кнопки: «Купить доступ», «Мои заказы» и «Помощь». ' +
+  'Внизу есть кнопки: «Купить доступ», «Мои заказы», «Баланс» и «Помощь». ' +
     'Если нужно написать администратору — это в «Помощи».',
 ].join('\n');
 

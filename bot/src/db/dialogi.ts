@@ -14,7 +14,29 @@ import type { Baza } from './index.js';
 import { seychasISO } from './index.js';
 import { zashifrovat, rasshifrovat } from '../lib/shifr.js';
 
-export type Shag = 'zhdem_login' | 'zhdem_parol' | 'zhdem_pomoshnika' | 'zhdem_chasy' | 'zhdem_vopros';
+/**
+ * Шаг разговора.
+ *
+ * Первые — покупателя, остальные — служебные. Разделение важно
+ * в разборе: покупательские шаги проходят до проверки роли, иначе
+ * человек, начавший вводить пароль от своего аккаунта, упёрся бы
+ * в «этот раздел только для владельца».
+ */
+export type Shag =
+  // покупатель
+  | 'zhdem_pochtu'
+  | 'zhdem_parol_akkaunta'
+  | 'zhdem_kod'
+  | 'zhdem_vopros'
+  // служебные
+  | 'zhdem_login'
+  | 'zhdem_parol'
+  | 'zhdem_pomoshnika'
+  | 'zhdem_chasy'
+  | 'zhdem_popolnenie';
+
+/** Шаги покупателя: их разбирают ДО проверки роли. */
+export const SHAGI_POKUPATELYA: Shag[] = ['zhdem_pochtu', 'zhdem_parol_akkaunta', 'zhdem_kod', 'zhdem_vopros'];
 
 export type Dialog = {
   shag: Shag;

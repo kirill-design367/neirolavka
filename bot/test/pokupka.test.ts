@@ -65,7 +65,16 @@ test('продукт без уровней покупается прямо с к
     // Цены ещё нет — и ноль наружу не выходит.
     assert.ok(!tekst.includes('0 ₽'), `ноль напечатан как цена: ${tekst}`);
 
-    const oformlenie = await poslat(s.adres, SEKRET, nazhatie(`of:${p.id}`));
+    // «Оформить заказ» ведёт на развилку, а не создаёт заказ сразу:
+    // сначала человек говорит, новый у него аккаунт или свой.
+    const razvilka = await poslat(s.adres, SEKRET, nazhatie(`of:${p.id}`));
+    assert.equal(razvilka.kod, 200);
+    assert.equal(zakazy.cheloveka(s.l.db, POKUPATEL).length, 0, 'на развилке заказа ещё нет');
+    const puti = poslednieKnopki(s.tg.vyzovy).map((k) => k.callback_data);
+    assert.ok(puti.includes(`nov:${p.id}`), `нет пути «новый аккаунт»: ${puti.join(', ')}`);
+    assert.ok(puti.includes(`svoy:${p.id}`), `нет пути «свой аккаунт»: ${puti.join(', ')}`);
+
+    const oformlenie = await poslat(s.adres, SEKRET, nazhatie(`nov:${p.id}`));
     assert.equal(oformlenie.kod, 200);
 
     const spisok = zakazy.cheloveka(s.l.db, POKUPATEL);
@@ -75,6 +84,7 @@ test('продукт без уровней покупается прямо с к
     // продукта, а не выдуманный уровень.
     assert.equal(spisok[0]!.plan_id, p.id);
     assert.equal(spisok[0]!.nazvanie, p.name);
+    assert.equal(spisok[0]!.vid_akkaunta, 'novy');
   } finally {
     await s.zakryt();
   }
@@ -104,7 +114,7 @@ test('у продукта с уровнями карточка по-прежне
 test('оформить по идентификатору продукта С уровнями нельзя: уровень не назван', async () => {
   const s = await stend();
   try {
-    const otvet = await poslat(s.adres, SEKRET, nazhatie(`of:${PRODUKT_S_UROVNYAMI.id}`));
+    const otvet = await poslat(s.adres, SEKRET, nazhatie(`nov:${PRODUKT_S_UROVNYAMI.id}`));
     assert.equal(otvet.kod, 200, 'Telegram обязан получить ответ');
     assert.equal(zakazy.cheloveka(s.l.db, POKUPATEL).length, 0, 'заказа быть не должно');
   } finally {
@@ -116,7 +126,7 @@ test('в статистике ноль не печатается как цена
   const s = await stend();
   try {
     const p = PRODUKT_BEZ_UROVNEY;
-    await poslat(s.adres, SEKRET, nazhatie(`of:${p.id}`));
+    await poslat(s.adres, SEKRET, nazhatie(`nov:${p.id}`));
     const z = zakazy.cheloveka(s.l.db, POKUPATEL)[0]!;
     assert.equal(z.cena_kop, 0, 'цены в каталоге ещё нет — в базе ноль');
     zakazy.otmetitOplachennym(s.l.db, z.id, new Date(), VLADELEC);

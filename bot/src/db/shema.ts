@@ -12,7 +12,25 @@
  * настройки сервера.
  */
 
-export type Migraciya = { imya: string; sql: string };
+export type Migraciya = {
+  imya: string;
+  sql: string;
+  /**
+   * Гасить ли внешние ключи на время миграции.
+   *
+   * Нужно ровно для одного дела — ПЕРЕСБОРКИ таблицы. У SQLite нельзя
+   * изменить объявленный CHECK, поэтому таблица со списком статусов
+   * пересобирается заново: новая, перелив, DROP старой, переименование.
+   * А `DROP TABLE` при включённых внешних ключах запускает каскады
+   * у детей (`sobytiya`, `dostupy`, `platezhi` объявлены
+   * ON DELETE CASCADE) — то есть снёс бы всю историю заказов заодно.
+   *
+   * Порядок — тот, что описан в документации SQLite: PRAGMA снаружи
+   * транзакции, проверка `foreign_key_check` перед фиксацией,
+   * возврат PRAGMA обратно.
+   */
+  bezVneshnihKlyuchey?: boolean;
+};
 
 export const MIGRACII: Migraciya[] = [
   {
@@ -143,6 +161,129 @@ CREATE TABLE obnovleniya (
   update_id INTEGER PRIMARY KEY,
   kogda     TEXT NOT NULL
 );
+`,
+  },
+
+  {
+    // Кошелёк покупателя, свой аккаунт, коды двухфакторной
+    // аутентификации — и новые состояния заказа под них.
+    imya: '002-koshelek-i-kody',
+    bezVneshnihKlyuchey: true,
+    sql: `
+-- КОШЕЛЁК — ЭТО ИСТОРИЯ, А НЕ ЧИСЛО.
+--
+-- Баланс считается суммой движений, а не хранится колонкой. Колонка
+-- с числом и таблица истории — два источника правды об одних деньгах,
+-- и однажды они разойдутся: любая правка мимо одного из них молча
+-- сделает баланс неверным. Сумма по индексу на нашем потоке (десятки
+-- записей в сутки на человека) стоит доли миллисекунды.
+--
+-- Знак ОДИН на все виды: плюс — деньги пришли, минус — ушли. Вид нужен
+-- человеку в выписке, а не арифметике.
+--
+-- ВЫВОДА СРЕДСТВ НЕТ. Отдельного вида движения под него не заведено
+-- намеренно: пока его нет в замысле, ему неоткуда взяться и в коде.
+CREATE TABLE dvizheniya (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  tg_id    INTEGER NOT NULL REFERENCES lyudi(tg_id),
+  kop      INTEGER NOT NULL,
+  vid      TEXT    NOT NULL CHECK (vid IN ('popolnenie','spisanie','vozvrat')),
+  zakaz_id INTEGER REFERENCES zakazy(id) ON DELETE SET NULL,
+  za_chto  TEXT    NOT NULL,
+  kto      INTEGER,
+  kogda    TEXT    NOT NULL
+);
+CREATE INDEX dvizheniya_po_cheloveku ON dvizheniya(tg_id, id DESC);
+
+-- Аккаунт, который покупатель принёс свой. Логин почты и пароль
+-- от нейросети — такие же секреты, как выдаваемые доступы, и лежат
+-- так же: только шифротекст, ключ в /etc.
+CREATE TABLE svoi_akkaunty (
+  zakaz_id  INTEGER PRIMARY KEY REFERENCES zakazy(id) ON DELETE CASCADE,
+  pochta_sh TEXT    NOT NULL,
+  parol_sh  TEXT    NOT NULL,
+  kogda     TEXT    NOT NULL
+);
+
+-- Коды двухфакторной аутентификации. Отдельной таблицей, а не полем
+-- заказа: код запрашивают по нескольку раз (первый не подошёл, письмо
+-- пришло с задержкой), и история попыток — часть разбирательства.
+CREATE TABLE kody (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  zakaz_id     INTEGER NOT NULL REFERENCES zakazy(id) ON DELETE CASCADE,
+  kod_sh       TEXT,
+  zapros_v     TEXT    NOT NULL,
+  poluchen_v   TEXT,
+  kto_zaprosil INTEGER
+);
+CREATE INDEX kody_po_zakazu ON kody(zakaz_id, id DESC);
+
+-- ПЕРЕСБОРКА ЗАКАЗОВ. Причина одна: список статусов объявлен через
+-- CHECK, а CHECK у SQLite не меняется ничем, кроме пересборки таблицы.
+CREATE TABLE zakazy_novye (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  tg_id          INTEGER NOT NULL REFERENCES lyudi(tg_id),
+  produkt_id     TEXT    NOT NULL,
+  plan_id        TEXT    NOT NULL,
+  nazvanie       TEXT    NOT NULL,
+  cena_kop       INTEGER NOT NULL,
+  mesyacev       INTEGER NOT NULL,
+  status         TEXT    NOT NULL
+                 CHECK (status IN ('zhdet_oplaty','oplachen','v_rabote',
+                                   'zhdem_kod','kod_poluchen','vydan','otmenen')),
+  -- 'novy' — помощник заводит почту и аккаунт сам;
+  -- 'svoy' — покупатель принёс существующий аккаунт.
+  vid_akkaunta   TEXT    NOT NULL DEFAULT 'novy' CHECK (vid_akkaunta IN ('novy','svoy')),
+  -- Сколько денег заказ СЕЙЧАС держит. Столько и вернётся на баланс
+  -- при отмене. Ноль у отменённого — деньги уже возвращены.
+  oplacheno_kop  INTEGER NOT NULL DEFAULT 0,
+  -- Сколько из этого пришло с баланса: нужно помощнику в карточке,
+  -- чтобы понимать, чего ждать «живыми» деньгами.
+  s_balansa_kop  INTEGER NOT NULL DEFAULT 0,
+  kod_zapros_v   TEXT,
+  kod_poluchen_v TEXT,
+  -- Когда помощник отметил, что отправил письмо восстановления пароля.
+  -- Без этой отметки отмена по причине «неверный пароль» не проходит.
+  pismo_v        TEXT,
+  prichina_otmeny TEXT,
+  sozdan         TEXT    NOT NULL,
+  oplachen       TEXT,
+  vzyat          TEXT,
+  ispolnitel     INTEGER,
+  vydan          TEXT,
+  otmenen        TEXT,
+  srok_do        TEXT,
+  dostup_do      TEXT,
+  napominany_raz INTEGER NOT NULL DEFAULT 0,
+  napominanie_v  TEXT
+);
+
+INSERT INTO zakazy_novye (
+  id, tg_id, produkt_id, plan_id, nazvanie, cena_kop, mesyacev, status,
+  sozdan, oplachen, vzyat, ispolnitel, vydan, srok_do, dostup_do,
+  napominany_raz, napominanie_v,
+  oplacheno_kop
+)
+SELECT
+  id, tg_id, produkt_id, plan_id, nazvanie, cena_kop, mesyacev, status,
+  sozdan, oplachen, vzyat, ispolnitel, vydan, srok_do, dostup_do,
+  napominany_raz, napominanie_v,
+  -- Прежние оплаченные заказы деньги держат: у них цена и есть то,
+  -- что вернётся при отмене.
+  CASE WHEN status IN ('oplachen','v_rabote','vydan') THEN cena_kop ELSE 0 END
+FROM zakazy;
+
+DROP TABLE zakazy;
+ALTER TABLE zakazy_novye RENAME TO zakazy;
+
+CREATE INDEX zakazy_po_cheloveku ON zakazy(tg_id, id DESC);
+CREATE INDEX zakazy_po_statusu   ON zakazy(status, id);
+
+-- Тот же уникальный индекс, что был, плюс два новых открытых статуса:
+-- пока заказ живой, второй такой же не оформляется.
+CREATE UNIQUE INDEX zakazy_odin_otkrytyy
+  ON zakazy(tg_id, plan_id)
+  WHERE status IN ('zhdet_oplaty','oplachen','v_rabote','zhdem_kod','kod_poluchen');
 `,
   },
 ];

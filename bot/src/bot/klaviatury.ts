@@ -16,6 +16,7 @@ import type { Rol } from '../db/komanda.js';
 
 export const KNOPKA_KUPIT = 'Купить доступ';
 export const KNOPKA_ZAKAZY = 'Мои заказы';
+export const KNOPKA_BALANS = 'Баланс';
 export const KNOPKA_POMOSHCH = 'Помощь';
 export const KNOPKA_PODDERZHKA = 'Поддержка';
 export const KNOPKA_LAVKA = 'Заказы лавки';
@@ -29,8 +30,9 @@ export function nizhnyaya(rol: Rol | null): Keyboard {
     .text(KNOPKA_KUPIT)
     .row()
     .text(KNOPKA_ZAKAZY)
-    .text(KNOPKA_POMOSHCH)
+    .text(KNOPKA_BALANS)
     .row()
+    .text(KNOPKA_POMOSHCH)
     .text(KNOPKA_PODDERZHKA);
   if (rol) k.row().text(KNOPKA_LAVKA);
   return k.resized().persistent();
@@ -61,6 +63,23 @@ export function oformitPodpisku(produktId: string): InlineKeyboard {
 
 export function oformit(planId: string, produktId: string): InlineKeyboard {
   return new InlineKeyboard().text('Оформить заказ', `of:${planId}`).row().text('← Назад', `t:${produktId}`);
+}
+
+/**
+ * Развилка оформления: новый аккаунт или свой.
+ *
+ * Стоит МЕЖДУ подтверждением и заказом, а не после него: у двух путей
+ * разная цена для человека — во втором он вводит свои логин и пароль
+ * и должен будет прислать код с почты. Спрашивать об этом после
+ * создания заказа значило бы ставить его перед фактом.
+ */
+export function vyborAkkaunta(vyborId: string): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('Новый аккаунт', `nov:${vyborId}`)
+    .row()
+    .text('У меня уже есть аккаунт', `svoy:${vyborId}`)
+    .row()
+    .text('← К списку', 'kup');
 }
 
 export function poslePokupki(zakazId: number): InlineKeyboard {
@@ -96,7 +115,13 @@ export const poddershka = (): InlineKeyboard =>
 // ── служебные ────────────────────────────────────────────────────────
 
 export function sluzhebnoe(rol: Rol): InlineKeyboard {
-  const k = new InlineKeyboard().text('Очередь на выдачу', 'aoch').row().text('Ждут оплаты', 'aneopl').row();
+  const k = new InlineKeyboard()
+    .text('Очередь на выдачу', 'aoch')
+    .row()
+    .text('Мои в работе', 'amoi')
+    .row()
+    .text('Ждут оплаты', 'aneopl')
+    .row();
   if (rol === 'vladelec') {
     k.text('Люди', 'alyudi').row().text('Статистика', 'astat').row().text('Настройки', 'anastr');
   }
@@ -111,17 +136,56 @@ export function novyZakazAdminu(z: Zakaz, oplachen: boolean): InlineKeyboard {
   return k;
 }
 
-export function zakazAdminu(z: Zakaz, estDostup: boolean): InlineKeyboard {
+/** Что помощник может сделать с заказом ПРЯМО СЕЙЧАС. */
+export type Pod = {
+  estDostup: boolean;
+  /** Есть ли записанный код двухфакторной аутентификации. */
+  estKod: boolean;
+  /** Принёс ли покупатель свои логин и пароль. */
+  estAkkaunt: boolean;
+};
+
+/**
+ * Кнопки карточки заказа.
+ *
+ * Собираются ПО СОСТОЯНИЮ, а не показываются все сразу с отказом при
+ * нажатии: помощник ведёт несколько заказов, и кнопка, которая сейчас
+ * не сработает, — это лишний повод ошибиться.
+ *
+ * Порядок «сначала письмо, потом отмена по неверному паролю» держится
+ * тем же способом: пока письмо не отмечено, кнопки отмены по паролю
+ * тут просто нет. Замок при этом стоит и в базе — кнопки достаточно
+ * для удобства, но не для правильности.
+ */
+export function zakazAdminu(z: Zakaz, pod: Pod | boolean): InlineKeyboard {
+  const p: Pod = typeof pod === 'boolean' ? { estDostup: pod, estKod: false, estAkkaunt: false } : pod;
   const k = new InlineKeyboard();
+  const uPomoshnika = z.status === 'v_rabote' || z.status === 'zhdem_kod' || z.status === 'kod_poluchen';
+
   if (z.status === 'zhdet_oplaty') k.text('Оплата пришла', `aopl:${z.id}`).row();
   if (z.status === 'oplachen') k.text('Взять в работу', `avz:${z.id}`).row();
-  if (z.status === 'v_rabote') {
-    k.text(estDostup ? 'Изменить доступ' : 'Ввести доступ', `avv:${z.id}`).row();
+
+  if (uPomoshnika && z.vid_akkaunta === 'svoy') {
+    if (p.estAkkaunt) k.text('Данные аккаунта', `aakk:${z.id}`).row();
+    if (z.status !== 'zhdem_kod') k.text('Запросить код', `akodz:${z.id}`).row();
+    if (p.estKod) k.text('Показать код', `akodp:${z.id}`).row();
+    if (!z.pismo_v) k.text('Письмо восстановления отправлено', `apis:${z.id}`).row();
+    else k.text('Отменить: пароль не подошёл', `aparol:${z.id}`).row();
+  }
+
+  if (uPomoshnika) {
+    k.text(p.estDostup ? 'Изменить доступ' : 'Ввести доступ', `avv:${z.id}`).row();
     k.text('Вернуть в очередь', `aver:${z.id}`).row();
   }
+
   if (z.status !== 'vydan' && z.status !== 'otmenen') k.text('Отменить заказ', `aotm:${z.id}`).row();
   k.text('← Очередь', 'aoch');
   return k;
+}
+
+/** Кнопка «открыть заказ» под служебным сообщением про код. */
+export function kodAdminu(zakazId: number): InlineKeyboard {
+  return new InlineKeyboard().text(`Открыть заказ № ${zakazId}`, `az:${zakazId}`);
 }
 
 export function ocheredAdminu(spisok: Zakaz[]): InlineKeyboard {
@@ -153,6 +217,11 @@ export function nastroykiVladelca(): InlineKeyboard {
 
 export function komandaVladelca(): InlineKeyboard {
   return new InlineKeyboard().text('Добавить помощника', 'adobp').row().text('← Настройки', 'anastr');
+}
+
+/** Люди — и пополнение баланса оттуда же: пополняет владелец. */
+export function lyudiVladelca(): InlineKeyboard {
+  return new InlineKeyboard().text('Пополнить баланс', 'abal').row().text('← Служебное', 'a');
 }
 
 export const otmenaVvoda = (): InlineKeyboard => new InlineKeyboard().text('Отменить ввод', 'aotmena');

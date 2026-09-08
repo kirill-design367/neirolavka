@@ -23,6 +23,7 @@ const OBRAZEC = {
   nazvanie: 'Claude Pro, 1 месяц',
   cenaKop: 199000,
   mesyacev: 1,
+  vidAkkaunta: 'novy' as const,
 };
 
 test('заказ создаётся и находится по номеру', () => {
@@ -91,7 +92,7 @@ test('выданный заказ отменить нельзя', () => {
   const { zakaz } = zakazy.sozdatIliVernut(db, OBRAZEC);
   zakazy.otmetitOplachennym(db, zakaz.id, new Date(), 1);
   zakazy.otmetitVydannym(db, zakaz.id, new Date('2026-10-01'), 1);
-  assert.equal(zakazy.otmenit(db, zakaz.id, 1, 'проба'), false);
+  assert.equal(zakazy.otmenit(db, zakaz.id, 1, 'ruchnaya').otmenen, false);
 });
 
 test('очередь на выдачу — только оплаченные и взятые', () => {

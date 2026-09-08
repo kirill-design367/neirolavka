@@ -78,7 +78,7 @@ test('заказ, о котором некому сообщить, сохран�
         ? { vid: 'oshibka', kod: 400, opisanie: 'Bad Request: chat not found' }
         : { vid: 'ok' };
 
-    await poslat(s.adres, SEKRET, nazhatie(`of:${ZHIVOY_PLAN}`));
+    await poslat(s.adres, SEKRET, nazhatie(`nov:${ZHIVOY_PLAN}`));
 
     const spisok = zakazy.cheloveka(s.l.db, POKUPATEL);
     assert.equal(spisok.length, 1, 'заказ записан');
@@ -112,6 +112,7 @@ test('покупателю доступ не доставлен — заказ �
       nazvanie: 'Claude Pro, 1 месяц',
       cenaKop: 199000,
       mesyacev: 1,
+      vidAkkaunta: 'novy',
     });
     zakazy.otmetitOplachennym(s.l.db, zakaz.id, new Date(), VLADELEC);
     zakazy.vzyat(s.l.db, zakaz.id, VLADELEC);

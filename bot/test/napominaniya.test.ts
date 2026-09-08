@@ -42,6 +42,7 @@ const OBRAZEC = {
   nazvanie: 'Claude Pro, 1 месяц',
   cenaKop: 199000,
   mesyacev: 1,
+  vidAkkaunta: 'novy' as const,
 };
 
 test('пока срок не вышел, никто никого не будит', async () => {

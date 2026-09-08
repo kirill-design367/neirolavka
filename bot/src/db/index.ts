@@ -53,12 +53,30 @@ export function primenitMigracii(db: Baza): void {
   );
   for (const m of MIGRACII) {
     if (est.has(m.imya)) continue;
-    // Вся миграция и отметка о ней — одной транзакцией: половина
-    // применённой миграции хуже, чем неприменённая.
-    db.transaction(() => {
-      db.exec(m.sql);
-      db.prepare('INSERT INTO migracii (imya, kogda) VALUES (?, ?)').run(m.imya, seychasISO());
-    })();
+    // Пересборка таблицы идёт с ПОГАШЕННЫМИ внешними ключами, иначе
+    // `DROP TABLE` уносит каскадом детей — события, доступы, платежи.
+    // PRAGMA действует только вне транзакции, поэтому ставится здесь.
+    if (m.bezVneshnihKlyuchey) db.pragma('foreign_keys = OFF');
+    try {
+      // Вся миграция и отметка о ней — одной транзакцией: половина
+      // применённой миграции хуже, чем неприменённая.
+      db.transaction(() => {
+        db.exec(m.sql);
+        if (m.bezVneshnihKlyuchey) {
+          // Проверяем ДО фиксации: разъехавшиеся ссылки при погашенных
+          // ключах никто не заметит до первого падения через месяц.
+          const bitye = db.pragma('foreign_key_check') as unknown[];
+          if (bitye.length) {
+            throw new Error(
+              `миграция ${m.imya} оставила ${bitye.length} битых ссылок — откатываю`,
+            );
+          }
+        }
+        db.prepare('INSERT INTO migracii (imya, kogda) VALUES (?, ?)').run(m.imya, seychasISO());
+      })();
+    } finally {
+      if (m.bezVneshnihKlyuchey) db.pragma('foreign_keys = ON');
+    }
     zhurnal.info(`миграция применена: ${m.imya}`);
   }
 }
