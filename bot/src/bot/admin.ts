@@ -259,8 +259,9 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     // Сначала отправляем человеку, потом отмечаем выданным. Обратный
     // порядок оставил бы заказ «выданным» при неотправленном доступе.
     // Дата окончания считается ТОЛЬКО когда срок объявлен. У уровня
-    // подписки его нет, и «доступ до сегодня» было бы враньём —
-    // в этом случае строки про срок в сообщении просто не будет.
+    // подписки его нет, и «доступ до сегодня» было бы враньём; в этом
+    // случае в базу уезжает null, а сообщение покупателю про срок
+    // не говорит вовсе.
     const dostupDoDaty = z.dostup_do
       ? new Date(z.dostup_do)
       : z.mesyacev > 0
@@ -308,11 +309,28 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     );
   });
 
+  /**
+   * Деньги в сводке. НОЛЬ КАК ЦЕНА НЕ ПЕЧАТАЕТСЯ НИКОГДА: пока прайса
+   * нет, у заказа записан ноль, и «на 0 ₽» читается как «продано
+   * бесплатно» — то же самое враньё, от которого на сайте стоит слово
+   * «уточняется». Сумма показывается только за заказы с объявленной
+   * ценой, а про остальные говорится прямо: иначе неполная сумма
+   * выглядит полной.
+   */
+  const dengi = (summaKop: number, vsego: number, bezCeny: number): string => {
+    if (vsego === 0) return 'выдач пока не было';
+    if (bezCeny >= vsego) return 'цена не объявлена';
+    if (bezCeny > 0) return `${rubli(summaKop)} (у ${bezCeny} из ${vsego} цена не объявлена)`;
+    return rubli(summaKop);
+  };
+
   bot.callbackQuery('astat', async (ctx) => {
     if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(NET_PRAV));
     await ctx.answerCallbackQuery();
     const s = zakazy.statistika(l.db);
-    const poTovaram = s.poTovaram.map((p) => `  ${p.produkt_id}: ${p.skolko} на ${rubli(p.summa_kop)}`);
+    const poTovaram = s.poTovaram.map(
+      (p) => `  ${p.produkt_id}: ${p.skolko} · ${dengi(p.summa_kop, p.skolko, p.bez_ceny)}`,
+    );
     await pravit(
       ctx,
       [
@@ -325,7 +343,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
         `Выданы: ${s.poStatusam['vydan'] ?? 0}`,
         `Отменены: ${s.poStatusam['otmenen'] ?? 0}`,
         '',
-        `Выручка по выданным: ${rubli(s.vyruchkaKop)}`,
+        `Выручка по выданным: ${dengi(s.vyruchkaKop, s.poStatusam['vydan'] ?? 0, s.bezCeny)}`,
         s.srednyayaVydachaMinut === null
           ? 'Среднего времени выдачи пока нет: ни один заказ не прошёл путь целиком.'
           : `Среднее время выдачи: ${sklonenie(s.srednyayaVydachaMinut, 'минута', 'минуты', 'минут')}`,

@@ -42,11 +42,21 @@ export function tovary(spisok: Product[]): InlineKeyboard {
   return k;
 }
 
+/** Уровни подписки продукта. Зовётся только у того, у кого они есть. */
 export function tarify(t: Product): InlineKeyboard {
   const k = new InlineKeyboard();
   for (const p of t.plans) k.text(`${p.short} — ${rubliIli(kopeyki(p))}`, `p:${p.id}`).row();
   k.text('← К списку', 'kup');
   return k;
+}
+
+/**
+ * Продукт БЕЗ уровней: выбирать нечего, поэтому его карточка сразу
+ * и есть подтверждение заказа. Назад — к списку товаров, а не
+ * к самой карточке: возврат на то же место был бы кнопкой в никуда.
+ */
+export function oformitPodpisku(produktId: string): InlineKeyboard {
+  return new InlineKeyboard().text('Оформить заказ', `of:${produktId}`).row().text('← К списку', 'kup');
 }
 
 export function oformit(planId: string, produktId: string): InlineKeyboard {

@@ -13,7 +13,7 @@
  * Латиница — только в названиях продуктов и Telegram.
  */
 
-import { chasSlovami, chasyMinuty, dataSlovami, momentSlovami, sklonenie } from './vremya.js';
+import { chasSlovami, chasyMinuty, momentSlovami, sklonenie } from './vremya.js';
 import type { Raspisanie, Srok } from './vremya.js';
 import { rubliIli } from './katalog.js';
 import type { Zakaz, StatusZakaza } from '../db/zakazy.js';
@@ -23,9 +23,9 @@ export const NAZVANIE = 'Нейролавка';
 export function privetstvie(imya: string, r: Raspisanie): string {
   const kak = imya ? `${imya}, здравствуйте.` : 'Здравствуйте.';
   return [
-    `${kak} Это ${NAZVANIE} — здесь продают доступ к Claude, ChatGPT и Seedance.`,
+    `${kak} Это ${NAZVANIE} — здесь продают доступ к нейросетям по подписке.`,
     '',
-    'Как это устроено. Вы выбираете нейросеть и срок, оплачиваете, ' +
+    'Как это устроено. Вы выбираете нейросеть и подписку, оплачиваете, ' +
       'а доступ — логин и пароль — присылаю сюда же, в этот чат. ' +
       'Доступы выдаёт человек, поэтому не мгновенно, но и не «когда-нибудь»: ' +
       `${obeshchanieVoobshche(r)}.`,
@@ -45,26 +45,43 @@ export function obeshchanieVoobshche(r: Raspisanie): string {
   );
 }
 
+/*
+ * Список продуктов НИГДЕ не перечисляется словами, и это правило,
+ * а не забывчивость. Здесь стояло «доступ к Claude, ChatGPT
+ * и Seedance» — три продукта из шести, причём два из названных
+ * тогда не покупались вовсе. Текст, повторяющий каталог, устаревает
+ * молча: правится каталог, а строка остаётся. Кто есть в лавке,
+ * показывают кнопки следующим же сообщением.
+ */
 export const VYBOR_TOVARA = 'Что берём? Ниже — то, что есть в лавке.';
 
 export function kartochkaTovara(nazvanie: string, tagline: string, note: string): string {
-  return [`${nazvanie}`, tagline, '', note, '', 'Выберите срок.'].join('\n');
+  return [`${nazvanie}`, tagline, '', note, '', 'Выберите уровень подписки.'].join('\n');
 }
 
-/** Карточка заказа до оформления: что именно человек берёт. */
+/**
+ * Карточка заказа до оформления: что именно человек берёт.
+ *
+ * `chto` — строка «что получаешь» из каталога. Нужна продукту БЕЗ
+ * уровней подписки: у него эта карточка стоит вместо карточки товара,
+ * и без неё человек видел бы одно голое название.
+ *
+ * Строки «Срок: N месяцев, доступ до …» здесь нет и не будет. Тарифом
+ * теперь называется УРОВЕНЬ подписки, а не срок; срок владелец
+ * не объявлял, и выводить дату не из чего.
+ */
 export function podtverzhdenie(
   nazvanie: string,
   cenaKop: number,
   srok: Srok,
   r: Raspisanie,
+  chto?: string,
 ): string {
-  // Строки «Срок: N месяцев, доступ до …» здесь больше нет. Тарифом
-  // теперь называется УРОВЕНЬ подписки, а не срок; срок владелец
-  // не объявлял, и выводить дату не из чего.
   return [
     'Проверьте заказ.',
     '',
     `Что: ${nazvanie}`,
+    ...(chto ? [chto] : []),
     `Сколько: ${rubliIli(cenaKop)}`,
     `Когда придёт: ${kogdaPridet(srok, r)}`,
     '',
@@ -103,7 +120,7 @@ export function zakazUzheEst(zakaz: Zakaz): string {
     `Такой заказ уже оформлен — № ${zakaz.id}, ${zakaz.nazvanie}.`,
     '',
     'Второй такой же заводить не стал: скорее всего кнопка нажалась дважды. ' +
-      'Если нужен ещё один доступ на тот же срок — напишите администратору через «Помощь».',
+      'Если нужен ещё один такой же доступ — напишите администратору через «Помощь».',
   ].join('\n');
 }
 
@@ -121,7 +138,6 @@ export function dostupVydan(zakaz: Zakaz, login: string, parol: string, zametka:
     `Доступ по заказу № ${zakaz.id} готов.`,
     '',
     `${zakaz.nazvanie}`,
-    ...(zakaz.dostup_do ? [`Действует до ${dataSlovami(new Date(zakaz.dostup_do), r.poyas)}`] : []),
     '',
     `Логин: ${login}`,
     `Пароль: ${parol}`,
@@ -141,7 +157,7 @@ export function dostupVydan(zakaz: Zakaz, login: string, parol: string, zametka:
 export const NET_ZAKAZOV = [
   'Заказов пока нет.',
   '',
-  'Когда что-нибудь купите, здесь будет список: что взяли, до какого числа действует ' +
+  'Когда что-нибудь купите, здесь будет список: что взяли, что с заказом сейчас ' +
     'и логин с паролем от выданного доступа.',
 ].join('\n');
 
@@ -160,12 +176,6 @@ export function statusSlovami(s: StatusZakaza): string {
   }
 }
 
-export function strokaZakaza(z: Zakaz, r: Raspisanie): string {
-  const hvost =
-    z.status === 'vydan' && z.dostup_do ? ` · до ${dataSlovami(new Date(z.dostup_do), r.poyas)}` : ` · ${statusSlovami(z.status)}`;
-  return `№ ${z.id} · ${z.nazvanie}${hvost}`;
-}
-
 export function kartochkaZakaza(z: Zakaz, r: Raspisanie, estDostup: boolean): string {
   const strok = [
     `Заказ № ${z.id}`,
@@ -174,9 +184,6 @@ export function kartochkaZakaza(z: Zakaz, r: Raspisanie, estDostup: boolean): st
     `${rubliIli(z.cena_kop)} · ${statusSlovami(z.status)}`,
     `Оформлен ${momentSlovami(new Date(z.sozdan), r.poyas)}`,
   ];
-  if (z.status === 'vydan' && z.dostup_do) {
-    strok.push(`Доступ действует до ${dataSlovami(new Date(z.dostup_do), r.poyas)}`);
-  }
   if ((z.status === 'oplachen' || z.status === 'v_rabote') && z.srok_do) {
     strok.push('', `Обещал не позже ${momentSlovami(new Date(z.srok_do), r.poyas)}.`);
   }
@@ -206,8 +213,8 @@ export function pomoshch(r: Raspisanie, botUrl: string): string {
       'и он ответит вам лично. Что делать дальше, решаете вы вдвоём: ' +
       'придумывать за него правила я не буду.',
     '',
-    'Как продлить. Оформите такой же заказ ещё раз, когда срок будет подходить к концу. ' +
-      'Продление — это новый заказ на тот же срок; аккаунт по возможности оставляем прежний, ' +
+    'Как продлить. Оформите такой же заказ ещё раз, когда подписка будет подходить к концу. ' +
+      'Продление — это новый заказ на ту же подписку; аккаунт по возможности оставляем прежний, ' +
       'скажите об этом при оформлении.',
     '',
     'Что-то не входит. Проверьте, что копируете пароль целиком, без пробела в конце. ' +
@@ -247,4 +254,6 @@ export const OSHIBKA_OBSHCHAYA = [
     'Попробуйте ещё раз через минуту, а если повторится — напишите через «Помощь».',
 ].join('\n');
 
-export const TARIF_PROPAL = 'Этого тарифа больше нет в каталоге. Посмотрите, что есть сейчас.';
+/* Пропасть может и продукт, и уровень подписки: кнопка живёт
+   в переписке дольше, чем строка в каталоге. */
+export const TOVAR_PROPAL = 'Этого больше нет в каталоге. Посмотрите, что есть сейчас.';

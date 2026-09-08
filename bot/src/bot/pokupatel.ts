@@ -1,8 +1,10 @@
 /**
  * Что видит покупатель.
  *
- * Путь короткий и без развилок: что берём → на какой срок → проверьте
- * заказ → оформлено. Всё остальное — «Мои заказы» и «Помощь».
+ * Путь короткий и без развилок: что берём → какой уровень подписки →
+ * проверьте заказ → оформлено. У продукта, где уровень один-единственный,
+ * средний шаг пропадает: карточка сразу и есть подтверждение.
+ * Всё остальное — «Мои заказы» и «Помощь».
  */
 
 import type { Bot, Context, InlineKeyboard } from 'grammy';
@@ -16,7 +18,8 @@ import * as dialogi from '../db/dialogi.js';
 import { raspisanie } from '../db/nastroyki.js';
 import { rol } from '../db/komanda.js';
 import { srokVydachi } from '../lib/vremya.js';
-import { tovar, tovary, tarif, kopeyki } from '../lib/katalog.js';
+import { tovar, tovary, tarif, kopeyki, vybor, nazvanieVybora, idVybora, kopeykiVybora } from '../lib/katalog.js';
+import type { Vybor } from '../lib/katalog.js';
 import { zhurnal } from '../lib/zhurnal.js';
 import * as uvedom from './uvedomleniya.js';
 import { soobshchitOZakaze } from './admin.js';
@@ -67,14 +70,29 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
   bot.callbackQuery(/^t:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const tv = tovar(ctx.match![1] as string);
-    if (!tv) return pravit(ctx, t.TARIF_PROPAL, klav.tovary(tovary()));
+    if (!tv) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary()));
+
+    // У продукта БЕЗ уровней выбирать нечего: подписка одна. Значит
+    // его карточка сразу и есть подтверждение заказа — ровно как
+    // на сайте, где такой продукт кладётся в чек нажатием по самой
+    // карточке. Прежде здесь показывались уровни, и у Claude Pro
+    // с Seedance выходил тупик: ни одной кнопки, кроме «← К списку».
+    if (tv.plans.length === 0) {
+      const v: Vybor = { product: tv, plan: null };
+      return pravit(
+        ctx,
+        t.podtverzhdenie(nazvanieVybora(v), kopeykiVybora(v), srokVydachi(new Date(), r()), r(), tv.note),
+        klav.oformitPodpisku(tv.id),
+      );
+    }
+
     await pravit(ctx, t.kartochkaTovara(tv.name, tv.tagline, tv.note), klav.tarify(tv));
   });
 
   bot.callbackQuery(/^p:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const nayden = tarif(ctx.match![1] as string);
-    if (!nayden) return pravit(ctx, t.TARIF_PROPAL, klav.tovary(tovary()));
+    if (!nayden) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary()));
     const { product, plan } = nayden;
     const srok = srokVydachi(new Date(), r());
     await pravit(
@@ -88,23 +106,23 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
   // что должно пережить перезапуск бота.
   bot.callbackQuery(/^of:(.+)$/, async (ctx) => {
     const tgId = ctx.from.id;
-    const nayden = tarif(ctx.match![1] as string);
-    if (!nayden) {
+    // Оформляется ВЫБРАННОЕ: уровень подписки — или продукт, у которого
+    // уровней нет вовсе. Второй случай сюда приходит прямо с карточки.
+    const v = vybor(ctx.match![1] as string);
+    if (!v) {
       await ctx.answerCallbackQuery();
-      return pravit(ctx, t.TARIF_PROPAL, klav.tovary(tovary()));
+      return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary()));
     }
-    const { product, plan } = nayden;
     // Кто это, уже записано общим слоем в bot/index.ts.
     const { zakaz, novy } = zakazy.sozdatIliVernut(l.db, {
       tgId,
-      produktId: product.id,
-      planId: plan.id,
-      nazvanie: plan.title,
-      cenaKop: kopeyki(plan),
-      // Срока у уровня подписки нет — колонка осталась от прежней
-      // структуры, где тарифом был срок. Ноль значит «не объявлен»,
-      // и наружу он не выходит: строка про срок печатается только
-      // при положительном значении.
+      produktId: v.product.id,
+      planId: idVybora(v),
+      nazvanie: nazvanieVybora(v),
+      cenaKop: kopeykiVybora(v),
+      // Срока у подписки нет — колонка осталась от прежней структуры,
+      // где тарифом был срок. Ноль значит «не объявлен», и наружу
+      // он не выходит ни одной строкой.
       mesyacev: 0,
     });
 

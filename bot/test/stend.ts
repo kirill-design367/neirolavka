@@ -39,6 +39,20 @@ export const ZHIVOY_PLAN: string = (() => {
   return p.plans[0]!.id;
 })();
 
+/** Продукт, у которого уровней подписки НЕТ вовсе, — тоже из каталога. */
+export const PRODUKT_BEZ_UROVNEY = (() => {
+  const p = tovary().find((t) => t.plans.length === 0);
+  if (!p) throw new Error('в каталоге не осталось продукта без уровней подписки');
+  return p;
+})();
+
+/** Продукт, у которого уровни есть. */
+export const PRODUKT_S_UROVNYAMI = (() => {
+  const p = tovary().find((t) => t.plans.length > 0);
+  if (!p) throw new Error('в каталоге не осталось продукта с уровнями');
+  return p;
+})();
+
 export type Stend = {
   l: Lavka;
   tg: PodstavnoyTelegram;

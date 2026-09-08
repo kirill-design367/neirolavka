@@ -13,7 +13,7 @@
 export { getCatalog, findPlan, formatPrice } from '../../../src/lib/catalog.js';
 export type { Catalog, Product, Plan } from '../../../src/lib/catalog.js';
 
-import { getCatalog, findPlan } from '../../../src/lib/catalog.js';
+import { getCatalog, findPlan, priceOf } from '../../../src/lib/catalog.js';
 import type { Plan, Product } from '../../../src/lib/catalog.js';
 
 /** Товары в том порядке, в каком они стоят на витрине сайта. */
@@ -25,9 +25,49 @@ export function tovar(id: string): Product | null {
   return tovary().find((p) => p.id === id) ?? null;
 }
 
-/** Тариф с его товаром. null — если тарифа в каталоге больше нет. */
+/** Уровень подписки с его продуктом. null — если его больше нет. */
 export function tarif(planId: string): { product: Product; plan: Plan } | null {
   return findPlan(planId);
+}
+
+/**
+ * ВЫБРАННОЕ — это продукт И необязательный уровень подписки.
+ *
+ * У Claude Pro и Seedance уровней нет вовсе: подписка одна, и это
+ * свойство продукта, а не пустое место в прайсе. На сайте такой
+ * продукт кладётся в чек нажатием по самой карточке; в боте — тем же
+ * способом: карточка сразу и есть выбор.
+ *
+ * Поэтому идентификатор в кнопках покупки — это ЛИБО уровень, ЛИБО
+ * продукт без уровней. Столкнуться они не могут: у уровня
+ * идентификатор вида `<продукт>-<уровень>`.
+ */
+export type Vybor = { product: Product; plan: Plan | null };
+
+/** Найти выбранное по идентификатору кнопки. null — его больше нет. */
+export function vybor(id: string): Vybor | null {
+  const uroven = findPlan(id);
+  if (uroven) return uroven;
+  const p = tovar(id);
+  // У продукта С уровнями по его собственному идентификатору
+  // выбирать нечего: уровень не назван.
+  return p && p.plans.length === 0 ? { product: p, plan: null } : null;
+}
+
+/** Название для чека, карточки заказа и очереди администратора. */
+export function nazvanieVybora(v: Vybor): string {
+  return v.plan ? v.plan.title : v.product.name;
+}
+
+/** Идентификатор, под которым выбранное живёт в базе. */
+export function idVybora(v: Vybor): string {
+  return v.plan ? v.plan.id : v.product.id;
+}
+
+/** Цена выбранного в копейках. Ноль — «цены ещё нет», см. ниже. */
+export function kopeykiVybora(v: Vybor): number {
+  const rub = priceOf(v.product, v.plan);
+  return rub === null ? 0 : Math.round(rub * 100);
 }
 
 /**

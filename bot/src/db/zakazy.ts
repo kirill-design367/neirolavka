@@ -235,7 +235,16 @@ export type Statistika = {
   vsego: number;
   poStatusam: Record<string, number>;
   vyruchkaKop: number;
-  poTovaram: { produkt_id: string; skolko: number; summa_kop: number }[];
+  /**
+   * Сколько выданных заказов записаны БЕЗ цены (`cena_kop = 0`).
+   *
+   * Считается отдельно, потому что одна сумма врёт молча: пока прайса
+   * нет, каждый заказ пишется нулём, `SUM` даёт ноль — и выходит
+   * «продано на 0 ₽» вместо «цена не объявлена». Отличить одно
+   * от другого по самой сумме нельзя.
+   */
+  bezCeny: number;
+  poTovaram: { produkt_id: string; skolko: number; summa_kop: number; bez_ceny: number }[];
   zaSutki: number;
   srednyayaVydachaMinut: number | null;
 };
@@ -249,15 +258,20 @@ export function statistika(db: Baza): Statistika {
     poStatusam[r.status] = r.n;
   }
   const vsego = (db.prepare('SELECT COUNT(*) n FROM zakazy').get() as { n: number }).n;
-  const vyruchka = (
-    db.prepare("SELECT COALESCE(SUM(cena_kop), 0) s FROM zakazy WHERE status = 'vydan'").get() as { s: number }
-  ).s;
+  const vyruchka = db
+    .prepare(
+      `SELECT COALESCE(SUM(cena_kop), 0) s,
+              COALESCE(SUM(CASE WHEN cena_kop = 0 THEN 1 ELSE 0 END), 0) bez
+         FROM zakazy WHERE status = 'vydan'`,
+    )
+    .get() as { s: number; bez: number };
   const poTovaram = db
     .prepare(
-      `SELECT produkt_id, COUNT(*) skolko, COALESCE(SUM(cena_kop),0) summa_kop
+      `SELECT produkt_id, COUNT(*) skolko, COALESCE(SUM(cena_kop),0) summa_kop,
+              COALESCE(SUM(CASE WHEN cena_kop = 0 THEN 1 ELSE 0 END), 0) bez_ceny
          FROM zakazy WHERE status = 'vydan' GROUP BY produkt_id ORDER BY skolko DESC`,
     )
-    .all() as { produkt_id: string; skolko: number; summa_kop: number }[];
+    .all() as { produkt_id: string; skolko: number; summa_kop: number; bez_ceny: number }[];
   const sutki = new Date(Date.now() - 24 * 3600_000).toISOString();
   const zaSutki = (db.prepare('SELECT COUNT(*) n FROM zakazy WHERE sozdan > ?').get(sutki) as { n: number }).n;
   const sredn = db
@@ -269,7 +283,8 @@ export function statistika(db: Baza): Statistika {
   return {
     vsego,
     poStatusam,
-    vyruchkaKop: vyruchka,
+    vyruchkaKop: vyruchka.s,
+    bezCeny: vyruchka.bez,
     poTovaram,
     zaSutki,
     srednyayaVydachaMinut: sredn.m === null ? null : Math.round(sredn.m),
