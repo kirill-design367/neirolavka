@@ -15,7 +15,7 @@
 
 import { chasSlovami, chasyMinuty, dataSlovami, momentSlovami, sklonenie } from './vremya.js';
 import type { Raspisanie, Srok } from './vremya.js';
-import { rubli } from './katalog.js';
+import { rubliIli } from './katalog.js';
 import type { Zakaz, StatusZakaza } from '../db/zakazy.js';
 
 export const NAZVANIE = 'Нейролавка';
@@ -55,17 +55,17 @@ export function kartochkaTovara(nazvanie: string, tagline: string, note: string)
 export function podtverzhdenie(
   nazvanie: string,
   cenaKop: number,
-  mesyacev: number,
-  dostupDo: Date,
   srok: Srok,
   r: Raspisanie,
 ): string {
+  // Строки «Срок: N месяцев, доступ до …» здесь больше нет. Тарифом
+  // теперь называется УРОВЕНЬ подписки, а не срок; срок владелец
+  // не объявлял, и выводить дату не из чего.
   return [
     'Проверьте заказ.',
     '',
     `Что: ${nazvanie}`,
-    `Сколько: ${rubli(cenaKop)}`,
-    `Срок: ${sklonenie(mesyacev, 'месяц', 'месяца', 'месяцев')}, доступ до ${dataSlovami(dostupDo, r.poyas)}`,
+    `Сколько: ${rubliIli(cenaKop)}`,
     `Когда придёт: ${kogdaPridet(srok, r)}`,
     '',
     'Доступ приходит в этот чат: логин и пароль от готового аккаунта. ' +
@@ -82,7 +82,7 @@ export function kogdaPridet(srok: Srok, r: Raspisanie): string {
 }
 
 export function zakazPrinyat(zakaz: Zakaz, srok: Srok, r: Raspisanie, oplataRabotaet: boolean): string {
-  const shapka = [`Заказ № ${zakaz.id} записан.`, '', `${zakaz.nazvanie} — ${rubli(zakaz.cena_kop)}`];
+  const shapka = [`Заказ № ${zakaz.id} записан.`, '', `${zakaz.nazvanie} — ${rubliIli(zakaz.cena_kop)}`];
   if (oplataRabotaet) {
     shapka.push('', 'Осталось оплатить — кнопка ниже.');
   } else {
@@ -171,7 +171,7 @@ export function kartochkaZakaza(z: Zakaz, r: Raspisanie, estDostup: boolean): st
     `Заказ № ${z.id}`,
     '',
     z.nazvanie,
-    `${rubli(z.cena_kop)} · ${statusSlovami(z.status)}`,
+    `${rubliIli(z.cena_kop)} · ${statusSlovami(z.status)}`,
     `Оформлен ${momentSlovami(new Date(z.sozdan), r.poyas)}`,
   ];
   if (z.status === 'vydan' && z.dostup_do) {
@@ -186,6 +186,13 @@ export function kartochkaZakaza(z: Zakaz, r: Raspisanie, estDostup: boolean): st
   if (estDostup) strok.push('', 'Логин и пароль — по кнопке ниже.');
   return strok.join('\n');
 }
+
+export const PODDERZHKA = [
+  'Поддержка — это живой человек, а не бот.',
+  '',
+  'Напишите ему по кнопке ниже: разберём заказ, доступ или оплату. ' +
+    'Если что-то не работает — решим или вернём деньги.',
+].join('\n');
 
 export function pomoshch(r: Raspisanie, botUrl: string): string {
   return [

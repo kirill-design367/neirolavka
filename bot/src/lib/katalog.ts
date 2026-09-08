@@ -36,9 +36,22 @@ export function tarif(planId: string): { product: Product; plan: Plan } | null {
  * В базе деньги хранятся целыми копейками, а не рублями с точкой:
  * дробное число рублей рано или поздно даст 1989.9999999 в отчёте,
  * и объяснять это придётся живому человеку.
+ *
+ * НОЛЬ ЗДЕСЬ ЗНАЧИТ «ЦЕНЫ ЕЩЁ НЕТ». В каталоге это `null`, но
+ * колонка `cena_kop` объявлена NOT NULL, и переписывать схему ради
+ * пустого прайса незачем. Наружу ноль как цена не выходит нигде:
+ * его показывает `rubliIli`, а он печатает слово, а не «0 ₽».
  */
 export function kopeyki(plan: Plan): number {
-  return Math.round(plan.priceRub * 100);
+  return plan.priceRub === null ? 0 : Math.round(plan.priceRub * 100);
+}
+
+/**
+ * Цена для показа человеку. Ноль — это «цены ещё нет», и печатать
+ * его как «0 ₽» нельзя: ноль читается как «бесплатно».
+ */
+export function rubliIli(kop: number): string {
+  return kop > 0 ? rubli(kop) : 'уточняется';
 }
 
 /** «1 990 ₽» из копеек. */

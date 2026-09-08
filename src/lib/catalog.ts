@@ -16,7 +16,8 @@
 
 /** Способ оплаты. Сайт его не обрабатывает — значение уезжает в бот. */
 export type PaymentMethod = {
-  id: 'card' | 'sbp' | 'usdt';
+  /** USDT снят владельцем: остаются карта российского банка и СБП. */
+  id: 'card' | 'sbp';
   title: string;
   caption: string;
 };
@@ -172,7 +173,6 @@ const CATALOG: Catalog = {
   payments: [
     { id: 'card', title: 'Карта РФ', caption: 'Любой российский банк' },
     { id: 'sbp', title: 'СБП', caption: 'Перевод по номеру телефона' },
-    { id: 'usdt', title: 'USDT', caption: 'Сети TRC-20 и TON' },
   ],
   products: [
     {

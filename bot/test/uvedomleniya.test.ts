@@ -14,7 +14,7 @@ import * as dostupy from '../src/db/dostupy.js';
 import * as lyudi from '../src/db/lyudi.js';
 import { komande, mozhemPisat, proveritKomandu, pochemuNeDoshlo } from '../src/bot/uvedomleniya.js';
 import { GrammyError } from 'grammy';
-import { stend, poslat, SEKRET, VLADELEC, POKUPATEL, nazhatie } from './stend.js';
+import { stend, poslat, SEKRET, VLADELEC, POKUPATEL, nazhatie, ZHIVOY_PLAN } from './stend.js';
 
 /** Подставной отказ Telegram, как он приходит из grammY. */
 function otkaz(kod: number, opisanie: string): GrammyError {
@@ -78,7 +78,7 @@ test('заказ, о котором некому сообщить, сохран�
         ? { vid: 'oshibka', kod: 400, opisanie: 'Bad Request: chat not found' }
         : { vid: 'ok' };
 
-    await poslat(s.adres, SEKRET, nazhatie('of:claude-pro-1m'));
+    await poslat(s.adres, SEKRET, nazhatie(`of:${ZHIVOY_PLAN}`));
 
     const spisok = zakazy.cheloveka(s.l.db, POKUPATEL);
     assert.equal(spisok.length, 1, 'заказ записан');

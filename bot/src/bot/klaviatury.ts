@@ -10,17 +10,28 @@
 
 import { InlineKeyboard, Keyboard } from 'grammy';
 import type { Product } from '../lib/katalog.js';
-import { rubli } from '../lib/katalog.js';
+import { kopeyki, rubliIli } from '../lib/katalog.js';
 import type { Zakaz } from '../db/zakazy.js';
 import type { Rol } from '../db/komanda.js';
 
 export const KNOPKA_KUPIT = 'Купить доступ';
 export const KNOPKA_ZAKAZY = 'Мои заказы';
 export const KNOPKA_POMOSHCH = 'Помощь';
+export const KNOPKA_PODDERZHKA = 'Поддержка';
 export const KNOPKA_LAVKA = 'Заказы лавки';
 
+/** Живой человек поддержки. Отдельно от бота: бот отвечает по делу,
+ *  а разбираться с частным случаем идут сюда. */
+export const PODDERZHKA = 'https://t.me/Neirolavka_help';
+
 export function nizhnyaya(rol: Rol | null): Keyboard {
-  const k = new Keyboard().text(KNOPKA_KUPIT).row().text(KNOPKA_ZAKAZY).text(KNOPKA_POMOSHCH);
+  const k = new Keyboard()
+    .text(KNOPKA_KUPIT)
+    .row()
+    .text(KNOPKA_ZAKAZY)
+    .text(KNOPKA_POMOSHCH)
+    .row()
+    .text(KNOPKA_PODDERZHKA);
   if (rol) k.row().text(KNOPKA_LAVKA);
   return k.resized().persistent();
 }
@@ -33,7 +44,7 @@ export function tovary(spisok: Product[]): InlineKeyboard {
 
 export function tarify(t: Product): InlineKeyboard {
   const k = new InlineKeyboard();
-  for (const p of t.plans) k.text(`${p.short} — ${rubli(Math.round(p.priceRub * 100))}`, `p:${p.id}`).row();
+  for (const p of t.plans) k.text(`${p.short} — ${rubliIli(kopeyki(p))}`, `p:${p.id}`).row();
   k.text('← К списку', 'kup');
   return k;
 }
@@ -59,7 +70,18 @@ export function zakazCheloveka(z: Zakaz, estDostup: boolean): InlineKeyboard {
   return k;
 }
 
-export const pomoshch = (): InlineKeyboard => new InlineKeyboard().text('Написать администратору', 'vopros');
+/* Ссылка НА КНОПКЕ, а не строкой в тексте: нижняя клавиатура
+   URL не носит вовсе — Telegram разрешает ей только текст, —
+   поэтому «Поддержка» внизу открывает сообщение, а ссылка живёт
+   в кнопке под ним. */
+export const pomoshch = (): InlineKeyboard =>
+  new InlineKeyboard()
+    .text('Написать администратору', 'vopros')
+    .row()
+    .url(KNOPKA_PODDERZHKA, PODDERZHKA);
+
+export const poddershka = (): InlineKeyboard =>
+  new InlineKeyboard().url('Написать в поддержку', PODDERZHKA);
 
 // ── служебные ────────────────────────────────────────────────────────
 

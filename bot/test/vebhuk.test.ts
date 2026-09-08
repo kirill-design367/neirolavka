@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PREDEL_OBRABOTKI_MS } from '../src/server.js';
 import * as zakazy from '../src/db/zakazy.js';
-import { stend, poslat, SEKRET, VLADELEC, POKUPATEL, nazhatie, soobshchenie } from './stend.js';
+import { stend, poslat, SEKRET, VLADELEC, POKUPATEL, nazhatie, soobshchenie, ZHIVOY_PLAN } from './stend.js';
 
 test('администратор не запускал бота: заказ всё равно принят, очередь не встала', async () => {
   const s = await stend();
@@ -24,7 +24,7 @@ test('администратор не запускал бота: заказ вс
         ? { vid: 'oshibka', kod: 400, opisanie: 'Bad Request: chat not found' }
         : { vid: 'ok' };
 
-    const zakaz = await poslat(s.adres, SEKRET, nazhatie('of:claude-pro-1m'));
+    const zakaz = await poslat(s.adres, SEKRET, nazhatie(`of:${ZHIVOY_PLAN}`));
     assert.equal(zakaz.kod, 200, 'Telegram обязан получить ответ');
     assert.ok(zakaz.ms < PREDEL_OBRABOTKI_MS, `ответ за ${zakaz.ms} мс, а не по таймауту`);
 
@@ -69,7 +69,7 @@ test('зависший Telegram не держит очередь дольше п
     // опасный вид отказа: он не бросает исключения, он просто ждёт.
     s.tg.otvechat = (metod) => (metod === 'sendMessage' ? { vid: 'zavisnet' } : { vid: 'ok' });
 
-    const zakaz = await poslat(s.adres, SEKRET, nazhatie('of:claude-pro-1m'));
+    const zakaz = await poslat(s.adres, SEKRET, nazhatie(`of:${ZHIVOY_PLAN}`));
     assert.equal(zakaz.kod, 200);
     assert.ok(
       zakaz.ms < PREDEL_OBRABOTKI_MS + 2_000,
@@ -83,7 +83,7 @@ test('зависший Telegram не держит очередь дольше п
 test('повторная доставка того же обновления не создаёт второго заказа', async () => {
   const s = await stend();
   try {
-    const odno = nazhatie('of:claude-pro-1m');
+    const odno = nazhatie(`of:${ZHIVOY_PLAN}`);
     const a = await poslat(s.adres, SEKRET, odno);
     const b = await poslat(s.adres, SEKRET, odno);
     assert.equal(a.kod, 200);

@@ -19,7 +19,7 @@ import * as dialogi from '../db/dialogi.js';
 import * as komanda from '../db/komanda.js';
 import * as nastroykiBd from '../db/nastroyki.js';
 import { raspisanie } from '../db/nastroyki.js';
-import { rubli } from '../lib/katalog.js';
+import { rubli, rubliIli } from '../lib/katalog.js';
 import { chasSlovami, dataSlovami, momentSlovami, skolkoOsalos, srokVydachi, dostupDo, sklonenie } from '../lib/vremya.js';
 import * as t from '../lib/texty.js';
 import * as uvedom from './uvedomleniya.js';
@@ -40,7 +40,11 @@ function opisanie(l: Lavka, z: zakazy.Zakaz): string {
     `Заказ № ${z.id} · ${t.statusSlovami(z.status)}`,
     '',
     z.nazvanie,
-    `${rubli(z.cena_kop)} · ${sklonenie(z.mesyacev, 'месяц', 'месяца', 'месяцев')}`,
+    // Срок печатается, только если он есть: у уровней подписки его
+    // нет, и «0 месяцев» в карточке заказа читалось бы поломкой.
+    z.mesyacev > 0
+      ? `${rubliIli(z.cena_kop)} · ${sklonenie(z.mesyacev, 'месяц', 'месяца', 'месяцев')}`
+      : rubliIli(z.cena_kop),
     `Покупатель: ${lyudi.podpis(c, z.tg_id)}`,
     `Оформлен: ${momentSlovami(new Date(z.sozdan), r.poyas)}`,
   ];
@@ -254,8 +258,15 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
 
     // Сначала отправляем человеку, потом отмечаем выданным. Обратный
     // порядок оставил бы заказ «выданным» при неотправленном доступе.
-    const dostupDoDaty = z.dostup_do ? new Date(z.dostup_do) : dostupDo(new Date(), z.mesyacev);
-    const dlyaPokupatelya = { ...z, dostup_do: dostupDoDaty.toISOString() };
+    // Дата окончания считается ТОЛЬКО когда срок объявлен. У уровня
+    // подписки его нет, и «доступ до сегодня» было бы враньём —
+    // в этом случае строки про срок в сообщении просто не будет.
+    const dostupDoDaty = z.dostup_do
+      ? new Date(z.dostup_do)
+      : z.mesyacev > 0
+        ? dostupDo(new Date(), z.mesyacev)
+        : null;
+    const dlyaPokupatelya = { ...z, dostup_do: dostupDoDaty ? dostupDoDaty.toISOString() : null };
     const otpravka = await uvedom.cheloveku(
       l,
       z.tg_id,

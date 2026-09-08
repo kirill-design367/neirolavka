@@ -17,12 +17,27 @@ import { sozdatServer } from '../src/server.js';
 import { zaglushka } from '../src/oplata/zaglushka.js';
 import type { Lavka } from '../src/lavka.js';
 import { sozdatBota } from '../src/lavka.js';
+import { tovary } from '../src/lib/katalog.js';
 import { podnyat } from './podstavnoy-telegram.js';
 import type { PodstavnoyTelegram } from './podstavnoy-telegram.js';
 
 export const SEKRET = 'sekret-dlya-proverki-vebhuka';
 export const VLADELEC = 1369202079;
 export const POKUPATEL = 42;
+
+/**
+ * Живой уровень подписки, взятый ИЗ КАТАЛОГА, а не вписанный строкой.
+ *
+ * Вписанный id однажды устаревает вместе с каталогом, и проверки
+ * начинают падать с «0 !== 1»: нажатие уходит на несуществующий
+ * уровень, заказ не создаётся, а по сообщению об ошибке этого
+ * не видно. Так уже было с «claude-pro-1m» после смены прайса.
+ */
+export const ZHIVOY_PLAN: string = (() => {
+  const p = tovary().find((t) => t.plans.length > 0);
+  if (!p) throw new Error('в каталоге не осталось ни одного уровня подписки');
+  return p.plans[0]!.id;
+})();
 
 export type Stend = {
   l: Lavka;

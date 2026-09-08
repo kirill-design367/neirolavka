@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   applicationName: 'Нейролавка',
   openGraph: {
     title: 'Нейролавка — доступ к Claude и ChatGPT',
-    description: 'Выбрали тариф, оплатили картой, СБП или USDT, получили доступ в боте.',
+    description: 'Выбрали тариф, оплатили картой или через СБП, получили доступ в Telegram.',
     locale: 'ru_RU',
     type: 'website',
   },

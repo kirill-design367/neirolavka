@@ -181,10 +181,11 @@ export function vernutVOchered(db: Baza, id: number, kto: number): boolean {
   return true;
 }
 
-export function otmetitVydannym(db: Baza, id: number, dostupDo: Date, kto: number): boolean {
+/** `dostupDo` = null, когда срок не объявлен: у уровня подписки его нет. */
+export function otmetitVydannym(db: Baza, id: number, dostupDo: Date | null, kto: number): boolean {
   const r = db
     .prepare("UPDATE zakazy SET status = 'vydan', vydan = ?, dostup_do = ?, ispolnitel = ? WHERE id = ? AND status IN ('oplachen','v_rabote')")
-    .run(seychasISO(), dostupDo.toISOString(), kto, id);
+    .run(seychasISO(), dostupDo ? dostupDo.toISOString() : null, kto, id);
   if (r.changes === 0) return false;
   sobytie(db, id, 'доступ выдан', kto);
   return true;

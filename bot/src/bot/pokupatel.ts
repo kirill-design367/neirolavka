@@ -15,7 +15,7 @@ import * as dostupy from '../db/dostupy.js';
 import * as dialogi from '../db/dialogi.js';
 import { raspisanie } from '../db/nastroyki.js';
 import { rol } from '../db/komanda.js';
-import { srokVydachi, dostupDo } from '../lib/vremya.js';
+import { srokVydachi } from '../lib/vremya.js';
 import { tovar, tovary, tarif, kopeyki } from '../lib/katalog.js';
 import { zhurnal } from '../lib/zhurnal.js';
 import * as uvedom from './uvedomleniya.js';
@@ -76,11 +76,10 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     const nayden = tarif(ctx.match![1] as string);
     if (!nayden) return pravit(ctx, t.TARIF_PROPAL, klav.tovary(tovary()));
     const { product, plan } = nayden;
-    const seychas = new Date();
-    const srok = srokVydachi(seychas, r());
+    const srok = srokVydachi(new Date(), r());
     await pravit(
       ctx,
-      t.podtverzhdenie(plan.title, kopeyki(plan), plan.months, dostupDo(seychas, plan.months), srok, r()),
+      t.podtverzhdenie(plan.title, kopeyki(plan), srok, r()),
       klav.oformit(plan.id, product.id),
     );
   });
@@ -102,7 +101,11 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
       planId: plan.id,
       nazvanie: plan.title,
       cenaKop: kopeyki(plan),
-      mesyacev: plan.months,
+      // Срока у уровня подписки нет — колонка осталась от прежней
+      // структуры, где тарифом был срок. Ноль значит «не объявлен»,
+      // и наружу он не выходит: строка про срок печатается только
+      // при положительном значении.
+      mesyacev: 0,
     });
 
     // Ответ на нажатие уходит сразу: Telegram крутит часики на кнопке,
@@ -186,6 +189,14 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
 
   bot.hears(klav.KNOPKA_POMOSHCH, async (ctx) => {
     await ctx.reply(t.pomoshch(r(), l.n.adresSayta), { reply_markup: klav.pomoshch() });
+  });
+
+  // Поддержка — отдельная кнопка, а не строка внутри помощи.
+  // Помощь отвечает на частые вопросы, поддержка — это живой
+  // человек, и путь к нему должен быть в один нажим с любого
+  // экрана, а не найтись в конце длинного текста.
+  bot.hears(klav.KNOPKA_PODDERZHKA, async (ctx) => {
+    await ctx.reply(t.PODDERZHKA, { reply_markup: klav.poddershka() });
   });
 
   bot.callbackQuery('pom', async (ctx) => {
