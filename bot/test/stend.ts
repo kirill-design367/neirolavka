@@ -18,7 +18,7 @@ import type { Sostoyanie } from '../src/server.js';
 import { zaglushka } from '../src/oplata/zaglushka.js';
 import type { Lavka } from '../src/lavka.js';
 import { sozdatBota, zapomnitOpros } from '../src/lavka.js';
-import { tovary } from '../src/lib/katalog.js';
+import { getCatalog } from '../../src/lib/catalog.js';
 import { podnyat } from './podstavnoy-telegram.js';
 import type { PodstavnoyTelegram } from './podstavnoy-telegram.js';
 
@@ -29,27 +29,30 @@ export const POKUPATEL = 42;
 /**
  * Живой уровень подписки, взятый ИЗ КАТАЛОГА, а не вписанный строкой.
  *
+ * Берётся из ФАЙЛА, а не из базы: база засевается этим же файлом,
+ * идентификаторы совпадают, а константу надо знать до открытия базы.
+ *
  * Вписанный id однажды устаревает вместе с каталогом, и проверки
  * начинают падать с «0 !== 1»: нажатие уходит на несуществующий
  * уровень, заказ не создаётся, а по сообщению об ошибке этого
  * не видно. Так уже было с «claude-pro-1m» после смены прайса.
  */
 export const ZHIVOY_PLAN: string = (() => {
-  const p = tovary().find((t) => t.plans.length > 0);
+  const p = getCatalog().products.find((t) => t.plans.length > 0);
   if (!p) throw new Error('в каталоге не осталось ни одного уровня подписки');
   return p.plans[0]!.id;
 })();
 
 /** Продукт, у которого уровней подписки НЕТ вовсе, — тоже из каталога. */
 export const PRODUKT_BEZ_UROVNEY = (() => {
-  const p = tovary().find((t) => t.plans.length === 0);
+  const p = getCatalog().products.find((t) => t.plans.length === 0);
   if (!p) throw new Error('в каталоге не осталось продукта без уровней подписки');
   return p;
 })();
 
 /** Продукт, у которого уровни есть. */
 export const PRODUKT_S_UROVNYAMI = (() => {
-  const p = tovary().find((t) => t.plans.length > 0);
+  const p = getCatalog().products.find((t) => t.plans.length > 0);
   if (!p) throw new Error('в каталоге не осталось продукта с уровнями');
   return p;
 })();

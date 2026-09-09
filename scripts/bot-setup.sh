@@ -277,3 +277,12 @@ shag "Готово"
 echo "   Проверить снаружи:  curl -sI https://neirolavka.ru/bot-health"
 echo "   Журнал:             sudo journalctl -u neirolavka-bot -f"
 echo "   Копии базы:         ls -la $KOPII"
+echo
+echo "   Панель:             https://neirolavka.ru/admin"
+echo "   Первый вход в неё заводится отдельно — пароль читается со входа,"
+echo "   чтобы не остаться в истории оболочки и в выводе ps:"
+echo
+echo "     sudo -u bot bash -c 'cd $DOM_BOT/current \\"
+echo "       && read -rsp \"Пароль: \" P && echo \\"
+echo "       && printf \"%s\" \"\$P\" | NEIROLAVKA_BAZA=$BAZA_DIR/baza.sqlite \\"
+echo "          node dist/bot/src/admin/zavesti.js <логин> <telegram-id>'"

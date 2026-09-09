@@ -286,4 +286,75 @@ CREATE UNIQUE INDEX zakazy_odin_otkrytyy
   WHERE status IN ('zhdet_oplaty','oplachen','v_rabote','zhdem_kod','kod_poluchen');
 `,
   },
+
+  {
+    // Каталог в базе и учётки админ-панели.
+    imya: '003-katalog-i-panel',
+    sql: `
+-- КАТАЛОГ ПЕРЕЕХАЛ В БАЗУ, и это следствие панели: прайс правит живой
+-- человек из браузера, а не выкладка. Файл src/lib/catalog.ts остаётся
+-- ЗАСЕВОМ (при пустых таблицах его содержимое кладётся сюда) и остаётся
+-- источником для САЙТА: сайт статический и базы не видит. Расхождение
+-- между витриной и ботом закрывается выгрузкой из панели.
+CREATE TABLE produkty (
+  id       TEXT    PRIMARY KEY,
+  imya     TEXT    NOT NULL,
+  tagline  TEXT    NOT NULL DEFAULT '',
+  note     TEXT    NOT NULL DEFAULT '',
+  -- Цена продукта БЕЗ уровней. NULL — «цена не объявлена»: то же самое,
+  -- что null в каталоге сайта, и печатается словом «уточняется».
+  cena_kop INTEGER,
+  poryadok INTEGER NOT NULL DEFAULT 0,
+  -- Спрятанный продукт не продаётся, но остаётся в базе: на него
+  -- ссылаются прежние заказы, и удалять его нельзя.
+  skryt    INTEGER NOT NULL DEFAULT 0,
+  izmenen  TEXT    NOT NULL
+);
+
+CREATE TABLE urovni (
+  id         TEXT    PRIMARY KEY,
+  produkt_id TEXT    NOT NULL REFERENCES produkty(id) ON DELETE CASCADE,
+  short      TEXT    NOT NULL,
+  title      TEXT    NOT NULL,
+  cena_kop   INTEGER,
+  poryadok   INTEGER NOT NULL DEFAULT 0,
+  skryt      INTEGER NOT NULL DEFAULT 0,
+  izmenen    TEXT    NOT NULL
+);
+CREATE INDEX urovni_po_produktu ON urovni(produkt_id, poryadok);
+
+-- Вход в панель. Пароль лежит ХЕШЕМ (scrypt), открытого нет нигде:
+-- ни в базе, ни в журнале, ни в аргументах команды заведения.
+--
+-- Роль здесь НЕ хранится: она берётся из komanda по tg_id, чтобы права
+-- в панели и в боте не разъехались. Одно место — одна правда.
+CREATE TABLE admin_uchetki (
+  login          TEXT    PRIMARY KEY,
+  parol_hash     TEXT    NOT NULL,
+  tg_id          INTEGER NOT NULL REFERENCES komanda(tg_id),
+  sozdan         TEXT    NOT NULL,
+  poslednii_vhod TEXT
+);
+
+-- Сессии. В куке живёт случайный токен, в базе — только его отпечаток:
+-- утёкшая база не даёт войти под чужой сессией.
+CREATE TABLE admin_sessii (
+  token_hash TEXT    PRIMARY KEY,
+  login      TEXT    NOT NULL REFERENCES admin_uchetki(login) ON DELETE CASCADE,
+  sozdana    TEXT    NOT NULL,
+  do         TEXT    NOT NULL,
+  -- Отдельный токен против подделки запроса с чужого сайта.
+  zashchita  TEXT    NOT NULL
+);
+CREATE INDEX admin_sessii_po_sroku ON admin_sessii(do);
+
+-- Счётчик неудачных входов. В базе, а не в памяти: перезапуск бота
+-- не должен обнулять защиту от перебора.
+CREATE TABLE admin_popytki (
+  login   TEXT PRIMARY KEY,
+  neudach INTEGER NOT NULL DEFAULT 0,
+  do      TEXT
+);
+`,
+  },
 ];

@@ -12,6 +12,7 @@ import { webhookCallback } from 'grammy';
 import type { Lavka } from './lavka.js';
 import { putVebhuka } from './config.js';
 import { zhurnal } from './lib/zhurnal.js';
+import { sozdatPanel, KOREN as KOREN_PANELI } from './admin/index.js';
 
 /**
  * Сколько ждём обработчик, прежде чем ответить Telegram и доделать
@@ -63,6 +64,16 @@ export type Sluzhba = {
 export function sozdatServer(l: Lavka, vypusk: string, sostoyanie: Sostoyanie): Sluzhba {
   const put = putVebhuka(l.n);
 
+  /**
+   * Панель живёт в ЭТОМ же процессе и на этом же порту.
+   *
+   * Не отдельная служба — и это решение, а не экономия: у SQLite
+   * один пишущий, и вторая служба у той же базы означала бы очередь
+   * блокировок и второй источник правды о заказе. Наружу путь
+   * `/admin` проксирует nginx, порт бота по-прежнему закрыт.
+   */
+  const panel = sozdatPanel(l);
+
   const obrabotchik = webhookCallback(l.bot, 'http', {
     secretToken: l.n.sekretVebhuka,
     // Долгий обработчик не должен доводить Telegram до повтора:
@@ -73,7 +84,7 @@ export function sozdatServer(l: Lavka, vypusk: string, sostoyanie: Sostoyanie): 
   });
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const adres = (req.url ?? '').split('?')[0];
+    const adres = (req.url ?? '').split('?')[0] ?? '';
     if (adres === '/health') {
       // 503, пока бот не на связи. «Процесс жив» и «бот работает» —
       // разные вещи, и монитор должен различать их, иначе недоступный
@@ -122,6 +133,16 @@ export function sozdatServer(l: Lavka, vypusk: string, sostoyanie: Sostoyanie): 
         zhurnal.oshibka('вебхук: обработка не удалась, но ответ Telegram отдан:', e);
         if (!res.headersSent) res.writeHead(200, { 'content-type': 'text/plain' });
         if (!res.writableEnded) res.end();
+      });
+      return;
+    }
+    if (adres === KOREN_PANELI || adres.startsWith(`${KOREN_PANELI}/`)) {
+      // Панель не имеет права уронить бота: любой отказ внутри
+      // отвечает страницей, а не оставляет запрос висеть.
+      panel(req, res).catch((e) => {
+        zhurnal.oshibka('панель: запрос не обработан:', e);
+        if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+        if (!res.writableEnded) res.end('панель не смогла ответить');
       });
       return;
     }

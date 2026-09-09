@@ -1,33 +1,40 @@
 /**
  * Каталог для бота.
  *
- * Источник ОДИН и тот же, что у сайта: src/lib/catalog.ts из корня
- * репозитория. Бот его импортирует напрямую, а не копирует к себе —
- * скопированный прайс разъезжается с настоящим на первой же правке,
- * и человек видит на сайте одну цену, а в боте другую.
+ * ПРАЙС ЖИВЁТ В БАЗЕ, а `src/lib/catalog.ts` из корня репозитория —
+ * его засев. Так стало вместе с админ-панелью: цены и уровни правит
+ * живой человек из браузера, и ждать выкладки ради цифры нельзя.
  *
- * Файл каталога намеренно не тянет ничего из Next, поэтому обычный
- * импорт работает и в боте. tsconfig бота включает его в сборку.
+ * Раньше здесь было «источник один и тот же, что у сайта», и это
+ * по-прежнему верно в момент засева. Дальше стороны расходятся: бот
+ * читает базу, витрина — файл, потому что сайт статический и базы
+ * не видит. Свести их можно выгрузкой из панели: она отдаёт готовый
+ * кусок `catalog.ts`, его кладут в файл и выкладывают сайт.
+ *
+ * Форма данных при этом ОДНА (`Product`, `Plan`) — типы по-прежнему
+ * берутся из файла каталога, и разъехаться им негде.
  */
 
 export { getCatalog, findPlan, formatPrice } from '../../../src/lib/catalog.js';
 export type { Catalog, Product, Plan } from '../../../src/lib/catalog.js';
 
-import { getCatalog, findPlan, priceOf } from '../../../src/lib/catalog.js';
+import { priceOf } from '../../../src/lib/catalog.js';
 import type { Plan, Product } from '../../../src/lib/catalog.js';
+import type { Baza } from '../db/index.js';
+import * as bdKatalog from '../db/katalog.js';
 
-/** Товары в том порядке, в каком они стоят на витрине сайта. */
-export function tovary(): Product[] {
-  return getCatalog().products;
+/** Товары в том порядке, в каком они стоят на витрине. */
+export function tovary(db: Baza): Product[] {
+  return bdKatalog.produkty(db);
 }
 
-export function tovar(id: string): Product | null {
-  return tovary().find((p) => p.id === id) ?? null;
+export function tovar(db: Baza, id: string): Product | null {
+  return bdKatalog.produkt(db, id);
 }
 
 /** Уровень подписки с его продуктом. null — если его больше нет. */
-export function tarif(planId: string): { product: Product; plan: Plan } | null {
-  return findPlan(planId);
+export function tarif(db: Baza, planId: string): { product: Product; plan: Plan } | null {
+  return bdKatalog.uroven(db, planId);
 }
 
 /**
@@ -45,10 +52,10 @@ export function tarif(planId: string): { product: Product; plan: Plan } | null {
 export type Vybor = { product: Product; plan: Plan | null };
 
 /** Найти выбранное по идентификатору кнопки. null — его больше нет. */
-export function vybor(id: string): Vybor | null {
-  const uroven = findPlan(id);
+export function vybor(db: Baza, id: string): Vybor | null {
+  const uroven = tarif(db, id);
   if (uroven) return uroven;
-  const p = tovar(id);
+  const p = tovar(db, id);
   // У продукта С уровнями по его собственному идентификатору
   // выбирать нечего: уровень не назван.
   return p && p.plans.length === 0 ? { product: p, plan: null } : null;

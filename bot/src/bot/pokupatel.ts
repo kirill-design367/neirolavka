@@ -52,7 +52,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
   bot.command('start', async (ctx) => {
     const imya = ctx.from?.first_name ?? '';
     await ctx.reply(t.privetstvie(imya, r()), { reply_markup: klav.nizhnyaya(rol(l.db, ctx.from?.id ?? 0)) });
-    await ctx.reply(t.VYBOR_TOVARA, { reply_markup: klav.tovary(tovary()) });
+    await ctx.reply(t.VYBOR_TOVARA, { reply_markup: klav.tovary(tovary(l.db)) });
   });
 
   bot.command('pomoshch', async (ctx) => {
@@ -62,18 +62,18 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
   // ── покупка ────────────────────────────────────────────────────────
 
   bot.hears(klav.KNOPKA_KUPIT, async (ctx) => {
-    await ctx.reply(t.VYBOR_TOVARA, { reply_markup: klav.tovary(tovary()) });
+    await ctx.reply(t.VYBOR_TOVARA, { reply_markup: klav.tovary(tovary(l.db)) });
   });
 
   bot.callbackQuery('kup', async (ctx) => {
     await ctx.answerCallbackQuery();
-    await pravit(ctx, t.VYBOR_TOVARA, klav.tovary(tovary()));
+    await pravit(ctx, t.VYBOR_TOVARA, klav.tovary(tovary(l.db)));
   });
 
   bot.callbackQuery(/^t:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    const tv = tovar(ctx.match![1] as string);
-    if (!tv) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary()));
+    const tv = tovar(l.db, ctx.match![1] as string);
+    if (!tv) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary(l.db)));
 
     // У продукта БЕЗ уровней выбирать нечего: подписка одна. Значит
     // его карточка сразу и есть подтверждение заказа — ровно как
@@ -94,8 +94,8 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
 
   bot.callbackQuery(/^p:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    const nayden = tarif(ctx.match![1] as string);
-    if (!nayden) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary()));
+    const nayden = tarif(l.db, ctx.match![1] as string);
+    if (!nayden) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary(l.db)));
     const { product, plan } = nayden;
     const srok = srokVydachi(new Date(), r());
     await pravit(
@@ -115,16 +115,16 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
   bot.callbackQuery(/^of:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const id = ctx.match![1] as string;
-    if (!vybor(id)) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary()));
+    if (!vybor(l.db, id)) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary(l.db)));
     await pravit(ctx, t.VYBOR_AKKAUNTA, klav.vyborAkkaunta(id));
   });
 
   // Новый аккаунт: вводить нечего, заказ появляется прямо здесь.
   bot.callbackQuery(/^nov:(.+)$/, async (ctx) => {
-    const v = vybor(ctx.match![1] as string);
+    const v = vybor(l.db, ctx.match![1] as string);
     if (!v) {
       await ctx.answerCallbackQuery();
-      return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary()));
+      return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary(l.db)));
     }
     const itog = oformit(l, ctx.from.id, v, 'novy');
     // Ответ на нажатие уходит сразу: Telegram крутит часики на кнопке,
@@ -142,7 +142,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
   bot.callbackQuery(/^svoy:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const id = ctx.match![1] as string;
-    if (!vybor(id)) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary()));
+    if (!vybor(l.db, id)) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary(l.db)));
     dialogi.postavit(l.db, ctx.from.id, 'zhdem_pochtu', null, { vybor: id }, l.n.klyuchDostupov);
     await pravit(ctx, t.PROSIM_POCHTU);
   });
@@ -172,7 +172,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     const spisok = zakazy.cheloveka(l.db, ctx.from!.id);
     const pusto = spisok.length === 0;
     const text = pusto ? t.NET_ZAKAZOV : 'Ваши заказы. Откройте любой, чтобы посмотреть подробности.';
-    const k = pusto ? klav.tovary(tovary()) : klav.moiZakazy(spisok);
+    const k = pusto ? klav.tovary(tovary(l.db)) : klav.moiZakazy(spisok);
     if (pravkoy) await pravit(ctx, text, k);
     else await ctx.reply(text, { reply_markup: k });
   };
@@ -322,9 +322,9 @@ export async function prinyatPochtu(l: Lavka, ctx: Context, text: string): Promi
   const vyborId = d?.chernovik['vybor'] ?? '';
   const pochta = text.trim();
   await ubrat(ctx);
-  if (!vyborId || !vybor(vyborId)) {
+  if (!vyborId || !vybor(l.db, vyborId)) {
     dialogi.zabyt(l.db, ctx.from!.id);
-    await ctx.reply(t.TOVAR_PROPAL, { reply_markup: klav.tovary(tovary()) });
+    await ctx.reply(t.TOVAR_PROPAL, { reply_markup: klav.tovary(tovary(l.db)) });
     return;
   }
   if (!pochta) {
@@ -345,10 +345,10 @@ export async function prinyatParolAkkaunta(l: Lavka, ctx: Context, text: string)
   await ubrat(ctx);
   dialogi.zabyt(l.db, tgId);
 
-  const v = vyborId ? vybor(vyborId) : null;
+  const v = vyborId ? vybor(l.db, vyborId) : null;
   if (!v || !pochta || !parol) {
     await ctx.reply('Что-то потерялось при вводе. Начните заново — кнопка «Купить доступ».', {
-      reply_markup: klav.tovary(tovary()),
+      reply_markup: klav.tovary(tovary(l.db)),
     });
     return;
   }

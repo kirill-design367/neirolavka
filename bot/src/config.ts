@@ -130,6 +130,15 @@ export function razobratKlyuch(stroka: string): Buffer {
  * Разбор окружения. Чистая функция: ничего не читает с диска
  * и ничего не запускает, поэтому её можно звать из проверок.
  */
+/**
+ * Где лежит база, если в окружении не сказано иное.
+ *
+ * Отдельной константой, а не строкой внутри разбора: тот же путь
+ * нужен служебной команде заведения администратора, которая токена
+ * бота не требует и настройки целиком не читает.
+ */
+export const BAZA_PO_UMOLCHANIYU = '/var/lib/neirolavka-bot/baza.sqlite';
+
 export function prochitat(env: NodeJS.ProcessEnv): Nastroyki {
   const rabotaS = chislo(env, 'NEIROLAVKA_RABOTA_S', 8);
   const rabotaDo = chislo(env, 'NEIROLAVKA_RABOTA_DO', 22);
@@ -157,7 +166,7 @@ export function prochitat(env: NodeJS.ProcessEnv): Nastroyki {
     token: obyazatelno(env, 'NEIROLAVKA_TOKEN_BOTA'),
     sekretVebhuka: obyazatelno(env, 'NEIROLAVKA_SEKRET_VEBHUKA'),
     klyuchDostupov: razobratKlyuch(obyazatelno(env, 'NEIROLAVKA_KLYUCH_DOSTUPOV')),
-    baza: (env['NEIROLAVKA_BAZA'] ?? '/var/lib/neirolavka-bot/baza.sqlite').trim(),
+    baza: (env['NEIROLAVKA_BAZA'] ?? BAZA_PO_UMOLCHANIYU).trim(),
     port: chislo(env, 'NEIROLAVKA_PORT', 8080),
     adresSayta: (env['NEIROLAVKA_ADRES'] ?? 'https://neirolavka.ru').trim().replace(/\/+$/, ''),
     adresVebhukaDlyaTelegram: (env['NEIROLAVKA_ADRES_DLYA_TELEGRAM'] ?? '').trim(),

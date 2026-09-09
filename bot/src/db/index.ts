@@ -30,6 +30,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { MIGRACII } from './shema.js';
+import { zaseyat as zaseyatKatalog } from './katalog.js';
 import { zhurnal } from '../lib/zhurnal.js';
 
 export type Baza = Database.Database;
@@ -43,6 +44,9 @@ export function otkrytBazu(put: string): Baza {
   // Если вдруг кто-то держит запись — ждём, а не падаем.
   db.pragma('busy_timeout = 5000');
   primenitMigracii(db);
+  // Каталог засевается из файла ОДИН раз, при пустых таблицах: дальше
+  // правда в базе, и правки владельца из панели дороже файла.
+  zaseyatKatalog(db);
   return db;
 }
 
