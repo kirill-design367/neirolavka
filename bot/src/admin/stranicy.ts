@@ -590,10 +590,7 @@ ${produkty}
 <form method="post" action="/admin/katalog/produkt-novyy" class="ryad">${pole(o)}
 <div><label>${ekr(s.identifikator)}</label><input type="text" name="id" required placeholder="midjourney"></div>
 <div><label>${ekr(s.imya)}</label><input type="text" name="imya" required placeholder="Midjourney"></div>
-<button>${ekr(s.dobavitProdukt)}</button></form></div>
-<div class="karta"><h2>${ekr(s.vygruzka)}</h2>
-<p class="tiho">${ekr(s.vygruzkaPoyasnenie)}</p>
-<pre>${ekr(bdKatalog.vygruzkaDlyaSayta(db))}</pre></div>`;
+<button>${ekr(s.dobavitProdukt)}</button></form></div>`;
   return stranica(o, s.katalog, telo);
 }
 

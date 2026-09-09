@@ -97,8 +97,6 @@ export type Slova = {
   imya: string;
   opisanie: string;
   chtoPoluchaesh: string;
-  vygruzka: string;
-  vygruzkaPoyasnenie: string;
   vsegoZakazov: string;
   vyruchka: string;
   srednyayaVydacha: string;
@@ -284,10 +282,6 @@ const RU: Slova = {
   imya: 'Название',
   opisanie: 'Что это',
   chtoPoluchaesh: 'Что получает покупатель',
-  vygruzka: 'Выгрузка для сайта',
-  vygruzkaPoyasnenie:
-    'Сайт статический и базы не видит: цена, поставленная здесь, работает в боте сразу, ' +
-    'а на витрине появится после выкладки. Замените этим куском массив products в src/lib/catalog.ts.',
   vsegoZakazov: 'Заказов всего',
   vyruchka: 'Выручка по выданным',
   srednyayaVydacha: 'Среднее время выдачи',
@@ -475,10 +469,6 @@ const EN: Slova = {
   imya: 'Name',
   opisanie: 'What it is',
   chtoPoluchaesh: 'What the customer gets',
-  vygruzka: 'Export for the website',
-  vygruzkaPoyasnenie:
-    'The website is static and cannot read the database: a price set here works in the bot at once, ' +
-    'but appears on the site only after a deploy. Replace the products array in src/lib/catalog.ts with this.',
   vsegoZakazov: 'Orders total',
   vyruchka: 'Revenue on delivered',
   srednyayaVydacha: 'Average delivery time',

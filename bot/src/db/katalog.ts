@@ -205,33 +205,3 @@ export function pravitUroven(db: Baza, id: string, p: PravkaUrovnya): void {
     id,
   );
 }
-
-/**
- * Выгрузка каталога обратно в текст `src/lib/catalog.ts`.
- *
- * Единственный способ свести панель и витрину: сайт статический,
- * базы не видит, и цена, проставленная здесь, доедет до него только
- * выкладкой. Панель отдаёт готовый кусок — владельцу остаётся
- * заменить им массив в файле и выложить сайт.
- */
-export function vygruzkaDlyaSayta(db: Baza): string {
-  const stroki = produkty(db, true).map((p) => {
-    const urovni = p.plans
-      .map(
-        (u) =>
-          `        { id: '${u.id}', short: '${u.short}', title: '${u.title}', priceRub: ${u.priceRub ?? 'NET_CENY'} },`,
-      )
-      .join('\n');
-    return [
-      '    {',
-      `      id: '${p.id}',`,
-      `      name: '${p.name}',`,
-      `      tagline: '${p.tagline}',`,
-      `      note: '${p.note}',`,
-      urovni ? `      plans: [\n${urovni}\n      ],` : '      plans: [],',
-      `      priceRub: ${p.priceRub ?? 'NET_CENY'},`,
-      '    },',
-    ].join('\n');
-  });
-  return `  products: [\n${stroki.join('\n')}\n  ],`;
-}
