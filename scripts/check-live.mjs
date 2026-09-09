@@ -19,7 +19,50 @@ import tls from 'node:tls';
 import https from 'node:https';
 import http from 'node:http';
 import zlib from 'node:zlib';
-import { URL } from 'node:url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { URL, fileURLToPath } from 'node:url';
+
+/**
+ * Имена товаров берутся ИЗ КАТАЛОГА, а не вписываются сюда строкой.
+ *
+ * Здесь стояло `['Нейролавка', 'Claude Pro', 'ChatGPT Plus',
+ * 'Seedance 2.5']`, и это тот же промах, что уже ловили в проверках
+ * бота: список товаров, повторённый словами, устаревает молча.
+ * После перехода на шесть продуктов «ChatGPT Plus» и «Seedance 2.5»
+ * перестали существовать — и проверка объявила боевой сайт чужим,
+ * то есть красила прогон за исправную выдачу.
+ *
+ * Читается тот же кусок между метками, который пишет панель: там
+ * лежит машинный JSON, и разобрать его можно без сборки TypeScript.
+ * Не нашлись метки или не разобрался JSON — это ОТКАЗ, а не заметка:
+ * проверка, потерявшая свой предмет, обязана падать, а не молчать.
+ */
+function imenaTovarov() {
+  /* Метки берутся ЦЕЛИКОМ, вместе с чертами, — те же строки, что
+     пишет панель (NACHALO/KONEC в bot/src/admin/vykladka.ts). Голое
+     «КОНЕЦ ДАННЫХ ПАНЕЛИ» находится ещё и в шапке файла, где про
+     метки рассказано словами: конец оказывался ВЫШЕ начала, и кусок
+     не вырезался вовсе. */
+  const NACHALO = '// ── НАЧАЛО ДАННЫХ ПАНЕЛИ ──';
+  const KONEC = '// ── КОНЕЦ ДАННЫХ ПАНЕЛИ ──';
+  const fayl = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'lib', 'catalog.ts');
+  const ishodnik = fs.readFileSync(fayl, 'utf8');
+  const a = ishodnik.indexOf(NACHALO);
+  const b = ishodnik.indexOf(KONEC);
+  if (a < 0 || b < 0 || b < a) throw new Error(`в ${fayl} нет меток данных панели`);
+  /* Искать «products:» надо ПОСЛЕ метки: то же слово стоит выше,
+     в объявлении типа (`products: Product[];`), и поиск с начала
+     файла упирался бы в него. */
+  const kusok = ishodnik.slice(a + NACHALO.length, b);
+  const s = kusok.indexOf('[', kusok.indexOf('products:'));
+  const e = kusok.lastIndexOf(']');
+  if (s < 0 || e < s) throw new Error('между метками нет списка товаров');
+  const tovary = JSON.parse(kusok.slice(s, e + 1));
+  const imena = tovary.map((t) => t.name).filter((n) => typeof n === 'string' && n);
+  if (imena.length < 2) throw new Error(`в каталоге нашлось имён: ${imena.length}`);
+  return imena;
+}
 
 const ADRES = process.argv[2] ?? 'https://neirolavka.ru';
 const BAZA = new URL(ADRES);
@@ -212,9 +255,21 @@ if (glav.kod !== 200) {
   telo = tekst(glav);
   ok(`код 200, ${(glav.szhato / 1024).toFixed(1)} КБ по проводу, ${(telo.length / 1024).toFixed(1)} КБ распакованных`);
   // Это ДОЛЖНА быть наша лавка, а не заглушка и не чужая страница.
-  const nado = ['Нейролавка', 'Claude Pro', 'ChatGPT Plus', 'Seedance 2.5'];
-  const net = nado.filter((s) => !telo.includes(s));
-  net.length ? no(`на главной нет: ${net.join(', ')} — это не наш сайт`) : ok(`содержимое наше: ${nado.join(', ')}`);
+  /* Потерянный предмет пробы — это ПЛОХО, но сказанное словами:
+     необработанное исключение убило бы прогон посреди списка,
+     и всё, что проверяется ниже, осталось бы непроверенным молча. */
+  let nado = null;
+  try {
+    nado = ['Нейролавка', ...imenaTovarov()];
+  } catch (e) {
+    no(`не удалось прочитать имена товаров из каталога: ${e.message}`);
+  }
+  if (nado) {
+    const net = nado.filter((s) => !telo.includes(s));
+    net.length
+      ? no(`на главной нет: ${net.join(', ')} — это не наш сайт либо витрина разошлась с каталогом`)
+      : ok(`содержимое наше: ${nado.join(', ')}`);
+  }
   /<html[^>]*lang="ru"/.test(telo) ? ok('страница объявлена русской') : vn('нет lang="ru" у html');
   /data-theme="light"/.test(telo)
     ? ok('тема по умолчанию светлая прямо в разметке')
