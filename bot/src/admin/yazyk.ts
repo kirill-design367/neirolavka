@@ -144,6 +144,25 @@ export type Slova = {
   stKodPoluchen: string;
   stVydan: string;
   stOtmenen: string;
+  vykladka: string;
+  vylozhitNaSayt: string;
+  vykladkaPoyasnenie: string;
+  cenySovpadayut: string;
+  cenyRazoshlis: string;
+  nikogdaNeVykladyvali: string;
+  vykladkaIdet: string;
+  vykladkaIdetPoyasnenie: string;
+  vylozheno: string;
+  neVyshlo: string;
+  nachata: string;
+  zavershena: string;
+  kemVylozheno: string;
+  istoriyaVykladok: string;
+  vykladkaPoshla: string;
+  vykladkaSovpadaet: string;
+  vykladkaUzheIdet: string;
+  vykladokNeBylo: string;
+  smotretSayt: string;
   gruppaOtpravit: string;
   gruppaDostup: string;
   gruppaKod: string;
@@ -314,6 +333,26 @@ const RU: Slova = {
   stKodPoluchen: 'Код получен',
   stVydan: 'Выдан',
   stOtmenen: 'Отменён',
+  vykladka: 'Выкладка на сайт',
+  vylozhitNaSayt: 'Выложить на сайт',
+  vykladkaPoyasnenie:
+    'Цены, которые вы поставили в каталоге, работают в боте сразу. На витрине сайта они появляются после выкладки: сайт собирается заново, это занимает две-три минуты.',
+  cenySovpadayut: 'На сайте те же цены, что в панели',
+  cenyRazoshlis: 'Цены в панели новее, чем на сайте',
+  nikogdaNeVykladyvali: 'Из панели ещё ни разу не выкладывали',
+  vykladkaIdet: 'Выкладка идёт',
+  vykladkaIdetPoyasnenie: 'Сайт пересобирается. Обычно это две-три минуты — страница обновляется сама.',
+  vylozheno: 'Выложено',
+  neVyshlo: 'Не вышло',
+  nachata: 'Начата',
+  zavershena: 'Завершена',
+  kemVylozheno: 'Кто выкладывал',
+  istoriyaVykladok: 'Последние выкладки',
+  vykladkaPoshla: 'Отправил цены. Сайт пересобирается',
+  vykladkaSovpadaet: 'На сайте уже такие же цены — отправлять нечего',
+  vykladkaUzheIdet: 'Выкладка уже идёт — дождитесь, чем кончится',
+  vykladokNeBylo: 'Выкладок пока не было',
+  smotretSayt: 'Открыть сайт',
   gruppaOtpravit: 'Готовы к выдаче',
   gruppaDostup: 'Нужно записать доступ',
   gruppaKod: 'Нужно запросить код',
@@ -485,6 +524,26 @@ const EN: Slova = {
   stKodPoluchen: 'Code received',
   stVydan: 'Delivered',
   stOtmenen: 'Cancelled',
+  vykladka: 'Publish to the site',
+  vylozhitNaSayt: 'Publish to the site',
+  vykladkaPoyasnenie:
+    'Prices you set in the catalogue work in the bot at once. They reach the website only after a publish: the site is rebuilt, which takes two or three minutes.',
+  cenySovpadayut: 'The site shows the same prices as the panel',
+  cenyRazoshlis: 'Prices here are newer than on the site',
+  nikogdaNeVykladyvali: 'Nothing has been published from the panel yet',
+  vykladkaIdet: 'Publishing in progress',
+  vykladkaIdetPoyasnenie: 'The site is being rebuilt. It usually takes two or three minutes — this page refreshes itself.',
+  vylozheno: 'Published',
+  neVyshlo: 'Did not go through',
+  nachata: 'Started',
+  zavershena: 'Finished',
+  kemVylozheno: 'Published by',
+  istoriyaVykladok: 'Recent publishes',
+  vykladkaPoshla: 'Prices sent. The site is being rebuilt',
+  vykladkaSovpadaet: 'The site already has these prices — nothing to send',
+  vykladkaUzheIdet: 'A publish is already running — wait for it to finish',
+  vykladokNeBylo: 'No publishes yet',
+  smotretSayt: 'Open the site',
   gruppaOtpravit: 'Ready to send',
   gruppaDostup: 'Access to enter',
   gruppaKod: 'Code to request',

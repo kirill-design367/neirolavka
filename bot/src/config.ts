@@ -68,6 +68,26 @@ export type Nastroyki = {
   napominatCherez: number;
   /** Сколько раз повторить напоминание, прежде чем замолчать. */
   napominatRaz: number;
+  /**
+   * Ключ доступа к хранилищу кода. Им панель кладёт новый прайс
+   * в репозиторий, после чего выкладка собирает сайт.
+   *
+   * Пусто — кнопка «Выложить на сайт» не работает и честно говорит,
+   * почему. В журнал не попадает никогда: см. lib/zhurnal.ts.
+   */
+  klyuchHranilishcha: string;
+  /** Хранилище вида «владелец/название». */
+  hranilishche: string;
+  /** Ветка, в которую пишет панель. */
+  vetka: string;
+  /** Путь к файлу каталога внутри хранилища. */
+  faylKataloga: string;
+  /**
+   * Адрес API хранилища. Переопределяется только в проверках —
+   * ровно затем, чтобы они гоняли БОЕВОЙ код против подставного
+   * хранилища, а не копию логики.
+   */
+  apiHranilishcha: string;
 };
 
 class OshibkaNastroyek extends Error {}
@@ -179,6 +199,11 @@ export function prochitat(env: NodeJS.ProcessEnv): Nastroyki {
     obeshchanieMinut: chislo(env, 'NEIROLAVKA_OBESHCHANIE_MINUT', 60),
     napominatCherez: chislo(env, 'NEIROLAVKA_NAPOMINAT_CHEREZ', 10),
     napominatRaz: chislo(env, 'NEIROLAVKA_NAPOMINAT_RAZ', 5),
+    klyuchHranilishcha: (env['NEIROLAVKA_KLYUCH_HRANILISHCHA'] ?? '').trim(),
+    hranilishche: (env['NEIROLAVKA_HRANILISHCHE'] ?? 'kirill-design367/neirolavka').trim(),
+    vetka: (env['NEIROLAVKA_VETKA'] ?? 'main').trim(),
+    faylKataloga: (env['NEIROLAVKA_FAYL_KATALOGA'] ?? 'src/lib/catalog.ts').trim(),
+    apiHranilishcha: (env['NEIROLAVKA_API_HRANILISHCHA'] ?? 'https://api.github.com').trim().replace(/\/+$/, ''),
   };
 }
 

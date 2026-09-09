@@ -1,17 +1,28 @@
 /**
- * Единственный источник каталога.
+ * Единственный источник каталога для сайта.
  *
- * Сейчас данные лежат здесь же, но компоненты обращаются к каталогу
- * ТОЛЬКО через getCatalog(). Когда каталог начнёт приходить из бота,
- * достаточно заменить тело getCatalog() на запрос к API — типы и все
- * вызывающие компоненты остаются нетронутыми.
+ * ПРОДУКТЫ И ЦЕНЫ ПИШЕТ АДМИН-ПАНЕЛЬ, по кнопке, прямо в хранилище
+ * кода — руками их не правят. Кусок между метками «НАЧАЛО ДАННЫХ
+ * ПАНЕЛИ» и «КОНЕЦ ДАННЫХ ПАНЕЛИ» она заменяет целиком; всё
+ * остальное в файле её не касается.
  *
- * ЦЕН ПОКА НЕТ, и это записано явным `null`, а не рублём-заглушкой.
- * Прежде «цены ещё нет» изображалось значением 1 ₽: на экране это
- * выглядело настоящей ценой, и отличить «стоит рубль» от «мы не знаем»
- * было нельзя ни человеку, ни коду. Теперь `null` — это `null`, а
- * вписать цену значит поменять ОДНО слово в этом файле: разметка,
- * чек и вся логика выбора уже умеют и то и другое состояние.
+ * Пока панель выгружала кусок кода, который владелец вставлял руками,
+ * у этого было два изъяна сразу. Первый — руками. Второй тише и хуже:
+ * имя продукта с апострофом ломало бы сборку сайта, потому что
+ * выгрузка складывала строки в кавычки без экранирования. Теперь
+ * между метками лежит JSON, набранный машиной: он экранирует сам,
+ * по построению не бывает синтаксически неверным и при этом остаётся
+ * обычным выражением TypeScript — форму проверяет сборка.
+ *
+ * Компоненты по-прежнему обращаются к каталогу ТОЛЬКО через
+ * `getCatalog()`. Когда каталог начнёт приходить из бота по сети,
+ * меняется тело этой функции — типы и вызывающие компоненты остаются
+ * нетронутыми.
+ *
+ * ЦЕНЫ, КОТОРОЙ НЕТ, — это `null`, а не рубль-заглушка. Прежде «цены
+ * ещё нет» изображалось значением 1 ₽: на экране это выглядело
+ * настоящей ценой, и отличить «стоит рубль» от «мы не знаем» было
+ * нельзя ни человеку, ни коду.
  */
 
 /** Способ оплаты. Сайт его не обрабатывает — значение уезжает в бот. */
@@ -110,20 +121,7 @@ export type Catalog = {
   reviews: Review[];
 };
 
-/**
- * Цены, которой ещё нет. Отдельное имя, а не голый `null` по тексту:
- * так видно, что пустота здесь намеренная, и так её легче заменить.
- */
-const NET_CENY = null;
 
-/** Собрать уровни подписки одного продукта из коротких подписей. */
-const urovni = (id: string, name: string, urovniSpisok: string[]): Plan[] =>
-  urovniSpisok.map((short) => ({
-    id: `${id}-${short.toLowerCase()}`,
-    short,
-    title: `${name}, ${short}`,
-    priceRub: NET_CENY,
-  }));
 
 const REVIEWS: Review[] = [
   {
@@ -174,59 +172,122 @@ const CATALOG: Catalog = {
     { id: 'card', title: 'Карта РФ', caption: 'Любой российский банк' },
     { id: 'sbp', title: 'СБП', caption: 'Перевод по номеру телефона' },
   ],
+  // ── НАЧАЛО ДАННЫХ ПАНЕЛИ ──
   products: [
     {
-      id: 'kling',
-      name: 'Kling AI',
-      tagline: 'Генератор видео',
-      note: 'Ролики по описанию и по кадру',
-      plans: urovni('kling', 'Kling AI', ['Pro', 'Premier', 'Standard']),
-      priceRub: NET_CENY,
+      "id": "kling",
+      "name": "Kling AI",
+      "tagline": "Генератор видео",
+      "note": "Ролики по описанию и по кадру",
+      "priceRub": null,
+      "plans": [
+        {
+          "id": "kling-pro",
+          "short": "Pro",
+          "title": "Kling AI, Pro",
+          "priceRub": null
+        },
+        {
+          "id": "kling-premier",
+          "short": "Premier",
+          "title": "Kling AI, Premier",
+          "priceRub": null
+        },
+        {
+          "id": "kling-standard",
+          "short": "Standard",
+          "title": "Kling AI, Standard",
+          "priceRub": null
+        }
+      ]
     },
     {
-      id: 'suno',
-      name: 'Suno AI',
-      tagline: 'Генератор музыки',
-      note: 'Треки по описанию, со словами и без',
-      plans: urovni('suno', 'Suno AI', ['Pro', 'Premier']),
-      priceRub: NET_CENY,
+      "id": "suno",
+      "name": "Suno AI",
+      "tagline": "Генератор музыки",
+      "note": "Треки по описанию, со словами и без",
+      "priceRub": null,
+      "plans": [
+        {
+          "id": "suno-pro",
+          "short": "Pro",
+          "title": "Suno AI, Pro",
+          "priceRub": null
+        },
+        {
+          "id": "suno-premier",
+          "short": "Premier",
+          "title": "Suno AI, Premier",
+          "priceRub": null
+        }
+      ]
     },
     {
-      id: 'gemini',
-      name: 'Gemini AI',
-      tagline: 'Ассистент Google',
-      note: 'Текст, картинки и работа с документами',
-      plans: urovni('gemini', 'Gemini AI', ['Plus', 'Pro', 'Ultra']),
-      priceRub: NET_CENY,
+      "id": "gemini",
+      "name": "Gemini AI",
+      "tagline": "Ассистент Google",
+      "note": "Текст, картинки и работа с документами",
+      "priceRub": null,
+      "plans": [
+        {
+          "id": "gemini-plus",
+          "short": "Plus",
+          "title": "Gemini AI, Plus",
+          "priceRub": null
+        },
+        {
+          "id": "gemini-pro",
+          "short": "Pro",
+          "title": "Gemini AI, Pro",
+          "priceRub": null
+        },
+        {
+          "id": "gemini-ultra",
+          "short": "Ultra",
+          "title": "Gemini AI, Ultra",
+          "priceRub": null
+        }
+      ]
     },
     {
-      id: 'chatgpt',
-      name: 'ChatGPT',
-      tagline: 'Голос, картинки и привычный интерфейс',
-      note: 'Старшие модели, голосовой режим, работа с изображениями',
-      plans: urovni('chatgpt', 'ChatGPT', ['Plus', 'Go']),
-      priceRub: NET_CENY,
+      "id": "chatgpt",
+      "name": "ChatGPT",
+      "tagline": "Голос, картинки и привычный интерфейс",
+      "note": "Старшие модели, голосовой режим, работа с изображениями",
+      "priceRub": null,
+      "plans": [
+        {
+          "id": "chatgpt-plus",
+          "short": "Plus",
+          "title": "ChatGPT, Plus",
+          "priceRub": null
+        },
+        {
+          "id": "chatgpt-go",
+          "short": "Go",
+          "title": "ChatGPT, Go",
+          "priceRub": null
+        }
+      ]
     },
     {
-      // Уровней нет — и это не пустое место в прайсе, а свойство
-      // продукта: подписка одна. Карточка покупается нажатием
-      // по ней самой.
-      id: 'claude',
-      name: 'Claude Pro',
-      tagline: 'Полноценный ИИ-ассистент',
-      note: 'Sonnet и Opus, проекты, загрузка файлов',
-      plans: [],
-      priceRub: NET_CENY,
+      "id": "claude",
+      "name": "Claude Pro",
+      "tagline": "Полноценный ИИ-ассистент",
+      "note": "Sonnet и Opus, проекты, загрузка файлов",
+      "priceRub": null,
+      "plans": []
     },
     {
-      id: 'seedance',
-      name: 'Seedance',
-      tagline: 'Видео по тексту и по картинке',
-      note: 'Генерация роликов, продление сцен, свои референсы',
-      plans: [],
-      priceRub: NET_CENY,
-    },
+      "id": "seedance",
+      "name": "Seedance",
+      "tagline": "Видео по тексту и по картинке",
+      "note": "Генерация роликов, продление сцен, свои референсы",
+      "priceRub": null,
+      "plans": []
+    }
   ],
+  // ── КОНЕЦ ДАННЫХ ПАНЕЛИ ──
 };
 
 /**

@@ -125,6 +125,7 @@ export function stranica(o: Obstanovka, zagolovok: string, telo: string, obnovly
               `<a href="/admin/pokupateli">${ekr(o.s.pokupateli)}</a>`,
               `<a href="/admin/katalog">${ekr(o.s.katalog)}</a>`,
               `<a href="/admin/statistika">${ekr(o.s.statistika)}</a>`,
+              `<a href="/admin/vykladka">${ekr(o.s.vykladka)}</a>`,
             ]
           : []),
       ].join('')

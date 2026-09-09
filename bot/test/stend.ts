@@ -67,14 +67,17 @@ export type Stend = {
   zakryt: () => Promise<void>;
 };
 
-export async function stend(): Promise<Stend> {
+export async function stend(dop: Record<string, string> = {}): Promise<Stend> {
   const tg = await podnyat();
+  // Настройки читаются ТЕМ ЖЕ разбором, что в бою; проверка может
+  // добавить своё — например, адрес подставного хранилища кода.
   const n = prochitat({
     NEIROLAVKA_TOKEN_BOTA: '123456:proba',
     NEIROLAVKA_SEKRET_VEBHUKA: SEKRET,
     NEIROLAVKA_KLYUCH_DOSTUPOV: randomBytes(32).toString('base64'),
     NEIROLAVKA_VLADELCY: String(VLADELEC),
     NEIROLAVKA_BAZA: ':memory:',
+    ...dop,
   });
   const db = otkrytBazu(':memory:');
   zaseyat(db, n.vladelcy, n.pomoshniki);

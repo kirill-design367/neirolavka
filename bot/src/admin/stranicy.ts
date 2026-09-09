@@ -17,6 +17,8 @@ import * as dostupy from '../db/dostupy.js';
 import * as svoi from '../db/svoi.js';
 import * as kody from '../db/kody.js';
 import * as bdKatalog from '../db/katalog.js';
+import * as bdVykladki from '../db/vykladki.js';
+import * as vyk from './vykladka.js';
 import { rubli, rubliIli } from '../lib/katalog.js';
 import { chasti, moment, momentSlovami } from '../lib/vremya.js';
 import { ekr, pole, stranica } from './vid.js';
@@ -571,7 +573,18 @@ ${p.plans.length ? `<table><thead><tr><th>${ekr(s.korotko)}</th><th>${ekr(s.poln
     })
     .join('');
 
+  // Подсказка стоит ЗДЕСЬ, а не только на странице выкладки: цену
+  // меняют тут, и узнать, что она ещё не на витрине, человек должен
+  // на том же экране, где её поставил.
+  const r = vyk.rashozhdenie(db);
+  const podskazka = r.est
+    ? `<div class="karta shag"><b>${ekr(r.nikogda ? s.nikogdaNeVykladyvali : s.cenyRazoshlis)}</b>
+<p class="tiho" style="margin:6px 0 10px">${ekr(s.vykladkaPoyasnenie)}</p>
+<a href="/admin/vykladka">${ekr(s.vylozhitNaSayt)} →</a></div>`
+    : `<div class="karta"><span class="tiho">${ekr(s.cenySovpadayut)}</span></div>`;
+
   const telo = `<h1>${ekr(s.katalog)}</h1>
+${podskazka}
 ${produkty}
 <div class="karta"><h2>${ekr(s.dobavitProdukt)}</h2>
 <form method="post" action="/admin/katalog/produkt-novyy" class="ryad">${pole(o)}
@@ -700,6 +713,78 @@ ${granica}</div>
 <table><tbody>${stroki}</tbody></table>
 ${tovary ? `<h2>${ekr(s.poTovaram)}</h2><table><tbody>${tovary}</tbody></table>` : ''}`;
   return stranica(o, s.statistika, telo);
+}
+
+// ── выкладка на сайт ─────────────────────────────────────────────────
+
+/**
+ * Страница выкладки: одна кнопка и честный ответ, что происходит.
+ *
+ * Никаких слов из машинного мира. Человек, который меняет цены, ничего
+ * не должен знать ни про хранилище кода, ни про сборку: он видит
+ * «цены в панели новее, чем на сайте», нажимает и смотрит, когда
+ * это перестанет быть правдой.
+ */
+export function vykladka(
+  o: Obstanovka,
+  db: Baza,
+  poyas: string,
+  adresSayta: string,
+  pokaz: { oshibka?: string; horosho?: string } = {},
+): string {
+  const s = o.s;
+  const idet = bdVykladki.idushchaya(db);
+  const r = vyk.rashozhdenie(db);
+  const spisok = bdVykladki.istoriya(db, 8);
+  const mom = (kogda: string) => momentPaneli(new Date(kogda), poyas, o.yazyk);
+
+  const sostoyanie = idet
+    ? `<div class="karta shag"><h2>${ekr(s.vykladkaIdet)}</h2>
+<p class="tiho">${ekr(s.vykladkaIdetPoyasnenie)}</p>
+<dl class="fakty"><dt>${ekr(s.nachata)}</dt><dd>${ekr(mom(idet.nachata))}</dd></dl></div>`
+    : `<div class="karta"><dl class="fakty">
+<dt>${ekr(s.status)}</dt><dd>${
+        r.nikogda
+          ? ekr(s.nikogdaNeVykladyvali)
+          : r.est
+            ? `<b>${ekr(s.cenyRazoshlis)}</b>`
+            : ekr(s.cenySovpadayut)
+      }</dd></dl></div>`;
+
+  // Кнопки нет, пока выкладка идёт: второе нажатие всё равно
+  // не запустит вторую, но кнопка, которая ничего не делает, —
+  // это обещание, которого не сдержать.
+  const knopka = idet
+    ? ''
+    : `<form method="post" action="/admin/vykladka/vylozhit" class="ryad">${pole(o)}
+<button>${ekr(s.vylozhitNaSayt)}</button>
+<a href="${ekr(adresSayta)}" target="_blank" rel="noopener noreferrer" style="align-self:center">${ekr(s.smotretSayt)}</a></form>`;
+
+  const stroki = spisok
+    .map(
+      (v) => `<tr><td>${ekr(mom(v.nachata))}</td>
+<td>${ekr(v.status === 'idet' ? s.vykladkaIdet : v.status === 'vylozheno' ? s.vylozheno : s.neVyshlo)}</td>
+<td>${ekr(v.kto ? ktoTakoy(db, v.kto) : '—')}</td>
+<td>${ekr(v.soobshchenie ?? '')}</td></tr>`,
+    )
+    .join('');
+
+  const telo = `<h1>${ekr(s.vykladka)}</h1>
+${pokaz.oshibka ? `<div class="oshibka">${ekr(pokaz.oshibka)}</div>` : ''}
+${pokaz.horosho ? `<div class="horosho">${ekr(pokaz.horosho)}</div>` : ''}
+<div class="karta"><p class="tiho" style="margin:0">${ekr(s.vykladkaPoyasnenie)}</p></div>
+${sostoyanie}
+${knopka ? `<div class="karta">${knopka}</div>` : ''}
+<h2>${ekr(s.istoriyaVykladok)}</h2>
+${
+    stroki
+      ? `<table><thead><tr><th>${ekr(s.nachata)}</th><th>${ekr(s.status)}</th>
+<th>${ekr(s.kemVylozheno)}</th><th></th></tr></thead><tbody>${stroki}</tbody></table>`
+      : `<p class="tiho">${ekr(s.vykladokNeBylo)}</p>`
+  }`;
+  // Пока идёт — страница обновляет себя: человек не должен гадать,
+  // кончилось или нет.
+  return stranica(o, s.vykladka, telo, idet ? 15 : 0);
 }
 
 // ── вход ─────────────────────────────────────────────────────────────

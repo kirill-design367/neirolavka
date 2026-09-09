@@ -28,6 +28,8 @@ import * as svoi from '../db/svoi.js';
 import * as kody from '../db/kody.js';
 import * as dialogi from '../db/dialogi.js';
 import * as bdKatalog from '../db/katalog.js';
+import * as bdVykladki from '../db/vykladki.js';
+import * as vyk from './vykladka.js';
 import { raspisanie } from '../db/nastroyki.js';
 import { srokVydachi, dostupDo } from '../lib/vremya.js';
 import * as t from '../lib/texty.js';
@@ -330,6 +332,17 @@ export function sozdatPanel(l: Lavka): Panel {
         if (!vladelec) return otdat(res, 403, ocheredStranica());
         return otdat(res, 200, str.katalog(o, db));
       }
+      if (put === `${KOREN}/vykladka`) {
+        if (!vladelec) return otdat(res, 403, ocheredStranica());
+        // Спрашиваем хранилище не чаще раза в восемь секунд: страница
+        // сама обновляется каждые пятнадцать, а открытых вкладок может
+        // быть несколько.
+        const idet = bdVykladki.idushchaya(db);
+        if (idet && (!idet.proverena || Date.now() - Date.parse(idet.proverena) > 8_000)) {
+          await vyk.proverit(l);
+        }
+        return otdat(res, 200, str.vykladka(o, db, poyas, l.n.adresSayta, pokaz));
+      }
       if (put === `${KOREN}/statistika`) {
         if (!vladelec) return otdat(res, 403, ocheredStranica());
         return otdat(res, 200, str.statistika(o, db, poyas, str.razobratPeriod(poisk.get('za'))));
@@ -406,6 +419,25 @@ export function sozdatPanel(l: Lavka): Panel {
         ].join('\n'),
       );
       return kuda(res, sSoobshcheniem(stranicaLica, { ok: 'popolnili' }));
+    }
+
+    // ── выкладка на сайт: только владельцу ───────────────────────────
+
+    if (put === `${KOREN}/vykladka/vylozhit`) {
+      if (!vladelec) return kuda(res, sSoobshcheniem(`${KOREN}/ochered`, { oshibka: 'netPrav' }));
+      const itog = await vyk.zapustit(l, kto);
+      if (itog.vid === 'poshla') {
+        return kuda(res, sSoobshcheniem(`${KOREN}/vykladka`, { ok: 'vykladkaPoshla' }));
+      }
+      if (itog.vid === 'sovpadaet') {
+        return kuda(res, sSoobshcheniem(`${KOREN}/vykladka`, { ok: 'vykladkaSovpadaet' }));
+      }
+      if (itog.vid === 'uzhe_idet') {
+        return kuda(res, sSoobshcheniem(`${KOREN}/vykladka`, { oshibka: 'vykladkaUzheIdet' }));
+      }
+      // Отказ приходит уже человеческой фразой — её и показываем,
+      // а не ключ из словаря: причин много, и каждая своя.
+      return otdat(res, 200, str.vykladka(o, db, poyas, l.n.adresSayta, { oshibka: itog.pochemu }));
     }
 
     // ── каталог: только владельцу ────────────────────────────────────

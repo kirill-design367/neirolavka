@@ -34,6 +34,7 @@ import { sozdatServer } from './server.js';
 import type { Sostoyanie } from './server.js';
 import { zapustit as zapustitNapominaniya } from './jobs/napominaniya.js';
 import { zapustit as zapustitOzhidanieKodov } from './jobs/kody.js';
+import { zapustit as zapustitPrismotrVykladki } from './jobs/vykladka.js';
 import {
   zapustit as zapustitPrismotrDostavki,
   pereytiNaOpros,
@@ -101,6 +102,9 @@ async function glavnaya(): Promise<void> {
   // Регистрируем секреты до первой строки журнала: дальше они
   // не смогут просочиться даже через чужую трассировку.
   skryt(n.token, n.sekretVebhuka, n.klyuchDostupov.toString('base64'), n.klyuchDostupov.toString('hex'));
+  // Ключ хранилища вырезается из журнала на тех же правах, что токен
+  // бота: попав в трассировку, он даёт запись в репозиторий.
+  skryt(n.klyuchHranilishcha);
 
   proveritKlyuch(n.klyuchDostupov);
   zhurnal.info('ключ доступов проходит проверку');
@@ -207,6 +211,9 @@ async function glavnaya(): Promise<void> {
 
   zapustitNapominaniya(l);
   zapustitOzhidanieKodov(l);
+  // Выкладка цен на сайт: страницу могут закрыть, а состояние
+  // должно дойти до конца само.
+  zapustitPrismotrVykladki(l);
   // Присмотр держит состояние пути и правит строку /health на ходу:
   // «жив» без указания пути ничего не говорит, когда путь потерян.
   const prismotr = zapustitPrismotr(l, putDoTelegram);
