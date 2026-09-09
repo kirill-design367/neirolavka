@@ -14,9 +14,10 @@ import { prochitat } from '../src/config.js';
 import { zaseyat } from '../src/db/komanda.js';
 import { sobrat } from '../src/bot/index.js';
 import { sozdatServer } from '../src/server.js';
+import type { Sostoyanie } from '../src/server.js';
 import { zaglushka } from '../src/oplata/zaglushka.js';
 import type { Lavka } from '../src/lavka.js';
-import { sozdatBota } from '../src/lavka.js';
+import { sozdatBota, zapomnitOpros } from '../src/lavka.js';
 import { tovary } from '../src/lib/katalog.js';
 import { podnyat } from './podstavnoy-telegram.js';
 import type { PodstavnoyTelegram } from './podstavnoy-telegram.js';
@@ -59,7 +60,7 @@ export type Stend = {
   adres: string;
   /** Корень сервера без пути вебхука — для /health и /vypusk. */
   koren: string;
-  sostoyanie: { gotov: boolean; shag: string };
+  sostoyanie: Sostoyanie;
   zakryt: () => Promise<void>;
 };
 
@@ -77,11 +78,11 @@ export async function stend(): Promise<Stend> {
   // Тот же конструктор, что в бою: иначе проверка про таймауты
   // доказывала бы свойства стенда, а не боевого бота.
   const bot = sozdatBota(n, tg.adres);
-  const l: Lavka = { db, n, bot, oplata: zaglushka };
+  const l: Lavka = { db, n, bot, oplata: zaglushka, nachatOpros: zapomnitOpros(bot) };
   sobrat(l);
   await bot.init();
 
-  const sostoyanie = { gotov: true, shag: 'на связи' };
+  const sostoyanie: Sostoyanie = { gotov: true, shag: 'на связи', dostavka: 'vebhuk' };
   const { server, put } = sozdatServer(l, 'proba', sostoyanie);
   await new Promise<void>((gotovo) => server.listen(0, '127.0.0.1', gotovo));
   const port = (server.address() as AddressInfo).port;

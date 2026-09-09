@@ -39,7 +39,20 @@ export const PREDEL_OBRABOTKI_MS = 8_000;
  * /vypusk отвечает всегда (это про то, какой код запущен), /health —
  * только когда бот действительно на связи.
  */
-export type Sostoyanie = { gotov: boolean; shag: string };
+export type Sostoyanie = {
+  gotov: boolean;
+  shag: string;
+  /**
+   * Каким способом обновления доходят до нас ПРЯМО СЕЙЧАС.
+   *
+   * Не то же самое, что настройка режима: бот начинает с вебхука
+   * и может перейти на опрос на ходу, если Telegram доказательно
+   * не может достучаться. Поле нужно двоим — /health, чтобы говорить
+   * правду, и самому серверу, чтобы не принимать вебхук, когда мы
+   * уже забираем обновления сами.
+   */
+  dostavka: 'vebhuk' | 'opros';
+};
 
 export type Sluzhba = {
   server: Server;
@@ -83,6 +96,16 @@ export function sozdatServer(l: Lavka, vypusk: string, sostoyanie: Sostoyanie): 
       // сервера. Снаружи знать номер выпуска незачем.
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
       res.end(vypusk);
+      return;
+    }
+    if (adres === put && req.method === 'POST' && sostoyanie.dostavka === 'opros') {
+      // Мы забираем обновления сами. Принять то же обновление ещё
+      // и вебхуком значило бы обработать его дважды — от этого спасает
+      // отсев по update_id, но полагаться на него как на единственную
+      // защиту незачем: правильный ответ здесь «сюда больше не надо».
+      zhurnal.vnimanie('вебхук пришёл, когда бот на опросе — отвечаю отказом');
+      res.writeHead(409, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('бот забирает обновления опросом');
       return;
     }
     if (adres === put && req.method === 'POST') {

@@ -34,9 +34,14 @@ import { sozdatServer } from './server.js';
 import type { Sostoyanie } from './server.js';
 import { zapustit as zapustitNapominaniya } from './jobs/napominaniya.js';
 import { zapustit as zapustitOzhidanieKodov } from './jobs/kody.js';
+import {
+  zapustit as zapustitPrismotrDostavki,
+  pereytiNaOpros,
+  razobrat as razobratDostavku,
+} from './jobs/dostavka.js';
 import { zaglushka } from './oplata/zaglushka.js';
 import type { Lavka } from './lavka.js';
-import { sozdatBota } from './lavka.js';
+import { sozdatBota, zapomnitOpros } from './lavka.js';
 
 /**
  * Дождаться, пока Telegram станет доступен, — вслух.
@@ -105,7 +110,9 @@ async function glavnaya(): Promise<void> {
   zhurnal.info(`база открыта: ${n.baza}`);
 
   const bot = sozdatBota(n);
-  const l: Lavka = { db, n, bot, oplata: zaglushka };
+  // Ссылку на опрос берём ЗДЕСЬ, до создания вебхук-сервера:
+  // после него grammY подменяет bot.start исключением.
+  const l: Lavka = { db, n, bot, oplata: zaglushka, nachatOpros: zapomnitOpros(bot) };
   sobrat(l);
 
   // Отметка выпуска. Кладётся выкладкой рядом с кодом; выкладка потом
@@ -131,7 +138,7 @@ async function glavnaya(): Promise<void> {
   // Имя бота для разбора команд вида /start@imya грамматический слой
   // получит сам: webhookCallback вызывает init перед первым
   // обновлением, если её ещё не было.
-  const sostoyanie: Sostoyanie = { gotov: false, shag: 'поднимаюсь' };
+  const sostoyanie: Sostoyanie = { gotov: false, shag: 'поднимаюсь', dostavka: 'vebhuk' };
   const { server, put } = sozdatServer(l, vypusk, sostoyanie);
 
   server.listen(n.port, '127.0.0.1', () => {
@@ -143,31 +150,48 @@ async function glavnaya(): Promise<void> {
   await bot.init();
   zhurnal.info(`бот: @${bot.botInfo.username}`);
 
-  sostoyanie.shag = 'объявляю вебхук';
-  await bot.api.setWebhook(adresVebhuka(n), {
-    secret_token: n.sekretVebhuka,
-    // Telegram сам разрешает наше имя и решает, по какому адресу идти.
-    // Задать адрес явно можно — но только если стало видно, что его
-    // выбор не работает: доставка стоит, pending растёт.
-    ...(n.adresVebhukaDlyaTelegram ? { ip_address: n.adresVebhukaDlyaTelegram } : {}),
-    // Пропущенные за время простоя обновления НЕ выбрасываем: там
-    // могут быть заказы.
-    drop_pending_updates: false,
-    allowed_updates: ['message', 'callback_query'],
-  });
-  // Что Telegram думает о нашем вебхуке — в журнал сразу после
-  // объявления. Поле ip_address показывает, по какому адресу он к нам
-  // ходит: без этой строки «почему не доходят обновления» выясняется
-  // отдельным походом на сервер.
-  try {
-    const v = await bot.api.getWebhookInfo();
-    zhurnal.info(
-      `вебхук объявлен; Telegram ходит к нам на ${v.ip_address ?? '?'}, ` +
-        `ожидают доставки ${v.pending_update_count ?? 0}` +
-        (v.last_error_message ? `, последняя ошибка: ${v.last_error_message}` : ''),
-    );
-  } catch (e) {
-    zhurnal.vnimanie('вебхук объявлен, но состояние спросить не вышло:', e);
+  if (n.rezhim === 'opros') {
+    // Владелец сказал прямо: обновления забираем сами. Вебхук снимет
+    // сам `bot.start`, и снимет без потери накопленного.
+    sostoyanie.shag = 'начинаю опрос';
+    await pereytiNaOpros(l, sostoyanie, 'режим задан настройкой NEIROLAVKA_REZHIM=opros');
+  } else {
+    sostoyanie.shag = 'объявляю вебхук';
+    await bot.api.setWebhook(adresVebhuka(n), {
+      secret_token: n.sekretVebhuka,
+      // Telegram сам разрешает наше имя и решает, по какому адресу идти.
+      // Задать адрес явно можно — но ТОЛЬКО IPv4: Bot API отвергает
+      // любой другой словами «IPv6-only addresses are not allowed».
+      ...(n.adresVebhukaDlyaTelegram ? { ip_address: n.adresVebhukaDlyaTelegram } : {}),
+      // Пропущенные за время простоя обновления НЕ выбрасываем: там
+      // могут быть заказы.
+      drop_pending_updates: false,
+      allowed_updates: ['message', 'callback_query'],
+    });
+    // Что Telegram думает о нашем вебхуке — в журнал сразу после
+    // объявления. Поле ip_address показывает, по какому адресу он к нам
+    // ходит: без этой строки «почему не доходят обновления» выясняется
+    // отдельным походом на сервер.
+    try {
+      const v = await bot.api.getWebhookInfo();
+      zhurnal.info(
+        `вебхук объявлен; Telegram ходит к нам на ${v.ip_address ?? '?'}, ` +
+          `ожидают доставки ${v.pending_update_count ?? 0}` +
+          (v.last_error_message ? `, последняя ошибка: ${v.last_error_message}` : ''),
+      );
+      // Решение о переходе принимается ПРЯМО ЗДЕСЬ, а не через две
+      // минуты: сведения о неудачной доставке Telegram отдаёт сразу,
+      // и если они говорят «не дохожу», ждать нечего.
+      if (n.rezhim === 'sam') {
+        const vyvod = razobratDostavku(v, Math.floor(Date.now() / 1000));
+        if (vyvod.perehodit) {
+          zhurnal.oshibka(`Telegram не доставляет обновления на вебхук: ${vyvod.pochemu}`);
+          await pereytiNaOpros(l, sostoyanie, vyvod.pochemu);
+        }
+      }
+    } catch (e) {
+      zhurnal.vnimanie('вебхук объявлен, но состояние спросить не вышло:', e);
+    }
   }
 
   // Кому мы вообще можем писать. Проверяется СРАЗУ, а не в момент
@@ -177,23 +201,31 @@ async function glavnaya(): Promise<void> {
   await proveritKomandu(l).catch((e) => zhurnal.oshibka('проверка команды не прошла:', e));
 
   sostoyanie.gotov = true;
+  const kak = sostoyanie.dostavka === 'opros' ? 'обновления забираю опросом' : 'обновления приходят вебхуком';
   sostoyanie.shag =
-    putDoTelegram === null
-      ? 'на связи, путь не подтверждён — ищу'
-      : `на связи по IPv${putDoTelegram}`;
+    putDoTelegram === null ? `на связи, путь не подтверждён — ищу; ${kak}` : `на связи по IPv${putDoTelegram}, ${kak}`;
 
   zapustitNapominaniya(l);
   zapustitOzhidanieKodov(l);
   // Присмотр держит состояние пути и правит строку /health на ходу:
   // «жив» без указания пути ничего не говорит, когда путь потерян.
   const prismotr = zapustitPrismotr(l, putDoTelegram);
+  // Присмотр за ДОСТАВКОЙ — отдельный от присмотра за путём. Первый
+  // спрашивает «доходит ли до нас», второй — «доходим ли мы».
+  zapustitPrismotrDostavki(l, sostoyanie);
   setInterval(() => {
     const p = prismotr.put();
-    sostoyanie.shag = p === null ? 'на связи, путь не подтверждён — ищу' : `на связи по IPv${p}`;
+    const put = p === null ? 'путь не подтверждён — ищу' : `по IPv${p}`;
+    const kakSeychas =
+      sostoyanie.dostavka === 'opros' ? 'обновления забираю опросом' : 'обновления приходят вебхуком';
+    sostoyanie.shag = `на связи ${put}, ${kakSeychas}`;
   }, 5_000).unref();
 
   const ostanovka = (signal: string) => {
     zhurnal.info(`${signal}: останавливаюсь`);
+    // Опрос держит открытый запрос к Telegram: не прервав его,
+    // процесс уходил бы в остановку до конца ожидания.
+    if (sostoyanie.dostavka === 'opros') void bot.stop();
     server.close(() => {
       try {
         db.close();

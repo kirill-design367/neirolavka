@@ -11,6 +11,21 @@
  * не требует правки ни одной строки сообщения.
  */
 
+/**
+ * Как бот получает обновления.
+ *
+ * `vebhuk` — Telegram стучится к нам. Дёшево и мгновенно, но требует,
+ * чтобы Telegram МОГ до нас достучаться.
+ *
+ * `opros` — бот сам забирает обновления длинным опросом. Работает
+ * там, где входящий путь закрыт: наш исходящий путь по IPv6 живой,
+ * и этого достаточно.
+ *
+ * `sam` — начать с вебхука и перейти на опрос, если Telegram
+ * доказательно не может доставить (см. `jobs/dostavka.ts`).
+ */
+export type Rezhim = 'sam' | 'vebhuk' | 'opros';
+
 /** Разобранные настройки. Числа — уже числа, ключ — уже Buffer. */
 export type Nastroyki = {
   /** Токен бота. В журнал не попадает никогда: см. lib/zhurnal.ts. */
@@ -35,6 +50,8 @@ export type Nastroyki = {
    * не переживёт обновления.
    */
   adresVebhukaDlyaTelegram: string;
+  /** Вебхук, опрос или «решай сам». Подробности у типа `Rezhim`. */
+  rezhim: Rezhim;
   /** Владельцы: видят всё. Список из окружения — засев базы при старте. */
   vladelcy: number[];
   /** Помощники: только заказы и выдача. */
@@ -121,6 +138,17 @@ export function prochitat(env: NodeJS.ProcessEnv): Nastroyki {
       `часы работы заданы неверно: с ${rabotaS} до ${rabotaDo}. Нужны целые часы, начало меньше конца.`,
     );
   }
+  // Режим доставки. Неизвестное слово — это отказ, а не умолчание:
+  // опечатка в `NEIROLAVKA_REZHIM` не должна молча оставлять бота
+  // на вебхуке, которого, может быть, и просили не использовать.
+  const rezhimStroka = (env['NEIROLAVKA_REZHIM'] ?? 'sam').trim().toLowerCase();
+  if (rezhimStroka !== 'sam' && rezhimStroka !== 'vebhuk' && rezhimStroka !== 'opros') {
+    throw new OshibkaNastroyek(
+      `NEIROLAVKA_REZHIM должен быть sam, vebhuk или opros, а не «${rezhimStroka}»`,
+    );
+  }
+  const rezhim = rezhimStroka as Rezhim;
+
   const vladelcy = spisokId(env, 'NEIROLAVKA_VLADELCY');
   if (vladelcy.length === 0) {
     throw new OshibkaNastroyek('не задан NEIROLAVKA_VLADELCY — бот остался бы без администратора');
@@ -133,6 +161,7 @@ export function prochitat(env: NodeJS.ProcessEnv): Nastroyki {
     port: chislo(env, 'NEIROLAVKA_PORT', 8080),
     adresSayta: (env['NEIROLAVKA_ADRES'] ?? 'https://neirolavka.ru').trim().replace(/\/+$/, ''),
     adresVebhukaDlyaTelegram: (env['NEIROLAVKA_ADRES_DLYA_TELEGRAM'] ?? '').trim(),
+    rezhim,
     vladelcy,
     pomoshniki: spisokId(env, 'NEIROLAVKA_POMOSHNIKI'),
     poyas: (env['NEIROLAVKA_POYAS'] ?? 'Europe/Moscow').trim(),

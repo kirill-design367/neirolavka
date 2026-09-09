@@ -20,6 +20,22 @@ test('значения по умолчанию — часы работы лав�
   assert.deepEqual(n.pomoshniki, []);
 });
 
+test('способ доставки: по умолчанию решает сам', () => {
+  const n = prochitat({ ...BAZOVOE });
+  assert.equal(n.rezhim, 'sam');
+});
+
+test('способ доставки задаётся настройкой', () => {
+  assert.equal(prochitat({ ...BAZOVOE, NEIROLAVKA_REZHIM: 'opros' }).rezhim, 'opros');
+  assert.equal(prochitat({ ...BAZOVOE, NEIROLAVKA_REZHIM: ' VEBHUK ' }).rezhim, 'vebhuk');
+});
+
+test('опечатка в способе доставки — отказ, а не молчаливое умолчание', () => {
+  // Иначе `NEIROLAVKA_REZHIM=oprosс` оставил бы бота на вебхуке,
+  // которого, может быть, и просили не использовать.
+  assert.throws(() => prochitat({ ...BAZOVOE, NEIROLAVKA_REZHIM: 'polling' }), /NEIROLAVKA_REZHIM/);
+});
+
 test('без токена не поднимаемся', () => {
   assert.throws(() => prochitat({ ...BAZOVOE, NEIROLAVKA_TOKEN_BOTA: '' }), /NEIROLAVKA_TOKEN_BOTA/);
 });

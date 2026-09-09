@@ -32,7 +32,8 @@ function lavka(): { l: Lavka; ushlo: { komu: number; text: string }[] } {
       },
     },
   } as unknown as Lavka['bot'];
-  return { l: { db, n, bot, oplata: zaglushka }, ushlo };
+  // Бот здесь подставной, опроса у него нет и не нужно.
+  return { l: { db, n, bot, oplata: zaglushka, nachatOpros: async () => {} }, ushlo };
 }
 
 const OBRAZEC = {
