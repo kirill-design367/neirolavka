@@ -212,7 +212,7 @@ const CATALOG: Catalog = {
           "id": "suno-pro",
           "short": "Pro",
           "title": "Suno AI, Pro",
-          "priceRub": null
+          "priceRub": 1
         },
         {
           "id": "suno-premier",
