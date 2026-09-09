@@ -717,6 +717,9 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     b.z = 0;
   };
 
+  /** Размеры прошлой раскладки: по ним видно, что менять нечего. */
+  let bylo = { w: 0, h: 0, dpr: 0, docH: 0 };
+
   const resize = () => {
     // Холст закреплён по ОКНУ (position: fixed, inset: 0), а пузыри
     // живут на СТРАНИЦЕ. Разница принципиальная и она про кадры: слой
@@ -734,7 +737,18 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     // скрыт, иначе его переезд из 300×150 в углу засчитывается
     // сдвигом вёрстки.
     canvas.style.visibility = 'visible';
-    dpr = Math.min(1, window.devicePixelRatio || 1); // ПРОБА dpr 1
+    // ПЛОТНОСТЬ ХОЛСТА. Здесь стояло `Math.min(1, …)` с пометкой
+    // «ПРОБА dpr 1» — проба, доехавшая до боевого адреса. На телефоне
+    // с плотностью 3 холст рисовался втрое мельче экрана и растягивался
+    // обратно: точка получала один отсчёт буфера на css-пиксель вместо
+    // трёх, и её мягкий круглый край превращался в ступеньку. На
+    // десктопе плотность 1, поэтому там всё было чётко, а на телефоне
+    // мыло — ровно то, что видит владелец.
+    //
+    // Потолок 2, а не 3: третий отсчёт на глаз не добавляет ничего
+    // (кромка точки и так мягкая), а платится он площадью буфера —
+    // 9 экранов против 4. Замер прокрутки на телефоне ниже, в отчёте.
+    dpr = Math.min(2, window.devicePixelRatio || 1);
     // Камера отодвинута так, что на плоскости z = 0 единица мира —
     // ровно один css-пиксель. Тогда радиусы и размеры точек задаются
     // в пикселях и не зависят от размера окна.
@@ -758,6 +772,36 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     polosa();
     for (const b of bubbles) {
       b.x = Math.max(vis.xmin + b.r * EDGE, Math.min(vis.xmax - b.r * EDGE, b.x));
+    }
+    bylo = { w, h, dpr, docH };
+  };
+
+  /**
+   * Обёртка над resize: пересобирать всё имеет смысл, только когда
+   * что-то и правда изменилось.
+   *
+   * ResizeObserver на documentElement срабатывает и на высоту
+   * ДОКУМЕНТА — а она меняется от раскрытия тарифов витрины, от
+   * подгрузки шрифтов и на телефоне от каждого движения адресной
+   * строки при прокрутке. Полный resize при этом переаллоцирует буфер
+   * холста и читает коробки десятка узлов; делать это посреди
+   * прокрутки — верный способ уронить кадр, а уроненный кадр
+   * на телефоне и есть та самая дрожь.
+   *
+   * Высота документа сама по себе холста не меняет: она нужна только
+   * запретным прямоугольникам. Поэтому на неё пересчитывается ТОЛЬКО
+   * текст, а не вся сцена.
+   */
+  const pereschitat = () => {
+    const nw = Math.max(1, Math.round(document.documentElement.clientWidth));
+    const nh = Math.max(1, Math.round(window.innerHeight));
+    const ndpr = Math.min(2, window.devicePixelRatio || 1);
+    if (nw !== bylo.w || nh !== bylo.h || ndpr !== bylo.dpr) { resize(); return; }
+    const nowH = document.documentElement.scrollHeight;
+    if (Math.abs(nowH - bylo.docH) > 4) {
+      docH = nowH;
+      bylo.docH = nowH;
+      zameritTekst();
     }
   };
 
@@ -930,11 +974,18 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
     const dt = prev ? Math.min(0.05, (t - prev) / 1000) : 0;
     prev = t;
 
-    // Прокрутка и высота документа читаются РАЗ за кадр: это
-    // принудительная раскладка, и делать её по ходу такта нельзя.
+    // Прокрутка читается РАЗ за кадр: это принудительная раскладка,
+    // и делать её по ходу такта нельзя.
+    //
+    // А высота документа отсюда УБРАНА. `scrollHeight` — это тоже
+    // принудительная раскладка, и она шла каждый кадр, всё время,
+    // на каждой странице. На телефоне, где прокрутку ведёт композитор,
+    // а рисуем мы по scrollY из главного потока, каждый затянувшийся
+    // кадр — это кадр, на котором содержимое уехало, а пузыри остались:
+    // именно это читается дрожью. Высоту документа теперь приносит
+    // ResizeObserver, который и так следит за documentElement, —
+    // ровно тогда, когда она действительно изменилась.
     scrollTop = window.scrollY;
-    const nowH = document.documentElement.scrollHeight;
-    if (Math.abs(nowH - docH) > 4) { docH = nowH; zameritTekst(); }
     polosa();
 
     if (t < colorWindow && (frames & 3) === 0) readColors();
@@ -1125,7 +1176,7 @@ export function mount(canvas: HTMLCanvasElement, host: HTMLElement): (() => void
 
   gsap.ticker.add(step);
 
-  const ro = new ResizeObserver(resize);
+  const ro = new ResizeObserver(pereschitat);
   ro.observe(document.documentElement);
 
   const onLost = (e: Event) => {
