@@ -100,7 +100,6 @@ export type Slova = {
   vygruzka: string;
   vygruzkaPoyasnenie: string;
   vsegoZakazov: string;
-  zaSutki: string;
   vyruchka: string;
   srednyayaVydacha: string;
   poTovaram: string;
@@ -145,6 +144,43 @@ export type Slova = {
   stKodPoluchen: string;
   stVydan: string;
   stOtmenen: string;
+  gruppaOtpravit: string;
+  gruppaDostup: string;
+  gruppaKod: string;
+  gruppaVzyat: string;
+  gruppaOplata: string;
+  gruppaZhdemKod: string;
+  gruppaPusta: string;
+  svernut: string;
+  razvernut: string;
+  summa: string;
+  sortPoOzhidaniyu: string;
+  sortPoSumme: string;
+  vsegoPokupateley: string;
+  zaNedelyu: string;
+  zaMesyac: string;
+  zaGod: string;
+  poisk: string;
+  poiskPodskazka: string;
+  otborVse: string;
+  otborSZakazami: string;
+  otborBezZakazov: string;
+  otborSBalansom: string;
+  primenit: string;
+  sbrosit: string;
+  nikogoNeNashlos: string;
+  naydeno: string;
+  period: string;
+  segodnya: string;
+  vchera: string;
+  nedelya: string;
+  mesyac: string;
+  god: string;
+  vseVremya: string;
+  oformleno: string;
+  vyruchkaZaPeriod: string;
+  oknoPoyasnenie: string;
+  sVremeni: string;
 };
 
 const RU: Slova = {
@@ -234,7 +270,6 @@ const RU: Slova = {
     'Сайт статический и базы не видит: цена, поставленная здесь, работает в боте сразу, ' +
     'а на витрине появится после выкладки. Замените этим куском массив products в src/lib/catalog.ts.',
   vsegoZakazov: 'Заказов всего',
-  zaSutki: 'за сутки',
   vyruchka: 'Выручка по выданным',
   srednyayaVydacha: 'Среднее время выдачи',
   poTovaram: 'По товарам',
@@ -279,6 +314,44 @@ const RU: Slova = {
   stKodPoluchen: 'Код получен',
   stVydan: 'Выдан',
   stOtmenen: 'Отменён',
+  gruppaOtpravit: 'Готовы к выдаче',
+  gruppaDostup: 'Нужно записать доступ',
+  gruppaKod: 'Нужно запросить код',
+  gruppaVzyat: 'Готовы взять в работу',
+  gruppaOplata: 'Ждут оплаты',
+  gruppaZhdemKod: 'Ждём код от покупателя',
+  gruppaPusta: 'пусто',
+  svernut: 'свернуть',
+  razvernut: 'развернуть',
+  summa: 'Сумма',
+  sortPoOzhidaniyu: 'по ожиданию',
+  sortPoSumme: 'по сумме',
+  vsegoPokupateley: 'Всего покупателей',
+  zaNedelyu: 'за неделю',
+  zaMesyac: 'за месяц',
+  zaGod: 'за год',
+  poisk: 'Поиск',
+  poiskPodskazka: 'имя, @username или id',
+  otborVse: 'Все',
+  otborSZakazami: 'С заказами',
+  otborBezZakazov: 'Без заказов',
+  otborSBalansom: 'С деньгами на балансе',
+  primenit: 'Показать',
+  sbrosit: 'Сбросить',
+  nikogoNeNashlos: 'Никто не подошёл',
+  naydeno: 'Найдено',
+  period: 'Период',
+  segodnya: 'Сегодня',
+  vchera: 'Вчера',
+  nedelya: 'Неделя',
+  mesyac: 'Месяц',
+  god: 'Год',
+  vseVremya: 'Всё время',
+  oformleno: 'Заказов оформлено',
+  vyruchkaZaPeriod: 'Выручка по выданным за период',
+  oknoPoyasnenie:
+    'Заказы считаются по дню оформления, деньги — по дню выдачи: выручка засчитывается тогда, когда доступ ушёл человеку.',
+  sVremeni: 'с',
 };
 
 const EN: Slova = {
@@ -368,7 +441,6 @@ const EN: Slova = {
     'The website is static and cannot read the database: a price set here works in the bot at once, ' +
     'but appears on the site only after a deploy. Replace the products array in src/lib/catalog.ts with this.',
   vsegoZakazov: 'Orders total',
-  zaSutki: 'last 24 h',
   vyruchka: 'Revenue on delivered',
   srednyayaVydacha: 'Average delivery time',
   poTovaram: 'By product',
@@ -413,6 +485,44 @@ const EN: Slova = {
   stKodPoluchen: 'Code received',
   stVydan: 'Delivered',
   stOtmenen: 'Cancelled',
+  gruppaOtpravit: 'Ready to send',
+  gruppaDostup: 'Access to enter',
+  gruppaKod: 'Code to request',
+  gruppaVzyat: 'Ready to take',
+  gruppaOplata: 'Awaiting payment',
+  gruppaZhdemKod: 'Waiting for the customer code',
+  gruppaPusta: 'empty',
+  svernut: 'collapse',
+  razvernut: 'expand',
+  summa: 'Amount',
+  sortPoOzhidaniyu: 'by waiting time',
+  sortPoSumme: 'by amount',
+  vsegoPokupateley: 'Customers total',
+  zaNedelyu: 'last 7 days',
+  zaMesyac: 'last 30 days',
+  zaGod: 'last 365 days',
+  poisk: 'Search',
+  poiskPodskazka: 'name, @username or id',
+  otborVse: 'Everyone',
+  otborSZakazami: 'With orders',
+  otborBezZakazov: 'Without orders',
+  otborSBalansom: 'With money on balance',
+  primenit: 'Show',
+  sbrosit: 'Reset',
+  nikogoNeNashlos: 'Nobody matched',
+  naydeno: 'Found',
+  period: 'Period',
+  segodnya: 'Today',
+  vchera: 'Yesterday',
+  nedelya: '7 days',
+  mesyac: '30 days',
+  god: '365 days',
+  vseVremya: 'All time',
+  oformleno: 'Orders placed',
+  vyruchkaZaPeriod: 'Revenue on orders delivered in the period',
+  oknoPoyasnenie:
+    'Orders are counted by the day they were placed, money by the day it was delivered: revenue lands on the day the access reached the customer.',
+  sVremeni: 'from',
 };
 
 export const SLOVAR: Record<Yazyk, Slova> = { ru: RU, en: EN };

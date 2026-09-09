@@ -456,37 +456,90 @@ export type Statistika = {
   srednyayaVydachaMinut: number | null;
 };
 
-export function statistika(db: Baza): Statistika {
+/**
+ * Окно времени для статистики.
+ *
+ * `null` с обеих сторон — «за всё время». Границы приходят ISO-строками
+ * (`>= ot`, `< do`), потому что в базе время лежит именно так и
+ * сравнение строк здесь — это сравнение времени.
+ */
+export type Okno = { ot: string | null; do: string | null };
+
+const VSE_VREMYA: Okno = { ot: null, do: null };
+
+/**
+ * ОКНО ПРИКЛАДЫВАЕТСЯ К РАЗНЫМ ПОЛЯМ, и это не небрежность.
+ *
+ * Заказы считаются по `sozdan`: «сколько заказов за неделю» — это про
+ * то, сколько их оформили. А деньги — по `vydan`: выручка засчитывается
+ * в тот день, когда доступ ушёл человеку, а не когда заказ создан.
+ * Иначе заказ, оформленный вчера и выданный сегодня, попадал бы
+ * во вчерашнюю выручку — то есть в день, когда денег ещё не было.
+ *
+ * Одно окно на оба поля выглядело бы стройнее и врало бы каждый раз,
+ * когда выдача переезжает через полночь.
+ */
+function ramka(pole: string, okno: Okno): { gde: string; dovody: string[] } {
+  const usloviya: string[] = [];
+  const dovody: string[] = [];
+  if (okno.ot) {
+    usloviya.push(`${pole} >= ?`);
+    dovody.push(okno.ot);
+  }
+  if (okno.do) {
+    usloviya.push(`${pole} < ?`);
+    dovody.push(okno.do);
+  }
+  return { gde: usloviya.length ? ` AND ${usloviya.join(' AND ')}` : '', dovody };
+}
+
+export function statistika(db: Baza, okno: Okno = VSE_VREMYA): Statistika {
+  // `WHERE 1=1` — чтобы окно приклеивалось к запросу одинаково
+  // и там, где условий больше нет.
+  const po_sozdan = ramka('sozdan', okno);
+  const po_vydan = ramka('vydan', okno);
+
   const poStatusam: Record<string, number> = {};
-  for (const r of db.prepare('SELECT status, COUNT(*) n FROM zakazy GROUP BY status').all() as {
+  for (const r of db
+    .prepare(`SELECT status, COUNT(*) n FROM zakazy WHERE 1=1${po_sozdan.gde} GROUP BY status`)
+    .all(...po_sozdan.dovody) as {
     status: string;
     n: number;
   }[]) {
     poStatusam[r.status] = r.n;
   }
-  const vsego = (db.prepare('SELECT COUNT(*) n FROM zakazy').get() as { n: number }).n;
+  const vsego = (
+    db.prepare(`SELECT COUNT(*) n FROM zakazy WHERE 1=1${po_sozdan.gde}`).get(...po_sozdan.dovody) as { n: number }
+  ).n;
   const vyruchka = db
     .prepare(
       `SELECT COALESCE(SUM(cena_kop), 0) s,
               COALESCE(SUM(CASE WHEN cena_kop = 0 THEN 1 ELSE 0 END), 0) bez
-         FROM zakazy WHERE status = 'vydan'`,
+         FROM zakazy WHERE status = 'vydan'${po_vydan.gde}`,
     )
-    .get() as { s: number; bez: number };
+    .get(...po_vydan.dovody) as { s: number; bez: number };
   const poTovaram = db
     .prepare(
       `SELECT produkt_id, COUNT(*) skolko, COALESCE(SUM(cena_kop),0) summa_kop,
               COALESCE(SUM(CASE WHEN cena_kop = 0 THEN 1 ELSE 0 END), 0) bez_ceny
-         FROM zakazy WHERE status = 'vydan' GROUP BY produkt_id ORDER BY skolko DESC`,
+         FROM zakazy WHERE status = 'vydan'${po_vydan.gde} GROUP BY produkt_id ORDER BY skolko DESC`,
     )
-    .all() as { produkt_id: string; skolko: number; summa_kop: number; bez_ceny: number }[];
+    .all(...po_vydan.dovody) as { produkt_id: string; skolko: number; summa_kop: number; bez_ceny: number }[];
+  // «За сутки» окну НЕ подчиняется намеренно: это отдельный факт
+  // для сводки владельца в боте, и он про последние 24 часа всегда.
   const sutki = new Date(Date.now() - 24 * 3600_000).toISOString();
   const zaSutki = (db.prepare('SELECT COUNT(*) n FROM zakazy WHERE sozdan > ?').get(sutki) as { n: number }).n;
   const sredn = db
     .prepare(
+      // `vydan >= oplachen` — не придирка: невозможная пара дат даёт
+      // отрицательное среднее, и на экран уезжает «−960 мин». Такую
+      // строку человек не может ни понять, ни проверить; лучше
+      // не считать её вовсе, чем печатать бессмыслицу.
       `SELECT AVG((julianday(vydan) - julianday(oplachen)) * 24 * 60) m
-         FROM zakazy WHERE status = 'vydan' AND oplachen IS NOT NULL AND vydan IS NOT NULL`,
+         FROM zakazy WHERE status = 'vydan' AND oplachen IS NOT NULL AND vydan IS NOT NULL
+                       AND vydan >= oplachen${po_vydan.gde}`,
     )
-    .get() as { m: number | null };
+    .get(...po_vydan.dovody) as { m: number | null };
   return {
     vsego,
     poStatusam,

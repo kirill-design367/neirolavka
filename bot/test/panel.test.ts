@@ -19,6 +19,7 @@ import * as kody from '../src/db/kody.js';
 import * as dostupy from '../src/db/dostupy.js';
 import { tovary, tarif } from '../src/lib/katalog.js';
 import { sleduyushchiyShag } from '../src/admin/stranicy.js';
+import * as str from '../src/admin/stranicy.js';
 import type { Stend } from './stend.js';
 import { stend, POKUPATEL, VLADELEC, ZHIVOY_PLAN } from './stend.js';
 
@@ -176,7 +177,7 @@ test('без входа панели не видно, а вход открыва
     const ochered = await k.get('/admin/ochered');
     assert.equal(ochered.kod, 200);
     assert.ok(ochered.telo.includes(`№ ${z.id}`), 'заказа нет в очереди');
-    assert.ok(ochered.telo.includes('Следующий шаг'), 'нет колонки следующего шага');
+    assert.ok(ochered.telo.includes('Ждут оплаты'), 'заказ не попал в группу своего шага');
   } finally {
     await s.zakryt();
   }
@@ -484,7 +485,7 @@ test('панель отвечает на двух языках и помнит �
     assert.equal(smena.kod, 303);
     const en = await k.get('/admin/ochered');
     assert.ok(en.telo.includes('Queue'), 'английский не включился');
-    assert.ok(en.telo.includes('Next step'), 'колонка шага осталась непереведённой');
+    assert.ok(en.telo.includes('Awaiting payment'), 'название группы осталось непереведённым');
     assert.ok(en.telo.includes('lang="en"'), 'язык страницы не объявлен');
 
     // Дата в английской панели не остаётся русской: «9 сентября»
@@ -516,4 +517,279 @@ test('страницы панели не кешируются и не встаю
   } finally {
     await s.zakryt();
   }
+});
+
+// ── очередь: группы, свёртывание, сортировка ─────────────────────────
+
+/** Заказ с заданным товаром, ценой и возрастом — для рядов и групп. */
+function zakazNa(
+  s: Stend,
+  tgId: number,
+  planId: string,
+  cenaKop: number,
+  minutNazad = 0,
+  vid: 'novy' | 'svoy' = 'novy',
+): zakazy.Zakaz {
+  lyudi.zapomnit(s.l.db, tgId, `Человек ${tgId}`, null);
+  const { zakaz: z } = zakazy.sozdatIliVernut(s.l.db, {
+    tgId,
+    produktId: 'proba',
+    planId,
+    nazvanie: `Проба ${planId}`,
+    cenaKop,
+    mesyacev: 0,
+    vidAkkaunta: vid,
+  });
+  if (minutNazad) {
+    s.l.db
+      .prepare('UPDATE zakazy SET sozdan = ? WHERE id = ?')
+      .run(new Date(Date.now() - minutNazad * 60_000).toISOString(), z.id);
+  }
+  return zakazy.po(s.l.db, z.id) as zakazy.Zakaz;
+}
+
+/** Номера заказов в том порядке, в каком они стоят на странице. */
+function poryadokNaStranice(telo: string): number[] {
+  return [...telo.matchAll(/№&nbsp;(\d+)|№ (\d+)/g)].map((m) => Number(m[1] ?? m[2]));
+}
+
+test('очередь разложена по группам, и в шапке группы стоит её счёт', async () => {
+  const s = await stend();
+  try {
+    const k = await voyti(s);
+    const zashchita = await k.zashchita();
+
+    const zhdetOplaty = zakazNa(s, 601, 'proba-a', 100_000);
+    const gotovVzyat = zakazNa(s, 602, 'proba-b', 200_000);
+    await k.post(`/admin/zakaz/${gotovVzyat.id}/oplata`, { zashchita });
+    const nuzhenDostup = zakazNa(s, 603, 'proba-c', 300_000);
+    await k.post(`/admin/zakaz/${nuzhenDostup.id}/oplata`, { zashchita });
+    await k.post(`/admin/zakaz/${nuzhenDostup.id}/vzyat`, { zashchita });
+    const gotovOtpravit = zakazNa(s, 604, 'proba-d', 400_000);
+    await k.post(`/admin/zakaz/${gotovOtpravit.id}/oplata`, { zashchita });
+    await k.post(`/admin/zakaz/${gotovOtpravit.id}/vzyat`, { zashchita });
+    await k.post(`/admin/zakaz/${gotovOtpravit.id}/dostup`, { zashchita, login: 'a@b.c', parol: 'parol-999' });
+
+    const o = await k.get('/admin/ochered');
+    // Каждая группа знает своё число: четыре заказа в четырёх разных.
+    for (const imya of ['Готовы к выдаче', 'Нужно записать доступ', 'Готовы взять в работу', 'Ждут оплаты']) {
+      assert.ok(o.telo.includes(imya), `нет группы «${imya}»`);
+    }
+    assert.ok(o.telo.includes('Ждём код от покупателя'), 'пустая группа исчезла со страницы');
+
+    // Порядок групп: сначала то, что можно доделать сейчас.
+    const mesta = ['Готовы к выдаче', 'Нужно записать доступ', 'Нужно запросить код', 'Готовы взять в работу', 'Ждут оплаты']
+      .map((imya) => o.telo.indexOf(imya));
+    assert.deepEqual([...mesta].sort((a, b) => a - b), mesta, 'группы стоят не в том порядке');
+
+    // И заказы разложены по группам, а не свалены в одну таблицу:
+    // «готов к выдаче» стоит на странице раньше «ждёт оплаты».
+    assert.ok(
+      o.telo.indexOf(`№ ${gotovOtpravit.id}`) < o.telo.indexOf(`№ ${zhdetOplaty.id}`),
+      'заказ к выдаче оказался ниже ждущего оплаты',
+    );
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('свёрнутая группа остаётся свёрнутой после обновления страницы', async () => {
+  const s = await stend();
+  try {
+    const z = zakazNa(s, 605, 'proba-e', 100_000);
+    const k = await voyti(s);
+    assert.ok((await k.get('/admin/ochered')).telo.includes(`№ ${z.id}`), 'заказа нет в развёрнутой группе');
+
+    const svernul = await k.get('/admin/ochered/svernut?g=oplata&sort=zhdet&napr=ubyv');
+    assert.equal(svernul.kod, 303, 'переключатель не увёл обратно на очередь');
+
+    const posle = await k.get('/admin/ochered');
+    assert.ok(!posle.telo.includes(`№ ${z.id}`), 'группа не свернулась');
+    assert.ok(posle.telo.includes('Ждут оплаты'), 'вместе с группой пропала её шапка');
+    // Ровно то, ради чего состояние живёт в куке: страница сама
+    // обновляется раз в 30 секунд, и повторный заход не должен
+    // разворачивать группу обратно.
+    const eshcheRaz = await k.get('/admin/ochered');
+    assert.ok(!eshcheRaz.telo.includes(`№ ${z.id}`), 'при обновлении группа развернулась сама');
+
+    const razvernul = await k.get('/admin/ochered/svernut?g=oplata&sort=zhdet&napr=ubyv');
+    assert.equal(razvernul.kod, 303);
+    assert.ok((await k.get('/admin/ochered')).telo.includes(`№ ${z.id}`), 'группа не развернулась обратно');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('сортировка очереди работает в обе стороны и по обеим меркам', async () => {
+  const s = await stend();
+  try {
+    // Три заказа в одной группе: разный возраст и разная цена.
+    const staryy = zakazNa(s, 611, 'proba-s', 100_000, 300);
+    const sredniy = zakazNa(s, 612, 'proba-m', 900_000, 120);
+    const svezhiy = zakazNa(s, 613, 'proba-n', 500_000, 5);
+    const bezCeny = zakazNa(s, 614, 'proba-z', 0, 60);
+    const k = await voyti(s);
+
+    const dolshe = poryadokNaStranice((await k.get('/admin/ochered?sort=zhdet&napr=ubyv')).telo);
+    assert.deepEqual(dolshe, [staryy.id, sredniy.id, bezCeny.id, svezhiy.id], 'по убыванию ожидания не тот ряд');
+
+    const menshe = poryadokNaStranice((await k.get('/admin/ochered?sort=zhdet&napr=vozr')).telo);
+    assert.deepEqual(menshe, [svezhiy.id, bezCeny.id, sredniy.id, staryy.id], 'по возрастанию ожидания не тот ряд');
+
+    const dorogie = poryadokNaStranice((await k.get('/admin/ochered?sort=summa&napr=ubyv')).telo);
+    assert.deepEqual(dorogie, [sredniy.id, svezhiy.id, staryy.id, bezCeny.id], 'по убыванию суммы не тот ряд');
+
+    const deshevye = poryadokNaStranice((await k.get('/admin/ochered?sort=summa&napr=vozr')).telo);
+    // Заказ без объявленной цены уезжает вниз при ОБЕИХ сторонах:
+    // ноль в базе значит «неизвестно», а не «самый дешёвый».
+    assert.deepEqual(deshevye, [staryy.id, svezhiy.id, sredniy.id, bezCeny.id], 'по возрастанию суммы не тот ряд');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+// ── покупатели: сводка и отбор ───────────────────────────────────────
+
+test('сводка покупателей считает по дню появления', async () => {
+  const s = await stend();
+  try {
+    const davno = (dney: number) => new Date(Date.now() - dney * 24 * 3600_000).toISOString();
+    lyudi.zapomnit(s.l.db, 701, 'Свежий', null);
+    lyudi.zapomnit(s.l.db, 702, 'Месячный', null);
+    lyudi.zapomnit(s.l.db, 703, 'Годовалый', null);
+    lyudi.zapomnit(s.l.db, 704, 'Древний', null);
+    s.l.db.prepare('UPDATE lyudi SET vpervye = ? WHERE tg_id = ?').run(davno(20), 702);
+    s.l.db.prepare('UPDATE lyudi SET vpervye = ? WHERE tg_id = ?').run(davno(200), 703);
+    s.l.db.prepare('UPDATE lyudi SET vpervye = ? WHERE tg_id = ?').run(davno(800), 704);
+
+    const sv = lyudi.svodka(s.l.db);
+    assert.equal(sv.vsego, 4);
+    assert.equal(sv.zaNedelyu, 1, 'за неделю');
+    assert.equal(sv.zaMesyac, 2, 'за месяц');
+    assert.equal(sv.zaGod, 3, 'за год');
+
+    const k = await voyti(s);
+    const o = await k.get('/admin/pokupateli');
+    assert.ok(o.telo.includes('Всего покупателей'), 'сводки нет на странице');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('поиск находит человека по имени в другом регистре, по username и по id', async () => {
+  const s = await stend();
+  try {
+    lyudi.zapomnit(s.l.db, 711, 'Анна', 'anna_k');
+    lyudi.zapomnit(s.l.db, 712, 'Дмитрий', null);
+    const k = await voyti(s);
+
+    // Регистр кириллицы: LIKE и lower() в SQLite его не приводят,
+    // ради этого поиск и вынесен в JavaScript.
+    const poImeni = await k.get('/admin/pokupateli?q=' + encodeURIComponent('анна'));
+    assert.ok(poImeni.telo.includes('Анна'), 'не нашлось по имени со строчной буквы');
+    assert.ok(!poImeni.telo.includes('Дмитрий'), 'в выдачу попал лишний человек');
+
+    const poNiku = await k.get('/admin/pokupateli?q=' + encodeURIComponent('@ANNA_k'));
+    assert.ok(poNiku.telo.includes('Анна'), 'не нашлось по username');
+
+    const poId = await k.get('/admin/pokupateli?q=712');
+    assert.ok(poId.telo.includes('Дмитрий'), 'не нашлось по идентификатору');
+    assert.ok(!poId.telo.includes('Анна'), 'по идентификатору нашлось лишнее');
+
+    const pusto = await k.get('/admin/pokupateli?q=' + encodeURIComponent('такого нет'));
+    assert.ok(pusto.telo.includes('Никто не подошёл'), 'пустая выдача молчит вместо ответа');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('отбор покупателей: с заказами, без заказов, с деньгами на балансе', async () => {
+  const s = await stend();
+  try {
+    // Порядок здесь не вкусовой: у движений денег внешний ключ
+    // на людей, поэтому человек заводится раньше пополнения.
+    lyudi.zapomnit(s.l.db, 722, 'Пустой', null);
+    lyudi.zapomnit(s.l.db, 723, 'Сденьгами', null);
+    koshelek.popolnit(s.l.db, 723, 50_000, 'проба', VLADELEC);
+    zakazNa(s, 721, 'proba-otb', 100_000);
+    // Имя — ПОСЛЕ заказа: заготовка зовёт `zapomnit` сама и затёрла бы
+    // подставленное.
+    lyudi.zapomnit(s.l.db, 721, 'Сзаказом', null);
+    const k = await voyti(s);
+
+    const sZakazami = await k.get('/admin/pokupateli?otbor=s_zakazami');
+    assert.ok(sZakazami.telo.includes('Сзаказом'), 'отбор потерял человека с заказом');
+    assert.ok(!sZakazami.telo.includes('Пустой'), 'в «с заказами» попал человек без заказов');
+
+    const bezZakazov = await k.get('/admin/pokupateli?otbor=bez_zakazov');
+    assert.ok(bezZakazov.telo.includes('Пустой'));
+    assert.ok(!bezZakazov.telo.includes('Сзаказом'), 'в «без заказов» попал человек с заказом');
+
+    const sBalansom = await k.get('/admin/pokupateli?otbor=s_balansom');
+    assert.ok(sBalansom.telo.includes('Сденьгами'));
+    assert.ok(!sBalansom.telo.includes('Пустой'), 'в «с балансом» попал человек без денег');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+// ── статистика: период ───────────────────────────────────────────────
+
+test('период режет статистику, и деньги считаются по дню ВЫДАЧИ', async () => {
+  const s = await stend();
+  try {
+    const k = await voyti(s);
+    const zashchita = await k.zashchita();
+
+    // Заказ, оформленный три дня назад и выданный сегодня.
+    const staryy = zakazNa(s, 731, 'proba-st', 700_000, 3 * 24 * 60);
+    await k.post(`/admin/zakaz/${staryy.id}/oplata`, { zashchita });
+    await k.post(`/admin/zakaz/${staryy.id}/vzyat`, { zashchita });
+    await k.post(`/admin/zakaz/${staryy.id}/dostup`, { zashchita, login: 'a@b.c', parol: 'parol-999' });
+    await k.post(`/admin/zakaz/${staryy.id}/otpravit`, { zashchita });
+    assert.equal(zakazy.po(s.l.db, staryy.id)!.status, 'vydan');
+
+    const segodnya = zakazy.statistika(s.l.db, str.oknoPerioda('segodnya', 'Europe/Moscow'));
+    const vse = zakazy.statistika(s.l.db, str.oknoPerioda('vse', 'Europe/Moscow'));
+
+    assert.equal(vse.vsego, 1, 'за всё время заказ один');
+    assert.equal(segodnya.vsego, 0, 'заказ оформлен три дня назад — в «сегодня» ему не место');
+    // А деньги — сегодняшние: выдан он сегодня.
+    assert.equal(segodnya.vyruchkaKop, 700_000, 'выручка не засчиталась в день выдачи');
+    assert.equal(vse.vyruchkaKop, 700_000);
+
+    // «Вчера» не захватывает сегодняшний день ни тем ни другим краем.
+    const vchera = zakazy.statistika(s.l.db, str.oknoPerioda('vchera', 'Europe/Moscow'));
+    assert.equal(vchera.vsego, 0);
+    assert.equal(vchera.vyruchkaKop, 0, 'вчерашнее окно захватило сегодняшнюю выдачу');
+
+    // За три дня заказ виден целиком.
+    const nedelya = zakazy.statistika(s.l.db, str.oknoPerioda('nedelya', 'Europe/Moscow'));
+    assert.equal(nedelya.vsego, 1);
+
+    // И страница отвечает тем же числом, что и запрос к базе.
+    const stranica = await k.get('/admin/statistika?za=segodnya');
+    assert.ok(stranica.telo.includes('Заказов оформлено'), 'нет строки про оформленные заказы');
+    // Разделитель разрядов у ru-RU — неразрывный пробел, поэтому
+    // сравниваем по приведённой строке, а не по набранной руками.
+    const bezProbelov = stranica.telo.replace(/[\s\u00a0\u202f]/g, '');
+    assert.ok(bezProbelov.includes('7000₽'), 'выручки за сегодня нет на странице');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('окно «сегодня» начинается в полночь по часам лавки', () => {
+  const poyas = 'Europe/Moscow';
+  // Момент заведомо известный: 9 сентября 2026, 00:30 по Москве.
+  const seychas = Date.parse('2026-09-08T21:30:00.000Z');
+  const segodnya = str.oknoPerioda('segodnya', poyas, seychas);
+  assert.equal(segodnya.ot, '2026-09-08T21:00:00.000Z', 'начало суток не в московскую полночь');
+  assert.equal(segodnya.do, null);
+
+  const vchera = str.oknoPerioda('vchera', poyas, seychas);
+  assert.equal(vchera.ot, '2026-09-07T21:00:00.000Z');
+  assert.equal(vchera.do, '2026-09-08T21:00:00.000Z', 'вчера обязано кончаться там, где начинается сегодня');
+
+  assert.deepEqual(str.oknoPerioda('vse', poyas, seychas), { ot: null, do: null });
 });

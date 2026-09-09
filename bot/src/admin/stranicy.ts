@@ -18,7 +18,7 @@ import * as svoi from '../db/svoi.js';
 import * as kody from '../db/kody.js';
 import * as bdKatalog from '../db/katalog.js';
 import { rubli, rubliIli } from '../lib/katalog.js';
-import { momentSlovami } from '../lib/vremya.js';
+import { chasti, moment, momentSlovami } from '../lib/vremya.js';
 import { ekr, pole, stranica } from './vid.js';
 import type { Obstanovka } from './vid.js';
 import type { Slova, Yazyk } from './yazyk.js';
@@ -130,35 +130,158 @@ export function pod(db: Baza, z: zakazy.Zakaz, klyuch: Buffer): Pod {
 
 // ── очередь ──────────────────────────────────────────────────────────
 
-export function ochered(o: Obstanovka, db: Baza, klyuch: Buffer, poyas: string): string {
+/**
+ * Порядок групп: СНАЧАЛА ТО, ГДЕ ЖДУТ ДЕЙСТВИЯ, и это решение.
+ *
+ * Очередь отвечает на вопрос «что сделать сейчас», поэтому наверху
+ * лежит работа, которую можно доделать прямо в эту минуту, и первой —
+ * та, что ближе всего к концу: доступ уже записан, осталось отправить.
+ * Внизу — два ожидания, в которых от нас не зависит ничего: оплата
+ * придёт извне, код пришлёт покупатель. Расположи их по ходу заказа —
+ * и первыми на экране оказались бы ровно те строки, с которыми делать
+ * нечего.
+ *
+ * Группы совпадают со ШАГАМИ, а не со статусами: шаг считает та же
+ * `sleduyushchiyShag`, что и раньше, и второго правила «что дальше»
+ * в проекте не появилось.
+ */
+export const GRUPPY: Shag[] = ['otpravit', 'dostup', 'kod', 'vzyat', 'oplata', 'zhdem_kod'];
+
+export function gruppaSlovami(shag: Shag, s: Slova): string {
+  switch (shag) {
+    case 'otpravit':
+      return s.gruppaOtpravit;
+    case 'dostup':
+      return s.gruppaDostup;
+    case 'kod':
+      return s.gruppaKod;
+    case 'vzyat':
+      return s.gruppaVzyat;
+    case 'oplata':
+      return s.gruppaOplata;
+    case 'zhdem_kod':
+      return s.gruppaZhdemKod;
+    case 'nichego':
+      return '—';
+  }
+}
+
+export type Poryadok = { po: 'zhdet' | 'summa'; napr: 'vozr' | 'ubyv' };
+
+/** Умолчание: дольше всех ждущие сверху. */
+export const PORYADOK_PO_UMOLCHANIYU: Poryadok = { po: 'zhdet', napr: 'ubyv' };
+
+export function razobratPoryadok(poisk: URLSearchParams): Poryadok {
+  const po = poisk.get('sort') === 'summa' ? 'summa' : 'zhdet';
+  const napr = poisk.get('napr') === 'vozr' ? 'vozr' : 'ubyv';
+  return { po, napr };
+}
+
+/**
+ * Сортировка одной меркой на все группы.
+ *
+ * «Ждёт» — это возраст заказа, поэтому по убыванию ожидания идёт
+ * возрастание даты: дольше всех ждущий заказ — самый старый.
+ * Заказы без объявленной цены (ноль в базе) при сортировке по сумме
+ * уезжают ВНИЗ при любом направлении: ноль здесь значит «неизвестно»,
+ * и ставить неизвестное в начало ряда дешёвых значило бы выдавать
+ * отсутствие цены за самую низкую.
+ */
+function razlozhit(spisok: zakazy.Zakaz[], p: Poryadok): zakazy.Zakaz[] {
+  const znak = p.napr === 'ubyv' ? -1 : 1;
+  return [...spisok].sort((a, b) => {
+    if (p.po === 'summa') {
+      const net = (z: zakazy.Zakaz) => (z.cena_kop > 0 ? 0 : 1);
+      if (net(a) !== net(b)) return net(a) - net(b);
+      if (a.cena_kop !== b.cena_kop) return znak * (a.cena_kop - b.cena_kop);
+      return a.id - b.id;
+    }
+    const va = Date.parse(a.sozdan);
+    const vb = Date.parse(b.sozdan);
+    // Дольше ждёт тот, кто оформлен раньше: убывание ожидания —
+    // это возрастание даты, отсюда минус.
+    if (va !== vb) return -znak * (va - vb);
+    return a.id - b.id;
+  });
+}
+
+/** Ссылка на ту же очередь с другой сортировкой. */
+function ssylkaSortirovki(po: Poryadok['po'], nyneshniy: Poryadok): string {
+  // Нажали по той же мерке — меняем сторону; по другой — начинаем
+  // с убывания: и «дольше всех ждёт», и «дороже всех» интереснее
+  // своих противоположностей.
+  const napr = nyneshniy.po === po ? (nyneshniy.napr === 'ubyv' ? 'vozr' : 'ubyv') : 'ubyv';
+  return `/admin/ochered?sort=${po}&napr=${napr}`;
+}
+
+function strelka(po: Poryadok['po'], p: Poryadok): string {
+  if (p.po !== po) return '';
+  return p.napr === 'ubyv' ? ' ↓' : ' ↑';
+}
+
+export function ochered(
+  o: Obstanovka,
+  db: Baza,
+  klyuch: Buffer,
+  poyas: string,
+  poryadok: Poryadok = PORYADOK_PO_UMOLCHANIYU,
+  svernuto: Set<string> = new Set(),
+): string {
   const s = o.s;
   const spisok = [...zakazy.neoplachennye(db), ...zakazy.ochered(db)];
-  const stroki = spisok
-    .map((z) => {
-      const p = pod(db, z, klyuch);
-      const shag = sleduyushchiyShag(z, p);
-      const c = lyudi.chelovek(db, z.tg_id);
-      return `<tr>
+
+  // Раскладываем по группам ОДИН раз: шаг считается тем же способом,
+  // что и в карточке, и считать его дважды незачем.
+  const poGruppam = new Map<Shag, zakazy.Zakaz[]>();
+  for (const g of GRUPPY) poGruppam.set(g, []);
+  for (const z of spisok) {
+    const shag = sleduyushchiyShag(z, pod(db, z, klyuch));
+    poGruppam.get(shag)?.push(z);
+  }
+
+  const hvost = `sort=${poryadok.po}&napr=${poryadok.napr}`;
+  const stroka = (z: zakazy.Zakaz): string => {
+    const c = lyudi.chelovek(db, z.tg_id);
+    return `<tr>
 <td class="num">№ ${z.id}</td>
-<td><a href="/admin/zakaz/${z.id}">${ekr(z.nazvanie)}</a><div class="tiho">${ekr(cena(z, s))}</div></td>
+<td><a href="/admin/zakaz/${z.id}">${ekr(z.nazvanie)}</a></td>
+<td class="num">${ekr(cena(z, s))}</td>
 <td>${ekr(lyudi.podpis(c, z.tg_id))}</td>
 <td><span class="metka">${ekr(z.vid_akkaunta === 'svoy' ? s.svoyAkkaunt : s.novyAkkaunt)}</span></td>
 <td>${ekr(statusSlovami(z.status, s))}</td>
 <td class="zhdet">${ekr(skolkoZhdet(z.sozdan))}</td>
-<td><b>${ekr(shagSlovami(shag, s))}</b></td>
 <td><a href="/admin/zakaz/${z.id}">${ekr(s.otkryt)}</a></td>
 </tr>`;
-    })
-    .join('');
-  const telo = spisok.length
-    ? `<table><thead><tr><th class="num">№</th><th>${ekr(s.chto)}</th><th>${ekr(s.kto)}</th>
-<th>${ekr(s.akkaunt)}</th><th>${ekr(s.status)}</th><th>${ekr(s.zhdet)}</th>
-<th>${ekr(s.sleduyushchiyShag)}</th><th></th></tr></thead><tbody>${stroki}</tbody></table>`
-    : `<p class="tiho">${ekr(s.pusto)}</p>`;
+  };
+
+  const gruppy = GRUPPY.map((g) => {
+    const svoi = razlozhit(poGruppam.get(g) ?? [], poryadok);
+    const zakryta = svernuto.has(g);
+    const znak = zakryta ? '▸' : '▾';
+    // Переключатель — ссылка, а не скрипт: на страницах панели
+    // скриптов нет вовсе. Выбор уезжает в куку, поэтому переживает
+    // и обновление страницы, и самообновление раз в 30 секунд.
+    const perekluchatel = `<a class="gruppa__shapka" href="/admin/ochered/svernut?g=${g}&amp;${hvost}"
+ title="${ekr(zakryta ? s.razvernut : s.svernut)}">${znak} ${ekr(gruppaSlovami(g, s))}
+<span class="schet">${svoi.length}</span></a>`;
+    if (svoi.length === 0) {
+      return `<section class="gruppa gruppa--pusta">${perekluchatel}</section>`;
+    }
+    if (zakryta) return `<section class="gruppa">${perekluchatel}</section>`;
+    return `<section class="gruppa">${perekluchatel}
+<table><colgroup><col class="c-nomer"><col><col class="c-summa"><col class="c-kto">
+<col class="c-akk"><col class="c-sost"><col class="c-zhdet"><col class="c-otkryt"></colgroup>
+<thead><tr><th class="num">№</th><th>${ekr(s.chto)}</th>
+<th class="num"><a href="${ssylkaSortirovki('summa', poryadok)}">${ekr(s.summa)}${strelka('summa', poryadok)}</a></th>
+<th>${ekr(s.kto)}</th><th>${ekr(s.akkaunt)}</th><th>${ekr(s.status)}</th>
+<th><a href="${ssylkaSortirovki('zhdet', poryadok)}">${ekr(s.zhdet)}${strelka('zhdet', poryadok)}</a></th>
+<th></th></tr></thead><tbody>${svoi.map(stroka).join('')}</tbody></table></section>`;
+  }).join('');
+
   void poyas;
   // Очередь обновляется сама: помощник держит её открытой, и новые
   // заказы должны появляться без нажатия.
-  return stranica(o, s.ochered, `<h1>${ekr(s.ochered)} · ${spisok.length}</h1>${telo}`, 30);
+  return stranica(o, s.ochered, `<h1>${ekr(s.ochered)} · ${spisok.length}</h1>${gruppy}`, 30);
 }
 
 /**
@@ -324,20 +447,56 @@ export function prichinaSlovami(p: zakazy.PrichinaOtmeny, s: Slova): string {
 
 // ── покупатели ───────────────────────────────────────────────────────
 
-export function pokupateli(o: Obstanovka, db: Baza): string {
+export function pokupateli(o: Obstanovka, db: Baza, poisk: lyudi.Poisk = {}): string {
   const s = o.s;
-  const stroki = lyudi
-    .spisok(db, 100)
+  const svodka = lyudi.svodka(db);
+  const najdeno = lyudi.spisok(db, 200, poisk);
+  const otbor = poisk.otbor ?? 'vse';
+  const q = (poisk.q ?? '').trim();
+
+  const stroki = najdeno
     .map(
       (c) => `<tr><td class="num">${c.tg_id}</td>
 <td><a href="/admin/pokupatel/${c.tg_id}">${ekr(lyudi.podpis(c, c.tg_id))}</a></td>
 <td class="num">${c.zakazov}</td><td class="num">${c.vydano}</td>
-<td class="num">${ekr(rubli(koshelek.balans(db, c.tg_id)))}</td></tr>`,
+<td class="num">${ekr(rubli(c.balans_kop))}</td></tr>`,
     )
     .join('');
+
+  const knopka = (k: lyudi.Otbor, imya: string) =>
+    k === otbor
+      ? `<span class="vybran">${ekr(imya)}</span>`
+      : `<a href="/admin/pokupateli?otbor=${k}${q ? `&amp;q=${encodeURIComponent(q)}` : ''}">${ekr(imya)}</a>`;
+
+  // Отбор — ссылки, поиск — форма: у ссылок состояние видно в адресе
+  // и его можно оставить в закладке, а строку поиска всё равно надо
+  // куда-то вводить.
   const telo = `<h1>${ekr(s.pokupateli)}</h1>
+<div class="karta"><dl class="fakty">
+<dt>${ekr(s.vsegoPokupateley)}</dt><dd>${svodka.vsego}</dd>
+<dt>${ekr(s.zaNedelyu)}</dt><dd>${svodka.zaNedelyu}</dd>
+<dt>${ekr(s.zaMesyac)}</dt><dd>${svodka.zaMesyac}</dd>
+<dt>${ekr(s.zaGod)}</dt><dd>${svodka.zaGod}</dd>
+</dl></div>
+<div class="karta">
+<form method="get" action="/admin/pokupateli" class="ryad">
+<input type="hidden" name="otbor" value="${ekr(otbor)}">
+<div><label>${ekr(s.poisk)}</label>
+<input type="text" name="q" value="${ekr(q)}" placeholder="${ekr(s.poiskPodskazka)}" style="width:260px"></div>
+<button>${ekr(s.primenit)}</button>
+${q || otbor !== 'vse' ? `<a href="/admin/pokupateli" style="align-self:center">${ekr(s.sbrosit)}</a>` : ''}
+</form>
+<div class="perekluchatel" style="margin-top:10px">
+${knopka('vse', s.otborVse)}${knopka('s_zakazami', s.otborSZakazami)}
+${knopka('bez_zakazov', s.otborBezZakazov)}${knopka('s_balansom', s.otborSBalansom)}
+</div></div>
+${
+  najdeno.length
+    ? `<p class="tiho">${ekr(s.naydeno)}: ${najdeno.length}</p>
 <table><thead><tr><th class="num">id</th><th>${ekr(s.kto)}</th><th class="num">${ekr(s.zakazov)}</th>
-<th class="num">${ekr(s.vydano)}</th><th class="num">${ekr(s.balans)}</th></tr></thead><tbody>${stroki}</tbody></table>`;
+<th class="num">${ekr(s.vydano)}</th><th class="num">${ekr(s.balans)}</th></tr></thead><tbody>${stroki}</tbody></table>`
+    : `<p class="tiho">${ekr(s.nikogoNeNashlos)}</p>`
+}`;
   return stranica(o, s.pokupateli, telo);
 }
 
@@ -427,13 +586,81 @@ ${produkty}
 
 // ── статистика ───────────────────────────────────────────────────────
 
-export function statistika(o: Obstanovka, db: Baza): string {
+export type KodPerioda = 'segodnya' | 'vchera' | 'nedelya' | 'mesyac' | 'god' | 'vse';
+
+export const PERIODY: KodPerioda[] = ['segodnya', 'vchera', 'nedelya', 'mesyac', 'god', 'vse'];
+
+export function razobratPeriod(znachenie: string | null): KodPerioda {
+  return (PERIODY as string[]).includes(znachenie ?? '') ? (znachenie as KodPerioda) : 'vse';
+}
+
+export function periodSlovami(k: KodPerioda, s: Slova): string {
+  switch (k) {
+    case 'segodnya':
+      return s.segodnya;
+    case 'vchera':
+      return s.vchera;
+    case 'nedelya':
+      return s.nedelya;
+    case 'mesyac':
+      return s.mesyac;
+    case 'god':
+      return s.god;
+    case 'vse':
+      return s.vseVremya;
+  }
+}
+
+/**
+ * Границы периода.
+ *
+ * «Сегодня» и «вчера» — КАЛЕНДАРНЫЕ сутки лавки, а не последние
+ * 24 часа: человек, спрашивающий «сколько сегодня», имеет в виду день
+ * по московским часам, и в 00:30 ответ обязан обнулиться. Остальные
+ * три — скользящие окна ровно той же длины, что у сводки покупателей:
+ * две страницы, считающие «за неделю» по-разному, — это два ответа
+ * на один вопрос.
+ *
+ * Начало суток берётся по стенным часам пояса через `moment`, а не
+ * вычитанием часов: пояс с переводом стрелок сдвинул бы границу
+ * ровно в тот день, когда её и надо посчитать точно.
+ */
+export function oknoPerioda(k: KodPerioda, poyas: string, seychas = Date.now()): zakazy.Okno {
+  const nachaloDnya = (t: number): Date => {
+    const c = chasti(new Date(t), poyas);
+    return moment({ god: c.god, mesyac: c.mesyac, den: c.den, chas: 0, minuta: 0 }, poyas);
+  };
+  const skolzhenie = (dney: number): zakazy.Okno => ({
+    ot: new Date(seychas - dney * 24 * 3600_000).toISOString(),
+    do: null,
+  });
+  if (k === 'segodnya') return { ot: nachaloDnya(seychas).toISOString(), do: null };
+  if (k === 'vchera') {
+    const segodnya = nachaloDnya(seychas);
+    // Полдня назад от начала суток — это заведомо вчера при любом
+    // переводе стрелок.
+    const vchera = nachaloDnya(segodnya.getTime() - 12 * 3600_000);
+    return { ot: vchera.toISOString(), do: segodnya.toISOString() };
+  }
+  if (k === 'nedelya') return skolzhenie(7);
+  if (k === 'mesyac') return skolzhenie(30);
+  if (k === 'god') return skolzhenie(365);
+  return { ot: null, do: null };
+}
+
+export function statistika(o: Obstanovka, db: Baza, poyas: string, period: KodPerioda = 'vse'): string {
   const s = o.s;
-  const st = zakazy.statistika(db);
+  const okno = oknoPerioda(period, poyas);
+  const st = zakazy.statistika(db, okno);
   // Те же правила, что в сводке бота: ноль как цена не печатается.
   const dengi = (summa: number, vsego: number, bez: number) =>
     vsego === 0 ? s.vydachNeBylo : bez >= vsego ? s.cenaNeObyavlena : bez > 0 ? `${rubli(summa)} (${bez}/${vsego} ${s.cenaNeObyavlena})` : rubli(summa);
   const vydano = st.poStatusam['vydan'] ?? 0;
+  const vybor = PERIODY.map((k) =>
+    k === period
+      ? `<span class="vybran">${ekr(periodSlovami(k, s))}</span>`
+      : `<a href="/admin/statistika?za=${k}">${ekr(periodSlovami(k, s))}</a>`,
+  ).join('');
   const stroki = (
     [
       ['zhdet_oplaty', s.stZhdetOplaty],
@@ -456,12 +683,20 @@ export function statistika(o: Obstanovka, db: Baza): string {
         `<td class="num">${p.skolko}</td><td class="num">${ekr(dengi(p.summa_kop, p.skolko, p.bez_ceny))}</td></tr>`,
     )
     .join('');
+  const granica = okno.ot
+    ? `<div class="tiho">${ekr(s.sVremeni)} ${ekr(momentPaneli(new Date(okno.ot), poyas, o.yazyk))}${
+        okno.do ? ` — ${ekr(momentPaneli(new Date(okno.do), poyas, o.yazyk))}` : ''
+      }</div>`
+    : '';
   const telo = `<h1>${ekr(s.statistika)}</h1>
+<div class="karta"><div class="perekluchatel"><span class="tiho">${ekr(s.period)}</span>${vybor}</div>
+${granica}</div>
 <div class="karta"><dl class="fakty">
-<dt>${ekr(s.vsegoZakazov)}</dt><dd>${st.vsego} · ${ekr(s.zaSutki)}: ${st.zaSutki}</dd>
-<dt>${ekr(s.vyruchka)}</dt><dd>${ekr(dengi(st.vyruchkaKop, vydano, st.bezCeny))}</dd>
+<dt>${ekr(s.oformleno)}</dt><dd>${st.vsego}</dd>
+<dt>${ekr(s.vyruchkaZaPeriod)}</dt><dd>${ekr(dengi(st.vyruchkaKop, vydano, st.bezCeny))}</dd>
 <dt>${ekr(s.srednyayaVydacha)}</dt><dd>${st.srednyayaVydachaMinut === null ? '—' : `${st.srednyayaVydachaMinut} ${ekr(s.minut)}`}</dd>
-</dl></div>
+</dl>
+<p class="tiho" style="margin:10px 0 0">${ekr(s.oknoPoyasnenie)}</p></div>
 <table><tbody>${stroki}</tbody></table>
 ${tovary ? `<h2>${ekr(s.poTovaram)}</h2><table><tbody>${tovary}</tbody></table>` : ''}`;
   return stranica(o, s.statistika, telo);

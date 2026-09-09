@@ -70,6 +70,27 @@ pre{background:var(--z);border:1px solid var(--l);padding:12px;overflow:auto;fon
 .vhod label{margin-top:10px}
 .vhod input{width:100%}
 .vhod button{width:100%;margin-top:14px}
+.gruppa{margin-bottom:14px}
+.gruppa__shapka{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--p);border:1px solid var(--l);color:var(--t);text-decoration:none;font-weight:600}
+.gruppa__shapka:hover{background:var(--z)}
+.gruppa table{border-top:none;table-layout:fixed}
+/* Колонки всех групп обязаны стоять на одной вертикали: помощник
+   ведёт взглядом сверху вниз, и «Сумма», уехавшая на 40 пикселей
+   в соседней группе, стоит ему лишнего движения глазами. */
+.gruppa col.c-nomer{width:76px}
+.gruppa col.c-summa{width:120px}
+.gruppa col.c-kto{width:220px}
+.gruppa col.c-akk{width:100px}
+.gruppa col.c-sost{width:140px}
+.gruppa col.c-zhdet{width:120px}
+.gruppa col.c-otkryt{width:92px}
+.gruppa td,.gruppa th{overflow:hidden;text-overflow:ellipsis}
+.schet{margin-left:auto;font-weight:400;color:var(--m);font-variant-numeric:tabular-nums}
+.gruppa--pusta .gruppa__shapka{font-weight:400;color:var(--m)}
+.perekluchatel{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.vybran{font-weight:600;border-bottom:2px solid var(--a)}
+th a{color:var(--m);text-decoration:none}
+th a:hover{color:var(--a);text-decoration:underline}
 `;
 
 export type Obstanovka = {

@@ -44,6 +44,15 @@ export const KOREN = '/admin';
 
 const KUKA_SESSII = 'nl_admin';
 const KUKA_YAZYKA = 'nl_yazyk';
+/**
+ * Какие группы очереди свёрнуты.
+ *
+ * В куке, а не в адресе: очередь сама обновляется раз в 30 секунд,
+ * и состояние, живущее в адресе, пришлось бы тащить через каждую
+ * ссылку — а забытое в одной из них оно молча развернуло бы всё
+ * обратно. Это настройка вида на этом браузере, не данные.
+ */
+const KUKA_GRUPP = 'nl_svernuto';
 
 /** Больше этого в форме панели быть не может — значит это не форма. */
 const PREDEL_TELA = 64 * 1024;
@@ -264,36 +273,71 @@ export function sozdatPanel(l: Lavka): Panel {
 
     // ── страницы ──────────────────────────────────────────────────────
 
+    // Вид очереди: сортировка живёт в адресе (её видно и можно
+    // оставить в закладке), свёрнутые группы — в куке.
+    const poryadok = str.razobratPoryadok(poisk);
+    const svernuto = new Set(
+      (k[KUKA_GRUPP] ?? '')
+        .split(',')
+        .map((x) => x.trim())
+        .filter((x) => (str.GRUPPY as string[]).includes(x)),
+    );
+    const ocheredStranica = () => str.ochered(o, db, klyuch, poyas, poryadok, svernuto);
+
     if (req.method === 'GET') {
       if (put === KOREN) return kuda(res, `${KOREN}/ochered`);
-      if (put === `${KOREN}/ochered`) return otdat(res, 200, str.ochered(o, db, klyuch, poyas));
+      if (put === `${KOREN}/ochered`) return otdat(res, 200, ocheredStranica());
+
+      if (put === `${KOREN}/ochered/svernut`) {
+        // Свернуть или развернуть — и вернуться на чистый адрес.
+        // Без возврата 303 самообновление страницы через 30 секунд
+        // повторило бы переключение и раскрыло группу обратно.
+        const g = poisk.get('g') ?? '';
+        if ((str.GRUPPY as string[]).includes(g)) {
+          if (svernuto.has(g)) svernuto.delete(g);
+          else svernuto.add(g);
+        }
+        return kuda(res, `${KOREN}/ochered?sort=${poryadok.po}&napr=${poryadok.napr}`, {
+          'set-cookie':
+            `${KUKA_GRUPP}=${[...svernuto].join(',')}; Path=${KOREN}; HttpOnly; Secure; ` +
+            'SameSite=Strict; Max-Age=31536000',
+        });
+      }
       const zak = put.match(/^\/admin\/zakaz\/(\d+)$/);
       if (zak) {
         const z = zakazy.po(db, Number(zak[1]));
-        if (!z) return otdat(res, 404, str.ochered(o, db, klyuch, poyas));
+        if (!z) return otdat(res, 404, ocheredStranica());
         return otdat(res, 200, str.zakaz(o, db, z, klyuch, poyas, pokaz));
       }
       if (put === `${KOREN}/pokupateli`) {
-        if (!vladelec) return otdat(res, 403, str.ochered(o, db, klyuch, poyas));
-        return otdat(res, 200, str.pokupateli(o, db));
+        if (!vladelec) return otdat(res, 403, ocheredStranica());
+        const otbor = poisk.get('otbor') ?? 'vse';
+        return otdat(
+          res,
+          200,
+          str.pokupateli(o, db, {
+            q: (poisk.get('q') ?? '').slice(0, 64),
+            otbor: (['vse', 's_zakazami', 'bez_zakazov', 's_balansom'] as const).find((x) => x === otbor) ?? 'vse',
+          }),
+        );
       }
       const pok = put.match(/^\/admin\/pokupatel\/(\d+)$/);
       if (pok) {
-        if (!vladelec) return otdat(res, 403, str.ochered(o, db, klyuch, poyas));
+        if (!vladelec) return otdat(res, 403, ocheredStranica());
         return otdat(res, 200, str.pokupatel(o, db, Number(pok[1]), poyas));
       }
       if (put === `${KOREN}/katalog`) {
-        if (!vladelec) return otdat(res, 403, str.ochered(o, db, klyuch, poyas));
+        if (!vladelec) return otdat(res, 403, ocheredStranica());
         return otdat(res, 200, str.katalog(o, db));
       }
       if (put === `${KOREN}/statistika`) {
-        if (!vladelec) return otdat(res, 403, str.ochered(o, db, klyuch, poyas));
-        return otdat(res, 200, str.statistika(o, db));
+        if (!vladelec) return otdat(res, 403, ocheredStranica());
+        return otdat(res, 200, str.statistika(o, db, poyas, str.razobratPeriod(poisk.get('za'))));
       }
-      return otdat(res, 404, str.ochered(o, db, klyuch, poyas));
+      return otdat(res, 404, ocheredStranica());
     }
 
-    if (req.method !== 'POST') return otdat(res, 405, str.ochered(o, db, klyuch, poyas));
+    if (req.method !== 'POST') return otdat(res, 405, ocheredStranica());
 
     const f = await telo(req).catch(() => null);
     if (!f) return kuda(res, sSoobshcheniem(`${KOREN}/ochered`, { oshibka: 'ustarelaForma' }));
