@@ -178,13 +178,27 @@
   color: var(--c-muted);
 }
 
+/* Низ подвала: три группы в ряд — чьё это, кто отвечает, куда писать.
+   РАЗДЕЛИТЕЛЬНОЙ ЛИНИИ НАД НИМ НЕТ и быть не должно: блоки на этом
+   сайте разделяются промежутком, а не чертой. Промежуток здесь
+   крупный (--sp-8) именно затем, чтобы черта не понадобилась.
+
+   Колонки растягиваются по содержимому (auto-fit + minmax), а не
+   делятся на три равные доли: реквизиты вдвое уже строки про бота,
+   и равные доли оставили бы под ними пустое место шириной в колонку. */
 .footer__bottom {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, auto));
   justify-content: space-between;
-  gap: var(--sp-3);
+  gap: var(--sp-6) var(--sp-7);
   margin-top: var(--sp-8);
+}
+
+.footer__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
 }
 
 .footer__brand {
@@ -202,8 +216,88 @@
   max-width: 46ch;
 }
 
+/* Имя продавца — обычный текст, а не заголовок: это ответ на вопрос
+   «у кого я покупаю», и он не должен спорить с названием лавки
+   слева от него. Отсюда --t-label и вес 600 вместо ступени крупнее. */
+.footer__seller {
+  font-size: var(--t-label);
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.footer__req {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--t-label);
+}
+
+/* Подпись и число в строку, подпись приглушена. Ширина подписи
+   задана явно, иначе ИНН и ОГРНИП встали бы лесенкой: у них разная
+   длина слова, и числа начались бы на разной вертикали. */
+.footer__req-row {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.footer__req dt {
+  flex: none;
+  width: 4.5rem;
+  color: var(--c-muted);
+}
+
+.footer__req dd {
+  color: var(--c-text);
+  /* Длинные числа переносить нельзя: ИНН, разорванный по строкам,
+     перестаёт читаться числом. На узком экране пусть лучше уедет
+     сам, чем сломается пополам. */
+  white-space: nowrap;
+}
+
+.footer__contacts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-size: var(--t-label);
+}
+
+.footer__contacts--docs {
+  margin-top: var(--sp-2);
+}
+
+/* Ссылка — единственное в подвале, что красится акцентом: по правилу
+   темы акцент достаётся действию, а телефон и почта здесь именно
+   действие, по ним нажимают. Подчёркивание отодвинуто от букв,
+   иначе оно режет хвосты «р» и «у» в адресе почты. */
+.footer__link {
+  color: var(--c-brand);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--c-brand) 40%, transparent);
+  text-underline-offset: 0.2em;
+  /* Почтовый адрес длиннее колонки на узком экране: рвём по знакам,
+     а не выпускаем за край. */
+  overflow-wrap: anywhere;
+  transition: color 0.18s var(--ease-out),
+    text-decoration-color 0.18s var(--ease-out);
+}
+
+.footer__link:hover,
+.footer__link:focus-visible {
+  color: var(--c-accent-text);
+  text-decoration-color: currentColor;
+}
+
 
 @media (max-width: 639px) {
+  /* Телефон: три колонки в одну. auto-fit сам бы этого не сделал —
+     при minmax(15rem, auto) две колонки влезают в 390 px впритык
+     и реквизиты жмутся к строке про бота. */
+  .footer__bottom {
+    grid-template-columns: 1fr;
+    gap: var(--sp-5);
+    margin-top: var(--sp-7);
+  }
+
   /* Узкий экран: карточка уже, лента едет быстрее — иначе на
      телефоне тот же путь занимает столько же времени при вдвое
      меньшем окне, и полоса кажется стоящей. */
