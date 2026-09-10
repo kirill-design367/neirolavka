@@ -23,12 +23,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { postavitOpisanie, PREDEL_OPISANIYA, PREDEL_KRATKOGO } from '../src/bot/opisanie.js';
-import { opisanieBota, KRATKOE_OPISANIE } from '../src/lib/texty.js';
+import { opisanieBota, KRATKOE_OPISANIE, privetstvie } from '../src/lib/texty.js';
 import { raspisanie } from '../src/db/nastroyki.js';
 import * as nastroykiBd from '../src/db/nastroyki.js';
 import { stend, VLADELEC } from './stend.js';
 import type { Stend } from './stend.js';
 import type { Otvet } from './podstavnoy-telegram.js';
+import type { Raspisanie } from '../src/lib/vremya.js';
 
 /** Подставной Telegram, который помнит поставленное, как настоящий. */
 function spamyatyu(s: Stend): () => { o: string; k: string } {
@@ -154,4 +155,42 @@ test('тексты влезают в пределы Telegram', () => {
   // И не пустые: пустая строка у Telegram проходит и СТИРАЕТ описание.
   assert.ok(dlinnyy.length > 100);
   assert.ok(KRATKOE_OPISANIE.length > 20);
+});
+
+/**
+ * ОБЕЩАНИЕ НЕ БРАТЬ ЛИШНЕГО ПРОВЕРЯЕТСЯ ПРОТИВ ТОГО, ЧТО БОТ БЕРЁТ.
+ *
+ * Здесь стояло «Ничего, кроме вашего Telegram, я не спрашиваю: ни
+ * почты, ни телефона, ни данных карты» — и это было враньём: логин
+ * почты и пароль от аккаунта бот спрашивает у каждого, кто продлевает
+ * СВОЙ аккаунт, а с появлением экрана сверки ещё и показывает почту
+ * на экране. Обещание опровергалось следующим же сообщением того же
+ * бота, и поймать это могла только пара «текст против пути покупки»,
+ * а не вычитка текста саму по себе.
+ *
+ * Поэтому проверка сравнивает ДВЕ ВЕЩИ: пока в каталоге есть путь
+ * «свой аккаунт» (а он есть — `VidAkkaunta` знает 'svoy'), ни один
+ * из трёх текстов, которые человек читает ДО ввода, не имеет права
+ * говорить, что почты у него не спросят.
+ *
+ * Проверено на способность падать: с прежней строкой краснеют все три.
+ */
+test('ни приветствие, ни описание не обещают, что почту не спросят', () => {
+  const r: Raspisanie = { poyas: 'Europe/Moscow', rabotaS: 8, rabotaDo: 22, obeshchanieMinut: 60 };
+  const teksty: [string, string][] = [
+    ['описание', opisanieBota(r)],
+    ['краткое описание', KRATKOE_OPISANIE],
+    ['приветствие', privetstvie('', r)],
+  ];
+  /* Обороты, которыми обещание «почты не спросим» вообще выражается.
+     Список короткий намеренно: он ловит саму мысль, а не формулировку. */
+  const obeshchaniya = [/ни\s+почты/i, /не\s+спрашиваю[^.]*почт/i, /кроме\s+вашего\s+Telegram/i];
+  for (const [gde, t] of teksty) {
+    for (const o of obeshchaniya) {
+      assert.ok(
+        !o.test(t),
+        `${gde} обещает, что почту не спросят, — а на пути «свой аккаунт» её спрашивают: ${o}`,
+      );
+    }
+  }
 });
