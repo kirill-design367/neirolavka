@@ -185,19 +185,19 @@ const CATALOG: Catalog = {
           "id": "kling-pro",
           "short": "Pro",
           "title": "Kling AI, Pro",
-          "priceRub": null
+          "priceRub": 3889
         },
         {
           "id": "kling-premier",
           "short": "Premier",
           "title": "Kling AI, Premier",
-          "priceRub": null
+          "priceRub": 8999
         },
         {
           "id": "kling-standard",
           "short": "Standard",
           "title": "Kling AI, Standard",
-          "priceRub": null
+          "priceRub": 1399
         }
       ]
     },
@@ -212,13 +212,13 @@ const CATALOG: Catalog = {
           "id": "suno-pro",
           "short": "Pro",
           "title": "Suno AI, Pro",
-          "priceRub": 1
+          "priceRub": 1399
         },
         {
           "id": "suno-premier",
           "short": "Premier",
           "title": "Suno AI, Premier",
-          "priceRub": null
+          "priceRub": 3299
         }
       ]
     },
@@ -233,19 +233,19 @@ const CATALOG: Catalog = {
           "id": "gemini-plus",
           "short": "Plus",
           "title": "Gemini AI, Plus",
-          "priceRub": null
+          "priceRub": 779
         },
         {
           "id": "gemini-pro",
           "short": "Pro",
           "title": "Gemini AI, Pro",
-          "priceRub": null
+          "priceRub": 2299
         },
         {
           "id": "gemini-ultra",
           "short": "Ultra",
           "title": "Gemini AI, Ultra",
-          "priceRub": null
+          "priceRub": 8499
         }
       ]
     },
@@ -260,13 +260,13 @@ const CATALOG: Catalog = {
           "id": "chatgpt-plus",
           "short": "Plus",
           "title": "ChatGPT, Plus",
-          "priceRub": null
+          "priceRub": 2279
         },
         {
           "id": "chatgpt-go",
           "short": "Go",
           "title": "ChatGPT, Go",
-          "priceRub": null
+          "priceRub": 599
         }
       ]
     },
@@ -275,16 +275,29 @@ const CATALOG: Catalog = {
       "name": "Claude Pro",
       "tagline": "Полноценный ИИ-ассистент",
       "note": "Sonnet и Opus, проекты, загрузка файлов",
-      "priceRub": null,
+      "priceRub": 2289,
       "plans": []
     },
     {
       "id": "seedance",
-      "name": "Seedance",
+      "name": "Dreamina Seedance",
       "tagline": "Видео по тексту и по картинке",
       "note": "Генерация роликов, продление сцен, свои референсы",
       "priceRub": null,
-      "plans": []
+      "plans": [
+        {
+          "id": "seedance-light",
+          "short": "Light",
+          "title": "Dreamina Seedance, Light",
+          "priceRub": 2999
+        },
+        {
+          "id": "seedance-production",
+          "short": "Production",
+          "title": "Dreamina Seedance, Production",
+          "priceRub": 5899
+        }
+      ]
     }
   ],
   // ── КОНЕЦ ДАННЫХ ПАНЕЛИ ──
