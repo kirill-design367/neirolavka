@@ -39,8 +39,27 @@ export type VidAkkaunta = 'novy' | 'svoy';
 /**
  * Почему отменён. Хранится кодом, а не фразой: по причине считается
  * статистика и решается, что показать человеку, а фраза меняется.
+ *
+ * ДВА СПИСКА, И ЭТО НЕ ДУБЛИРОВАНИЕ. `PrichinaOtmeny` — всё, что
+ * может лежать в базе, включая `'ruchnaya'`: в сентябре 2026 владелец
+ * убрал её из предлагаемых, но заказы, отменённые раньше, никуда
+ * не делись, и читать их надо. `PRICHINY_VYBORA` — то, что можно
+ * выбрать СЕЙЧАС; из него `'ruchnaya'` и убрана.
+ *
+ * Один список на оба вопроса означал бы либо потерю истории, либо
+ * возвращение снятой причины в меню при первой же правке.
  */
-export type PrichinaOtmeny = 'ruchnaya' | 'net_koda' | 'nevernyy_parol';
+export type PrichinaOtmeny = 'ruchnaya' | 'net_koda' | 'nevernyy_parol' | 'net_deneg';
+
+export const PRICHINY_VYBORA = ['nevernyy_parol', 'net_koda', 'net_deneg'] as const;
+export type PrichinaVybora = (typeof PRICHINY_VYBORA)[number];
+
+/** Разбор причины, пришедшей из формы или из кнопки. Чужое — null. */
+export function razobratPrichinu(syroe: string | null | undefined): PrichinaVybora | null {
+  return (PRICHINY_VYBORA as readonly string[]).includes(syroe ?? '')
+    ? (syroe as PrichinaVybora)
+    : null;
+}
 
 export type Zakaz = {
   id: number;

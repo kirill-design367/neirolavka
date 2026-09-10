@@ -82,6 +82,34 @@ export function vyborAkkaunta(vyborId: string): InlineKeyboard {
     .text('← К списку', 'kup');
 }
 
+/**
+ * Перепроверка введённого: подтвердить или исправить.
+ *
+ * Префикс `sv:` не сталкивается с `svoy:` — после `sv` там идёт `o`,
+ * а не двоеточие, и регулярки разбирают их однозначно.
+ */
+export function svereniyeAkkaunta(): InlineKeyboard {
+  return new InlineKeyboard().text('Всё верно', 'sv:da').row().text('Исправить', 'sv:pr');
+}
+
+/**
+ * Что именно исправляем. Двух кнопок хватает, потому что вопрос
+ * ровно один: какое из двух полей набрано с опечаткой. Возвращать
+ * человека к вводу ОБОИХ полей значило бы терять то, что он уже
+ * набрал верно, — а этого просили не делать.
+ */
+export function chtoIspravit(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('Почту', 'sv:po')
+    .text('Пароль', 'sv:pa')
+    .row()
+    .text('← Назад', 'sv:naz');
+}
+
+export function svereniyeKoda(): InlineKeyboard {
+  return new InlineKeyboard().text('Всё верно', 'kd:da').row().text('Исправить', 'kd:pr');
+}
+
 export function poslePokupki(zakazId: number): InlineKeyboard {
   return new InlineKeyboard().text('Мои заказы', 'zak').row().text('Заказ целиком', `z:${zakazId}`);
 }
@@ -128,9 +156,9 @@ export function sluzhebnoe(rol: Rol): InlineKeyboard {
   return k;
 }
 
-export function novyZakazAdminu(z: Zakaz, oplachen: boolean): InlineKeyboard {
+export function novyZakazAdminu(z: Zakaz, oplachen: boolean, vladelec: boolean): InlineKeyboard {
   const k = new InlineKeyboard();
-  if (!oplachen) k.text('Оплата пришла', `aopl:${z.id}`).row();
+  if (!oplachen && vladelec) k.text('Оплата пришла', `aopl:${z.id}`).row();
   else k.text('Взять в работу', `avz:${z.id}`).row();
   k.text('Открыть заказ', `az:${z.id}`);
   return k;
@@ -157,12 +185,15 @@ export type Pod = {
  * тут просто нет. Замок при этом стоит и в базе — кнопки достаточно
  * для удобства, но не для правильности.
  */
-export function zakazAdminu(z: Zakaz, pod: Pod | boolean): InlineKeyboard {
+export function zakazAdminu(z: Zakaz, pod: Pod | boolean, vladelec: boolean): InlineKeyboard {
   const p: Pod = typeof pod === 'boolean' ? { estDostup: pod, estKod: false, estAkkaunt: false } : pod;
   const k = new InlineKeyboard();
   const uPomoshnika = z.status === 'v_rabote' || z.status === 'zhdem_kod' || z.status === 'kod_poluchen';
 
-  if (z.status === 'zhdet_oplaty') k.text('Оплата пришла', `aopl:${z.id}`).row();
+  /* Отметка оплаты — деньги, значит владелец. Флаг обязателен, а не
+     «по умолчанию можно»: умолчание здесь означало бы, что забытый
+     на новом месте вызов молча показывает помощнику чужие деньги. */
+  if (z.status === 'zhdet_oplaty' && vladelec) k.text('Оплата пришла', `aopl:${z.id}`).row();
   if (z.status === 'oplachen') k.text('Взять в работу', `avz:${z.id}`).row();
 
   if (uPomoshnika && z.vid_akkaunta === 'svoy') {
@@ -180,6 +211,30 @@ export function zakazAdminu(z: Zakaz, pod: Pod | boolean): InlineKeyboard {
 
   if (z.status !== 'vydan' && z.status !== 'otmenen') k.text('Отменить заказ', `aotm:${z.id}`).row();
   k.text('← Очередь', 'aoch');
+  return k;
+}
+
+/**
+ * Причина отмены в боте.
+ *
+ * Раньше кнопка «Отменить заказ» писала `ruchnaya` — «отменён
+ * администратором», — и это была единственная причина, которую
+ * вообще можно было получить нажатием. Владелец её снял, значит
+ * бот обязан спросить, как и панель: иначе панель показывает три
+ * причины, а бот молча пишет четвёртую, снятую.
+ *
+ * Отмена по паролю здесь не предлагается: у неё свой путь через
+ * `aparol:` — сначала письмо восстановления, потом отмена, и замок
+ * на это стоит в базе.
+ */
+export function prichinaOtmeny(z: Zakaz): InlineKeyboard {
+  const k = new InlineKeyboard();
+  k.text('Превышено время ожидания кода', `aotmp:${z.id}:net_koda`).row();
+  k.text('Недостаточно средств на балансе', `aotmp:${z.id}:net_deneg`).row();
+  if (z.vid_akkaunta === 'svoy' && z.pismo_v) {
+    k.text('Неправильный логин или пароль', `aotmp:${z.id}:nevernyy_parol`).row();
+  }
+  k.text('← Не отменять', `az:${z.id}`);
   return k;
 }
 

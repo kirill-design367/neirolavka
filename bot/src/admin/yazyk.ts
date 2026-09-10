@@ -51,7 +51,13 @@ export type Slova = {
   sBalansa: string;
   obeshchano: string;
   ispolnitel: string;
+  obnovit: string;
+  avtoobnovlenie: string;
+  obnovlenieVykl: string;
+  sekundSokr: string;
+  minutSokr: string;
   otmetitOplatu: string;
+  oplatuOtmechaetVladelec: string;
   vzyat: string;
   vernutVOchered: string;
   dannyeAkkaunta: string;
@@ -71,7 +77,23 @@ export type Slova = {
   otpravitPokupatelyu: string;
   otmenit: string;
   prichinaOtmeny: string;
+  otkudaPrishli: string;
+  istochnik: string;
+  lyudey: string;
+  bezMetki: string;
+  istochnikiPoyasnenie: string;
+  razmechennyeSsylki: string;
+  metokNet: string;
+  dobavitMetku: string;
+  kodMetkiPole: string;
+  kodPoyasnenie: string;
+  poka_pusto: string;
+  ubrat: string;
+  metkaZavedena: string;
+  metkaUbrana: string;
+  kodNeGoditsya: string;
   otmenaRuchnaya: string;
+  otmenaNetDeneg: string;
   otmenaNetKoda: string;
   otmenaParol: string;
   nuzhnoPismo: string;
@@ -236,7 +258,13 @@ const RU: Slova = {
   sBalansa: 'с баланса',
   obeshchano: 'Обещано',
   ispolnitel: 'Взял',
+  obnovit: 'Обновить',
+  avtoobnovlenie: 'Автообновление',
+  obnovlenieVykl: 'выкл',
+  sekundSokr: 'с',
+  minutSokr: 'мин',
   otmetitOplatu: 'Оплата пришла',
+  oplatuOtmechaetVladelec: 'Оплату отмечает владелец.',
   vzyat: 'Взять в работу',
   vernutVOchered: 'Вернуть в очередь',
   dannyeAkkaunta: 'Данные аккаунта покупателя',
@@ -256,9 +284,29 @@ const RU: Slova = {
   otpravitPokupatelyu: 'Отправить покупателю',
   otmenit: 'Отменить заказ',
   prichinaOtmeny: 'Причина отмены',
+  otkudaPrishli: 'Откуда пришли',
+  istochnik: 'Источник',
+  lyudey: 'Людей',
+  bezMetki: 'Без метки',
+  istochnikiPoyasnenie:
+    'Люди считаются по первому обращению к боту и попадают в выбранный период по нему же. ' +
+    'Заказы и выдачи — все, что были у этих людей: канал приводит человека, а покупает он когда захочет.',
+  razmechennyeSsylki: 'Размеченные ссылки',
+  metokNet: 'Меток пока нет. Заведите первую — и ссылку можно будет дать в рекламу.',
+  dobavitMetku: 'Добавить метку',
+  kodMetkiPole: 'Код для ссылки',
+  kodPoyasnenie:
+    'Код едет в ссылке, поэтому в нём только латиница, цифры и дефис — остальное заменяется дефисом. ' +
+    'Метку можно и не заводить: чужая ссылка с utm_source посчитается сама, просто без имени.',
+  poka_pusto: 'Пока пусто',
+  ubrat: 'Убрать',
+  metkaZavedena: 'Метка заведена',
+  metkaUbrana: 'Метку убрал. Люди, пришедшие по ней, остались — просто без имени',
+  kodNeGoditsya: 'В коде не осталось ни одного подходящего знака',
   otmenaRuchnaya: 'Отменён администратором',
-  otmenaNetKoda: 'Код не пришёл',
-  otmenaParol: 'Пароль не подошёл',
+  otmenaNetDeneg: 'Недостаточно средств на балансе',
+  otmenaNetKoda: 'Превышено время ожидания кода двухфакторной аутентификации',
+  otmenaParol: 'Неправильный логин или пароль',
   nuzhnoPismo: 'Сначала отправьте письмо восстановления и отметьте это',
   vydan: 'Выдан',
   otmenen: 'Отменён',
@@ -423,7 +471,13 @@ const EN: Slova = {
   sBalansa: 'from balance',
   obeshchano: 'Promised by',
   ispolnitel: 'Taken by',
+  obnovit: 'Refresh',
+  avtoobnovlenie: 'Auto-refresh',
+  obnovlenieVykl: 'off',
+  sekundSokr: 's',
+  minutSokr: 'min',
   otmetitOplatu: 'Payment received',
+  oplatuOtmechaetVladelec: 'Payment is confirmed by the owner.',
   vzyat: 'Take into work',
   vernutVOchered: 'Return to queue',
   dannyeAkkaunta: 'Customer account details',
@@ -443,9 +497,29 @@ const EN: Slova = {
   otpravitPokupatelyu: 'Send to customer',
   otmenit: 'Cancel order',
   prichinaOtmeny: 'Reason',
+  otkudaPrishli: 'Where they came from',
+  istochnik: 'Source',
+  lyudey: 'People',
+  bezMetki: 'No tag',
+  istochnikiPoyasnenie:
+    'People are counted by their first contact with the bot and fall into the selected period by it. ' +
+    'Orders and deliveries are all of theirs: a channel brings a person, they buy whenever they like.',
+  razmechennyeSsylki: 'Tagged links',
+  metokNet: 'No tags yet. Add the first one and the link is ready for an ad.',
+  dobavitMetku: 'Add a tag',
+  kodMetkiPole: 'Code for the link',
+  kodPoyasnenie:
+    'The code travels inside a link, so only Latin letters, digits and hyphens survive; the rest becomes a hyphen. ' +
+    'A tag is optional: someone else\'s link with utm_source is counted anyway, just without a name.',
+  poka_pusto: 'Nothing yet',
+  ubrat: 'Remove',
+  metkaZavedena: 'Tag added',
+  metkaUbrana: 'Tag removed. The people who came through it stay — just without a name',
+  kodNeGoditsya: 'No usable characters left in the code',
   otmenaRuchnaya: 'Cancelled by admin',
-  otmenaNetKoda: 'Code never arrived',
-  otmenaParol: 'Password did not work',
+  otmenaNetDeneg: 'Not enough money on the balance',
+  otmenaNetKoda: 'Two-factor code timed out',
+  otmenaParol: 'Wrong login or password',
   nuzhnoPismo: 'Send the password reset email and mark it first',
   vydan: 'Delivered',
   otmenen: 'Cancelled',

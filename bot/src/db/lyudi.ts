@@ -15,6 +15,12 @@ export type Chelovek = {
   username: string | null;
   vpervye: string;
   poslednee: string;
+  /**
+   * Откуда пришёл. Ставится при ПЕРВОМ касании и больше не меняется —
+   * подробности в `db/metki.ts`. `null` значит «пришёл сам»,
+   * а не «метку потеряли».
+   */
+  metka: string | null;
 };
 
 export function zapomnit(db: Baza, tgId: number, imya: string, username: string | null): void {

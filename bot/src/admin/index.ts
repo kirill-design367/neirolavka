@@ -34,6 +34,9 @@ import { raspisanie } from '../db/nastroyki.js';
 import { srokVydachi, dostupDo } from '../lib/vremya.js';
 import * as t from '../lib/texty.js';
 import { rubli } from '../lib/katalog.js';
+import { getCatalog } from '../lib/katalog.js';
+import { kodMetki } from '../lib/metka.js';
+import * as metki from '../db/metki.js';
 import * as uvedom from '../bot/uvedomleniya.js';
 import { zhurnal } from '../lib/zhurnal.js';
 import { SLOVAR, razobratYazyk } from './yazyk.js';
@@ -55,6 +58,15 @@ const KUKA_YAZYKA = 'nl_yazyk';
  * обратно. Это настройка вида на этом браузере, не данные.
  */
 const KUKA_GRUPP = 'nl_svernuto';
+/**
+ * Как часто очередь обновляет себя сама.
+ *
+ * В куке по той же причине, что и свёрнутые группы: это настройка
+ * вида на этом браузере. И это ЕДИНСТВЕННОЕ место, где интервал
+ * живёт, — раньше 30 секунд стояли числом прямо в странице, и выбрать
+ * другую частоту было нельзя, а выключить нельзя тем более.
+ */
+const KUKA_OBNOVLENIYA = 'nl_obnovlenie';
 
 /** Больше этого в форме панели быть не может — значит это не форма. */
 const PREDEL_TELA = 64 * 1024;
@@ -284,11 +296,25 @@ export function sozdatPanel(l: Lavka): Panel {
         .map((x) => x.trim())
         .filter((x) => (str.GRUPPY as string[]).includes(x)),
     );
-    const ocheredStranica = () => str.ochered(o, db, klyuch, poyas, poryadok, svernuto);
+    const obnovlyat = str.razobratObnovlenie(k[KUKA_OBNOVLENIYA]);
+    const ocheredStranica = () =>
+      str.ochered(o, db, klyuch, poyas, poryadok, svernuto, obnovlyat, pokaz);
 
     if (req.method === 'GET') {
       if (put === KOREN) return kuda(res, `${KOREN}/ochered`);
       if (put === `${KOREN}/ochered`) return otdat(res, 200, ocheredStranica());
+
+      if (put === `${KOREN}/ochered/obnovlenie`) {
+        /* Выбор частоты и возврат на ЧИСТЫЙ адрес — тот же порядок,
+           что у свёртывания групп: без 303 самообновление повторило бы
+           переход и человек не смог бы уйти со страницы. */
+        const t = str.razobratObnovlenie(poisk.get('t'));
+        return kuda(res, `${KOREN}/ochered?sort=${poryadok.po}&napr=${poryadok.napr}`, {
+          'set-cookie':
+            `${KUKA_OBNOVLENIYA}=${t}; Path=${KOREN}; HttpOnly; Secure; ` +
+            'SameSite=Strict; Max-Age=31536000',
+        });
+      }
 
       if (put === `${KOREN}/ochered/svernut`) {
         // Свернуть или развернуть — и вернуться на чистый адрес.
@@ -345,7 +371,19 @@ export function sozdatPanel(l: Lavka): Panel {
       }
       if (put === `${KOREN}/statistika`) {
         if (!vladelec) return otdat(res, 403, ocheredStranica());
-        return otdat(res, 200, str.statistika(o, db, poyas, str.razobratPeriod(poisk.get('za'))));
+        return otdat(
+          res,
+          200,
+          str.statistika(
+            o,
+            db,
+            poyas,
+            str.razobratPeriod(poisk.get('za')),
+            l.n.adresSayta,
+            getCatalog().botUrl,
+            pokaz,
+          ),
+        );
       }
       return otdat(res, 404, ocheredStranica());
     }
@@ -385,11 +423,61 @@ export function sozdatPanel(l: Lavka): Panel {
       if (chto === 'kod-pokazat') {
         const kod = kody.vzyat(db, id, klyuch);
         if (!kod) return kuda(res, sSoobshcheniem(stranicaZakaza, { oshibka: 'kodaNet' }));
+        /* След остаётся и здесь. Показ данных аккаунта его писал,
+           а показ кода — нет: та же расшифровка чужого секрета,
+           а в истории заказа пусто. Асимметрия была недосмотром. */
+        zakazy.sobytie(db, id, 'смотрели код двухфакторной аутентификации', kto);
         return otdat(res, 200, str.zakaz(o, db, z, klyuch, poyas, { kod: kod.kod }));
+      }
+
+      /* ОТМЕТКА ОПЛАТЫ — ТОЛЬКО ВЛАДЕЛЬЦУ, и это не педантизм.
+         `otmetitOplachennym` ставит `oplacheno_kop = cena_kop`, ничего
+         при этом не получив, а отмена возвращает эту сумму НА БАЛАНС
+         покупателя — балансом же закрываются заказы. Связка «отметил
+         оплату → отменил» печатала деньги, и повторять её можно было
+         сколько угодно: уникальный индекс держит только открытые
+         статусы, а отменённый заказ оформляется заново. Пока цен нет,
+         начислялся ноль, — то есть дыра заряжалась в тот день, когда
+         владелец впишет первую цену.
+         Таблица ролей в CLAUDE.md говорит ровно это: помощнику —
+         заказы и выдача, деньги — владельцу. */
+      if (chto === 'oplata' && !vladelec) {
+        return kuda(res, sSoobshcheniem(stranicaZakaza, { oshibka: 'netPrav' }));
       }
 
       const itog = await deystvieZakaza(l, o, z, chto, f, kto);
       return kuda(res, sSoobshcheniem(stranicaZakaza, itog));
+    }
+
+    // ── размеченные ссылки: только владельцу ─────────────────────────
+
+    if (put === `${KOREN}/metka`) {
+      if (!vladelec) return kuda(res, sSoobshcheniem(`${KOREN}/ochered`, { oshibka: 'netPrav' }));
+      const kod = kodMetki(f.get('kod') ?? '');
+      /* Пустой код — это НЕ «метка без кода», а «в присланном не
+         осталось ни одного знака, который переживёт ссылку». Молча
+         записать такую метку значило бы завести канал, который
+         никогда никого не приведёт. */
+      if (!kod) return kuda(res, sSoobshcheniem(`${KOREN}/statistika`, { oshibka: 'kodNeGoditsya' }));
+      metki.zavesti(
+        db,
+        {
+          kod,
+          nazvanie: (f.get('nazvanie') ?? '').slice(0, 80),
+          istochnik: (f.get('istochnik') ?? '').slice(0, 40),
+          kanal: (f.get('kanal') ?? '').slice(0, 40),
+          kampaniya: (f.get('kampaniya') ?? '').slice(0, 40),
+        },
+        kto,
+      );
+      return kuda(res, sSoobshcheniem(`${KOREN}/statistika`, { ok: 'metkaZavedena' }));
+    }
+
+    const metkaUbrat = put.match(/^\/admin\/metka\/([^/]+)\/ubrat$/);
+    if (metkaUbrat) {
+      if (!vladelec) return kuda(res, sSoobshcheniem(`${KOREN}/ochered`, { oshibka: 'netPrav' }));
+      metki.ubrat(db, decodeURIComponent(metkaUbrat[1] as string));
+      return kuda(res, sSoobshcheniem(`${KOREN}/statistika`, { ok: 'metkaUbrana' }));
     }
 
     // ── деньги покупателя: только владельцу ──────────────────────────
@@ -561,8 +649,13 @@ async function deystvieZakaza(
   }
 
   if (chto === 'otmena') {
-    const zayavlena = f.get('prichina');
-    const prichina: zakazy.PrichinaOtmeny = zayavlena === 'nevernyy_parol' ? 'nevernyy_parol' : 'ruchnaya';
+    /* Разбор по БЕЛОМУ СПИСКУ с отказом. Здесь стояло «всё, что
+       не nevernyy_parol, — это ruchnaya», и такая строка молча
+       проглатывала и мусор, и любую новую причину, которую забыли
+       сюда вписать: заказ отменялся, а причина в истории оказывалась
+       чужой. */
+    const prichina = zakazy.razobratPrichinu(f.get('prichina'));
+    if (!prichina) return { oshibka: 'nelzyaSeychas' };
     const itog = zakazy.otmenit(db, id, kto, prichina);
     if (!itog.otmenen) {
       return { oshibka: itog.pochemu === 'net_pisma' ? 'nuzhnoPismo' : 'zakazZakryt' };

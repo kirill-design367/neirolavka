@@ -18,6 +18,8 @@ import * as dialogi from '../db/dialogi.js';
 import * as koshelek from '../db/koshelek.js';
 import * as svoi from '../db/svoi.js';
 import * as kody from '../db/kody.js';
+import * as metki from '../db/metki.js';
+import { metkaIzPayload } from '../lib/metka.js';
 import { raspisanie } from '../db/nastroyki.js';
 import { rol } from '../db/komanda.js';
 import { srokVydachi } from '../lib/vremya.js';
@@ -51,6 +53,21 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
 
   bot.command('start', async (ctx) => {
     const imya = ctx.from?.first_name ?? '';
+    /* Метка канала приезжает в параметре `start` и ложится человеку
+       ПРИ ПЕРВОМ касании: `zapisatCheloveku` не трогает того, у кого
+       метка уже есть. Строка в `lyudi` к этому моменту уже вставлена —
+       её пишет middleware выше по порядку, — поэтому запись метки
+       это UPDATE, а не часть вставки.
+       Ошибка здесь не имеет права сорвать приветствие: человек пришёл
+       покупать, а метка — наше служебное дело. */
+    if (ctx.from) {
+      try {
+        const kod = metkaIzPayload(typeof ctx.match === 'string' ? ctx.match : '');
+        if (kod) metki.zapisatCheloveku(l.db, ctx.from.id, kod);
+      } catch (e) {
+        zhurnal.vnimanie('метку из ссылки записать не вышло:', e);
+      }
+    }
     await ctx.reply(t.privetstvie(imya, r()), { reply_markup: klav.nizhnyaya(rol(l.db, ctx.from?.id ?? 0)) });
     await ctx.reply(t.VYBOR_TOVARA, { reply_markup: klav.tovary(tovary(l.db)) });
   });
@@ -145,6 +162,33 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     if (!vybor(l.db, id)) return pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary(l.db)));
     dialogi.postavit(l.db, ctx.from.id, 'zhdem_pochtu', null, { vybor: id }, l.n.klyuchDostupov);
     await pravit(ctx, t.PROSIM_POCHTU);
+  });
+
+  /* Перепроверка введённого. Нажатие разбирается только если человек
+     ДЕЙСТВИТЕЛЬНО стоит на этом шаге: кнопка живёт в старом сообщении
+     и остаётся нажимаемой хоть через сутки, а к тому времени заказ
+     может быть уже оформлен. */
+  bot.callbackQuery(/^sv:(da|pr|po|pa|naz)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const chto = ctx.match![1] as 'da' | 'pr' | 'po' | 'pa' | 'naz';
+    const d = dialogi.vzyat(l.db, ctx.from.id, l.n.klyuchDostupov);
+    if (!d || d.shag !== 'zhdem_svereniya') {
+      await pravit(ctx, t.SVERKA_USTARELA, klav.tovary(tovary(l.db)));
+      return;
+    }
+    if (chto === 'da') return void (await podtverditAkkaunt(l, ctx));
+    await ispravitAkkaunt(l, ctx, chto);
+  });
+
+  bot.callbackQuery(/^kd:(da|pr)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const d = dialogi.vzyat(l.db, ctx.from.id, l.n.klyuchDostupov);
+    if (!d || d.shag !== 'zhdem_svereniya_koda') {
+      await pravit(ctx, t.SVERKA_USTARELA);
+      return;
+    }
+    if (ctx.match![1] === 'da') return void (await podtverditKod(l, ctx, d.zakazId));
+    await ispravitKod(l, ctx, d.zakazId);
   });
 
   // ── баланс ─────────────────────────────────────────────────────────
@@ -314,15 +358,54 @@ export function soobshchenieOZakaze(l: Lavka, o: Oformlenie): string {
 /* ── разговоры покупателя ────────────────────────────────────────── */
 
 /**
+ * ВВОД СВОЕГО АККАУНТА ИДЁТ ЧЕРЕЗ ПЕРЕПРОВЕРКУ, и это главное здесь.
+ *
+ * Раньше пароль приходил — и заказ создавался тем же движением.
+ * Опечатка в логине означала, что помощник не войдёт, заказ зависнет,
+ * а разбираться будет живой человек через час ожидания. Теперь между
+ * вводом и заказом стоит экран сверки: бот показывает записанное
+ * и спрашивает, всё ли верно.
+ *
+ * ЧЕРНОВИК ДЕРЖИТ ОБА ПОЛЯ, и на этом стоит «исправить». Человек,
+ * ошибшийся в пароле, правит пароль — почта остаётся набранной.
+ * Отсюда единственное правило перехода: как только в черновике есть
+ * и почта, и пароль, идём на сверку; чего нет — то и спрашиваем.
+ * Второго расписания шагов не появилось.
+ */
+async function dalsheIliSverka(l: Lavka, ctx: Context, ch: Record<string, string>): Promise<void> {
+  const tgId = ctx.from!.id;
+  const v = ch['vybor'] ? vybor(l.db, ch['vybor']) : null;
+  if (!v) {
+    dialogi.zabyt(l.db, tgId);
+    await ctx.reply(t.TOVAR_PROPAL, { reply_markup: klav.tovary(tovary(l.db)) });
+    return;
+  }
+  if (!ch['pochta']) {
+    dialogi.postavit(l.db, tgId, 'zhdem_pochtu', null, ch, l.n.klyuchDostupov);
+    await ctx.reply(t.PROSIM_POCHTU);
+    return;
+  }
+  if (!ch['parol']) {
+    dialogi.postavit(l.db, tgId, 'zhdem_parol_akkaunta', null, ch, l.n.klyuchDostupov);
+    await ctx.reply(t.PROSIM_PAROL_AKKAUNTA);
+    return;
+  }
+  dialogi.postavit(l.db, tgId, 'zhdem_svereniya', null, ch, l.n.klyuchDostupov);
+  await ctx.reply(t.svereniyeAkkaunta(nazvanieVybora(v), ch['pochta'], true), {
+    reply_markup: klav.svereniyeAkkaunta(),
+  });
+}
+
+/**
  * Логин почты. Сообщение с ним убирается из переписки: это часть
  * доступа к чужому аккаунту, и лежать открытым в чате ему незачем.
  */
 export async function prinyatPochtu(l: Lavka, ctx: Context, text: string): Promise<void> {
   const d = dialogi.vzyat(l.db, ctx.from!.id, l.n.klyuchDostupov);
-  const vyborId = d?.chernovik['vybor'] ?? '';
+  const ch = { ...(d?.chernovik ?? {}) };
   const pochta = text.trim();
   await ubrat(ctx);
-  if (!vyborId || !vybor(l.db, vyborId)) {
+  if (!ch['vybor'] || !vybor(l.db, ch['vybor'])) {
     dialogi.zabyt(l.db, ctx.from!.id);
     await ctx.reply(t.TOVAR_PROPAL, { reply_markup: klav.tovary(tovary(l.db)) });
     return;
@@ -331,31 +414,48 @@ export async function prinyatPochtu(l: Lavka, ctx: Context, text: string): Promi
     await ctx.reply('Пустое сообщение. Пришлите логин почты одной строкой.');
     return;
   }
-  dialogi.postavit(l.db, ctx.from!.id, 'zhdem_parol_akkaunta', null, { vybor: vyborId, pochta }, l.n.klyuchDostupov);
-  await ctx.reply(t.PROSIM_PAROL_AKKAUNTA);
+  ch['pochta'] = pochta;
+  await dalsheIliSverka(l, ctx, ch);
 }
 
-/** Пароль от аккаунта — и вот здесь появляется заказ. */
+/** Пароль от аккаунта. Заказа здесь ещё нет — сначала сверка. */
 export async function prinyatParolAkkaunta(l: Lavka, ctx: Context, text: string): Promise<void> {
-  const tgId = ctx.from!.id;
-  const d = dialogi.vzyat(l.db, tgId, l.n.klyuchDostupov);
-  const vyborId = d?.chernovik['vybor'] ?? '';
-  const pochta = d?.chernovik['pochta'] ?? '';
+  const d = dialogi.vzyat(l.db, ctx.from!.id, l.n.klyuchDostupov);
+  const ch = { ...(d?.chernovik ?? {}) };
   const parol = text.trim();
   await ubrat(ctx);
+  if (!ch['vybor'] || !vybor(l.db, ch['vybor'])) {
+    dialogi.zabyt(l.db, ctx.from!.id);
+    await ctx.reply(t.TOVAR_PROPAL, { reply_markup: klav.tovary(tovary(l.db)) });
+    return;
+  }
+  if (!parol) {
+    await ctx.reply('Пустое сообщение. Пришлите пароль одной строкой.');
+    return;
+  }
+  ch['parol'] = parol;
+  await dalsheIliSverka(l, ctx, ch);
+}
+
+/** «Всё верно» — вот здесь и появляется заказ. */
+export async function podtverditAkkaunt(l: Lavka, ctx: Context): Promise<void> {
+  const tgId = ctx.from!.id;
+  const d = dialogi.vzyat(l.db, tgId, l.n.klyuchDostupov);
+  const ch = d?.chernovik ?? {};
+  const vyborId = ch['vybor'] ?? '';
+  const pochta = ch['pochta'] ?? '';
+  const parol = ch['parol'] ?? '';
   dialogi.zabyt(l.db, tgId);
 
   const v = vyborId ? vybor(l.db, vyborId) : null;
   if (!v || !pochta || !parol) {
-    await ctx.reply('Что-то потерялось при вводе. Начните заново — кнопка «Купить доступ».', {
-      reply_markup: klav.tovary(tovary(l.db)),
-    });
+    await pravit(ctx, 'Что-то потерялось при вводе. Начните заново — кнопка «Купить доступ».', klav.tovary(tovary(l.db)));
     return;
   }
 
   const itog = oformit(l, tgId, v, 'svoy');
   if (!itog.novy) {
-    await ctx.reply(t.zakazUzheEst(itog.zakaz), { reply_markup: klav.poslePokupki(itog.zakaz.id) });
+    await pravit(ctx, t.zakazUzheEst(itog.zakaz), klav.poslePokupki(itog.zakaz.id));
     return;
   }
   // Данные аккаунта ложатся ПОСЛЕ создания заказа: они привязаны
@@ -363,26 +463,56 @@ export async function prinyatParolAkkaunta(l: Lavka, ctx: Context, text: string)
   svoi.polozhit(l.db, itog.zakaz.id, pochta, parol, l.n.klyuchDostupov);
   zakazy.sobytie(l.db, itog.zakaz.id, 'покупатель передал данные своего аккаунта', tgId);
 
-  await ctx.reply(t.AKKAUNT_PRINYAT);
+  // Экран сверки правится на месте: почта из переписки уходит вместе
+  // с ним, а на её месте остаётся ответ.
+  await pravit(ctx, t.AKKAUNT_PRINYAT);
   await ctx.reply(soobshchenieOZakaze(l, itog), { reply_markup: klav.poslePokupki(itog.zakaz.id) });
   await soobshchitOZakaze(l, itog.zakaz);
 }
 
 /**
- * Код двухфакторной аутентификации.
+ * «Исправить». Возвращает к вводу ОДНОГО поля: второе остаётся
+ * в черновике, и человеку не приходится набирать его заново.
+ */
+export async function ispravitAkkaunt(l: Lavka, ctx: Context, chto: 'pr' | 'po' | 'pa' | 'naz'): Promise<void> {
+  const tgId = ctx.from!.id;
+  const d = dialogi.vzyat(l.db, tgId, l.n.klyuchDostupov);
+  const ch = { ...(d?.chernovik ?? {}) };
+  const v = ch['vybor'] ? vybor(l.db, ch['vybor']) : null;
+  if (!v) {
+    dialogi.zabyt(l.db, tgId);
+    await pravit(ctx, t.TOVAR_PROPAL, klav.tovary(tovary(l.db)));
+    return;
+  }
+  if (chto === 'pr') {
+    await pravit(ctx, t.CHTO_ISPRAVIT, klav.chtoIspravit());
+    return;
+  }
+  if (chto === 'naz') {
+    await pravit(ctx, t.svereniyeAkkaunta(nazvanieVybora(v), ch['pochta'] ?? '', Boolean(ch['parol'])), klav.svereniyeAkkaunta());
+    return;
+  }
+  const pole = chto === 'po' ? 'pochta' : 'parol';
+  delete ch[pole];
+  dialogi.postavit(l.db, tgId, chto === 'po' ? 'zhdem_pochtu' : 'zhdem_parol_akkaunta', null, ch, l.n.klyuchDostupov);
+  await pravit(ctx, chto === 'po' ? t.PROSIM_POCHTU_ZANOVO : t.PROSIM_PAROL_ZANOVO);
+}
+
+/**
+ * Код двухфакторной аутентификации — тоже через сверку.
  *
- * Уходит помощнику С НОМЕРОМ ЗАКАЗА в первой строке: помощник ведёт
- * несколько заказов разом, и код без привязки — это код неизвестно
- * от чего.
+ * Код записывается в базу и уходит помощнику только после «Всё верно»:
+ * цифра, набранная не с того письма, стоит помощнику попытки входа,
+ * а покупателю — часа ожидания.
  */
 export async function prinyatKod(l: Lavka, ctx: Context, text: string, zakazId: number | null): Promise<void> {
   const tgId = ctx.from!.id;
   const kod = text.trim();
   await ubrat(ctx);
-  dialogi.zabyt(l.db, tgId);
 
   const z = zakazId ? zakazy.po(l.db, zakazId) : null;
   if (!z || z.tg_id !== tgId || z.status !== 'zhdem_kod') {
+    dialogi.zabyt(l.db, tgId);
     await ctx.reply('По этому заказу код уже не нужен. Если что-то не так — напишите в поддержку.');
     return;
   }
@@ -392,10 +522,32 @@ export async function prinyatKod(l: Lavka, ctx: Context, text: string, zakazId: 
     return;
   }
 
+  dialogi.postavit(l.db, tgId, 'zhdem_svereniya_koda', z.id, { kod }, l.n.klyuchDostupov);
+  await ctx.reply(t.svereniyeKoda(z.id, z.nazvanie, kod), { reply_markup: klav.svereniyeKoda() });
+}
+
+/** «Всё верно» по коду: только теперь он попадает в базу и к помощнику. */
+export async function podtverditKod(l: Lavka, ctx: Context, zakazId: number | null): Promise<void> {
+  const tgId = ctx.from!.id;
+  const d = dialogi.vzyat(l.db, tgId, l.n.klyuchDostupov);
+  const kod = d?.chernovik['kod'] ?? '';
+  dialogi.zabyt(l.db, tgId);
+
+  /* Заказ перечитывается ЗАНОВО: пока человек смотрел на сверку,
+     час на код мог выйти, и заказ отменился бы вместе с возвратом
+     денег. Записывать код в отменённый заказ нельзя. */
+  const z = zakazId ? zakazy.po(l.db, zakazId) : null;
+  if (!z || z.tg_id !== tgId || z.status !== 'zhdem_kod' || !kod) {
+    await pravit(ctx, 'По этому заказу код уже не нужен. Если что-то не так — напишите в поддержку.');
+    return;
+  }
+
   kody.zapisat(l.db, z.id, kod, l.n.klyuchDostupov);
   zakazy.prinyatKod(l.db, z.id);
   const svezhy = zakazy.po(l.db, z.id) ?? z;
-  await ctx.reply(t.kodPrinyat(svezhy));
+  // Правкой, а не новым сообщением: код уходит с экрана вместе
+  // с текстом сверки.
+  await pravit(ctx, t.kodPrinyat(svezhy));
 
   const c = lyudi.chelovek(l.db, tgId);
   await uvedom.komande(
@@ -408,6 +560,19 @@ export async function prinyatKod(l: Lavka, ctx: Context, text: string, zakazId: 
     ].join('\n'),
     klav.kodAdminu(z.id),
   );
+}
+
+/** «Исправить» по коду: возвращаемся к вводу того же заказа. */
+export async function ispravitKod(l: Lavka, ctx: Context, zakazId: number | null): Promise<void> {
+  const tgId = ctx.from!.id;
+  const z = zakazId ? zakazy.po(l.db, zakazId) : null;
+  if (!z || z.tg_id !== tgId || z.status !== 'zhdem_kod') {
+    dialogi.zabyt(l.db, tgId);
+    await pravit(ctx, 'По этому заказу код уже не нужен. Если что-то не так — напишите в поддержку.');
+    return;
+  }
+  dialogi.postavit(l.db, tgId, 'zhdem_kod', z.id, {}, l.n.klyuchDostupov);
+  await pravit(ctx, t.PROSIM_KOD_ZANOVO);
 }
 
 /** Убрать сообщение с секретом из переписки, не поднимая шума. */

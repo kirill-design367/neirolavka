@@ -84,7 +84,11 @@ export type ItogKomande = {
 export async function komande(
   l: Lavka,
   text: string,
-  klaviatura?: InlineKeyboard,
+  /* Клавиатура может ЗАВИСЕТЬ ОТ ПОЛУЧАТЕЛЯ: сообщение уходит каждому
+     своим запросом, а кнопки у владельца и помощника разные — деньги
+     показываются только владельцу. Одна клавиатура на всех означала бы
+     кнопку, которая у половины команды отвечает «нет прав». */
+  klaviatura?: InlineKeyboard | ((tgId: number) => InlineKeyboard),
 ): Promise<ItogKomande> {
   let komu: number[] = [];
   try {
@@ -94,7 +98,10 @@ export async function komande(
     return { vsego: 0, doshlo: 0, nedostupny: [] };
   }
   const itogi = await Promise.all(
-    komu.map(async (tgId) => ({ tgId, itog: await cheloveku(l, tgId, text, klaviatura) })),
+    komu.map(async (tgId) => ({
+      tgId,
+      itog: await cheloveku(l, tgId, text, typeof klaviatura === 'function' ? klaviatura(tgId) : klaviatura),
+    })),
   );
   const nedostupny = itogi
     .filter((x) => !x.itog.doshlo)

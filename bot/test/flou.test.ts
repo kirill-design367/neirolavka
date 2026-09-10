@@ -58,8 +58,27 @@ test('свой аккаунт: ввод, код, выдача — и кажда�
     assert.ok(poslednee(s.tg.vyzovy).includes('пароль'), 'бот просит пароль');
     await poslat(s.adres, SEKRET, soobshchenie(PAROL));
 
+    // ── сверка: показали записанное и ждём подтверждения ──
+    const sverka = poslednee(s.tg.vyzovy);
+    assert.ok(sverka.includes('Всё верно?'), `нет вопроса о сверке: ${sverka}`);
+    assert.ok(sverka.includes(POCHTA), 'на сверке не показана почта');
+    assert.ok(!sverka.includes(PAROL), 'ПАРОЛЬ ПОКАЗАН ОТКРЫТЫМ на сверке');
+    assert.ok(sverka.includes('••••'), 'не видно, что пароль записан');
+    assert.equal(
+      zakazy.cheloveka(s.l.db, POKUPATEL).length,
+      0,
+      'заказ создан ДО подтверждения — сверка ничего не значит',
+    );
+    // Пока ждём подтверждения, пароль лежит в черновике — и там он
+    // обязан быть шифротекстом, как и везде.
+    const doPodtverzhdeniya = JSON.stringify(s.l.db.prepare('SELECT * FROM dialogi').all());
+    assert.ok(!doPodtverzhdeniya.includes(PAROL), 'пароль лежит в черновике открытым');
+    assert.ok(!doPodtverzhdeniya.includes(POCHTA), 'почта лежит в черновике открытой');
+
+    await poslat(s.adres, SEKRET, nazhatie('sv:da'));
+
     const zakaz = zakazy.cheloveka(s.l.db, POKUPATEL)[0];
-    assert.ok(zakaz, 'заказ создан после ввода пароля');
+    assert.ok(zakaz, 'заказ создан после подтверждения');
     assert.equal(zakaz!.vid_akkaunta, 'svoy');
     assert.equal(svoi.est(s.l.db, zakaz!.id), true, 'данные аккаунта записаны');
 
@@ -95,6 +114,20 @@ test('свой аккаунт: ввод, код, выдача — и кажда�
     assert.ok(prosba!.includes(`№ ${zakaz!.id}`), 'в просьбе нет номера заказа');
 
     await poslat(s.adres, SEKRET, soobshchenie(KOD));
+    const sverkaKoda = poslednee(s.tg.vyzovy);
+    assert.ok(sverkaKoda.includes('Всё верно?'), `нет сверки кода: ${sverkaKoda}`);
+    assert.ok(sverkaKoda.includes(KOD), 'на сверке не показан сам код');
+    assert.equal(
+      zakazy.po(s.l.db, zakaz!.id)!.status,
+      'zhdem_kod',
+      'код зачтён ДО подтверждения — сверка ничего не значит',
+    );
+    assert.ok(
+      !komu(s.tg.vyzovy, VLADELEC).some((x) => x.includes(KOD)),
+      'код ушёл команде до подтверждения',
+    );
+
+    await poslat(s.adres, SEKRET, nazhatie('kd:da'));
     const posleKoda = zakazy.po(s.l.db, zakaz!.id)!;
     assert.equal(posleKoda.status, 'kod_poluchen');
     assert.ok(posleKoda.kod_poluchen_v, 'время получения кода не записано');
@@ -252,8 +285,58 @@ test('у одного покупателя код спрашивают толь�
 
     // Код от покупателя уходит первому заказу — тому, о котором спросили.
     await poslat(s.adres, SEKRET, soobshchenie('424242'));
+    await poslat(s.adres, SEKRET, nazhatie('kd:da'));
     assert.equal(zakazy.po(s.l.db, pervy.id)!.status, 'kod_poluchen');
     assert.equal(zakazy.po(s.l.db, vtoroy.id)!.status, 'v_rabote');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+/**
+ * Отмена в БОТЕ тоже спрашивает причину.
+ *
+ * Панель и бот зовут одни переходы, и список причин у них обязан быть
+ * один: пока кнопка бота писала снятую `ruchnaya`, панель показывала
+ * три причины, а в базу попадала четвёртая.
+ */
+test('в боте «Отменить заказ» сначала спрашивает причину', async () => {
+  const s = await stend();
+  try {
+    lyudi.zapomnit(s.l.db, POKUPATEL, 'Покупатель', null);
+    const z = zakazy.sozdatIliVernut(s.l.db, {
+      tgId: POKUPATEL,
+      produktId: 'kling',
+      planId: ZHIVOY_PLAN,
+      nazvanie: 'Kling AI, Pro',
+      cenaKop: 199_000,
+      mesyacev: 0,
+      vidAkkaunta: 'novy',
+    }).zakaz;
+
+    await poslat(s.adres, SEKRET, nazhatie(`aotm:${z.id}`, VLADELEC));
+    assert.notEqual(zakazy.po(s.l.db, z.id)!.status, 'otmenen', 'заказ отменён без выбора причины');
+    const vopros = poslednee(s.tg.vyzovy);
+    assert.ok(vopros.includes('Почему отменяем?'), `не спросили причину: ${vopros}`);
+    // Подписи причин живут в клавиатуре, а не в тексте сообщения.
+    const knopki = JSON.stringify(
+      [...s.tg.vyzovy].reverse().find((v) => v.metod === 'editMessageText')?.telo['reply_markup'] ?? {},
+    );
+    assert.ok(knopki.includes('Недостаточно средств'), `новой причины нет среди кнопок: ${knopki}`);
+    assert.ok(!knopki.includes('ruchnaya'), 'снятая причина осталась кнопкой');
+
+    // Чужой код причины не проходит.
+    await poslat(s.adres, SEKRET, nazhatie(`aotmp:${z.id}:ruchnaya`, VLADELEC));
+    assert.notEqual(zakazy.po(s.l.db, z.id)!.status, 'otmenen', 'снятая причина прошла через бота');
+
+    await poslat(s.adres, SEKRET, nazhatie(`aotmp:${z.id}:net_deneg`, VLADELEC));
+    const posle = zakazy.po(s.l.db, z.id)!;
+    assert.equal(posle.status, 'otmenen');
+    assert.equal(posle.prichina_otmeny, 'net_deneg');
+
+    const emu = komu(s.tg.vyzovy, POKUPATEL).find((x) => x.includes('отменён'));
+    assert.ok(emu, 'покупателю не сказали об отмене');
+    assert.ok(emu!.includes('не хватило'), `причина не названа человеку: ${emu}`);
   } finally {
     await s.zakryt();
   }

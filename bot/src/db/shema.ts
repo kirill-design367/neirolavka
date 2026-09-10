@@ -391,4 +391,36 @@ CREATE TABLE vykladki (
 CREATE UNIQUE INDEX vykladka_odna_idet ON vykladki(status) WHERE status = 'idet';
 `,
   },
+  {
+    imya: '005-metki',
+    sql: `
+-- Откуда пришёл покупатель.
+--
+-- Метка едет с сайта в параметре start, бот кладёт её человеку
+-- ПРИ ПЕРВОМ касании и больше не трогает: вопрос «какой канал привёл»
+-- имеет один ответ, а последний клик перезаписал бы его на тот,
+-- по которому человек вернулся уже своим.
+ALTER TABLE lyudi ADD COLUMN metka TEXT;
+
+-- Ссылки, размеченные в панели.
+--
+-- Строка здесь НЕ обязательна, чтобы метка считалась: человек,
+-- пришедший по чужой ссылке с utm_source, попадёт в статистику
+-- своим кодом и без записи в этой таблице. Таблица нужна затем,
+-- чтобы у канала было имя и готовые ссылки, а не голый код.
+CREATE TABLE metki (
+  kod       TEXT PRIMARY KEY,
+  nazvanie  TEXT    NOT NULL,
+  istochnik TEXT    NOT NULL DEFAULT '',
+  kanal     TEXT    NOT NULL DEFAULT '',
+  kampaniya TEXT    NOT NULL DEFAULT '',
+  sozdana   TEXT    NOT NULL,
+  kto       INTEGER
+);
+
+-- Считать людей по метке приходится за период, а период режется
+-- по vpervye — по первому касанию, тому же самому, что и метка.
+CREATE INDEX lyudi_metka ON lyudi(metka);
+`,
+  },
 ];

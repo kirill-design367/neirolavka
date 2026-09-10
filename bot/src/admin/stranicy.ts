@@ -17,6 +17,7 @@ import * as dostupy from '../db/dostupy.js';
 import * as svoi from '../db/svoi.js';
 import * as kody from '../db/kody.js';
 import * as bdKatalog from '../db/katalog.js';
+import * as metki from '../db/metki.js';
 import * as bdVykladki from '../db/vykladki.js';
 import * as vyk from './vykladka.js';
 import { rubli, rubliIli } from '../lib/katalog.js';
@@ -221,6 +222,30 @@ function strelka(po: Poryadok['po'], p: Poryadok): string {
   return p.napr === 'ubyv' ? ' ↓' : ' ↑';
 }
 
+/**
+ * Как часто очередь обновляет себя сама.
+ *
+ * Ноль — «выключено». Список закрытый, и это не перестраховка:
+ * значение приходит из адреса, а `meta refresh` с чужим числом —
+ * это либо страница, дёргающаяся каждую секунду, либо сервер,
+ * которому браузер стучится без остановки.
+ */
+export const CHASTOTY = [0, 10, 30, 60, 300] as const;
+export const OBNOVLENIE_PO_UMOLCHANIYU = 30;
+
+export function razobratObnovlenie(syroe: string | null | undefined): number {
+  if (syroe === null || syroe === undefined || syroe === '') return OBNOVLENIE_PO_UMOLCHANIYU;
+  const n = Number(syroe);
+  return (CHASTOTY as readonly number[]).includes(n) ? n : OBNOVLENIE_PO_UMOLCHANIYU;
+}
+
+/** Подпись частоты: «выкл», «10 с», «1 мин», «5 мин». */
+export function chastotaSlovami(t: number, s: Slova): string {
+  if (t === 0) return s.obnovlenieVykl;
+  if (t < 60) return `${t} ${s.sekundSokr}`;
+  return `${t / 60} ${s.minutSokr}`;
+}
+
 export function ochered(
   o: Obstanovka,
   db: Baza,
@@ -228,6 +253,8 @@ export function ochered(
   poyas: string,
   poryadok: Poryadok = PORYADOK_PO_UMOLCHANIYU,
   svernuto: Set<string> = new Set(),
+  obnovlyat: number = OBNOVLENIE_PO_UMOLCHANIYU,
+  pokaz: Pokaz = {},
 ): string {
   const s = o.s;
   const spisok = [...zakazy.neoplachennye(db), ...zakazy.ochered(db)];
@@ -281,9 +308,33 @@ export function ochered(
   }).join('');
 
   void poyas;
+
+  /* «Обновить» — обычная ссылка на тот же адрес, а не кнопка со
+     скриптом: скриптов на страницах панели нет вовсе. Рядом выбор
+     частоты, и выбранная помечена так же, как выбранная сортировка. */
+  const chastoty = CHASTOTY.map((t) =>
+    t === obnovlyat
+      ? `<span class="vybran">${ekr(chastotaSlovami(t, s))}</span>`
+      : `<a href="/admin/ochered/obnovlenie?t=${t}&${hvost}">${ekr(chastotaSlovami(t, s))}</a>`,
+  ).join(' · ');
+
+  const shapka = `<div class="perekluchatel" style="margin-bottom:14px">
+<a href="/admin/ochered?${hvost}"><b>${ekr(s.obnovit)}</b></a>
+<span class="tiho">${ekr(s.avtoobnovlenie)}: ${chastoty}</span>
+</div>`;
+
   // Очередь обновляется сама: помощник держит её открытой, и новые
-  // заказы должны появляться без нажатия.
-  return stranica(o, s.ochered, `<h1>${ekr(s.ochered)} · ${spisok.length}</h1>${gruppy}`, 30);
+  // заказы должны появляться без нажатия. Частоту он выбирает сам —
+  // и может выключить вовсе.
+  return stranica(
+    o,
+    s.ochered,
+    `<h1>${ekr(s.ochered)} · ${spisok.length}</h1>` +
+      `${pokaz.oshibka ? `<div class="oshibka">${ekr(pokaz.oshibka)}</div>` : ''}` +
+      `${pokaz.horosho ? `<div class="horosho">${ekr(pokaz.horosho)}</div>` : ''}` +
+      `${shapka}${gruppy}`,
+    obnovlyat,
+  );
 }
 
 /**
@@ -334,7 +385,15 @@ export function zakaz(
 
   const fakty = [
     d(s.chto, ekr(z.nazvanie)),
-    d(s.kto, `<a href="/admin/pokupatel/${z.tg_id}">${ekr(lyudi.podpis(c, z.tg_id))}</a>`),
+    /* Помощнику показывали ссылку на карточку покупателя, а она
+       отвечает ему отказом: дверь, в которую нельзя войти, — это
+       не защита и не удобство, а недоумение. */
+    d(
+      s.kto,
+      o.rol === 'vladelec'
+        ? `<a href="/admin/pokupatel/${z.tg_id}">${ekr(lyudi.podpis(c, z.tg_id))}</a>`
+        : ekr(lyudi.podpis(c, z.tg_id)),
+    ),
     d(s.akkaunt, ekr(z.vid_akkaunta === 'svoy' ? s.svoyAkkaunt : s.novyAkkaunt)),
     d(s.status, ekr(statusSlovami(z.status, s))),
     d(s.cena, ekr(cena(z, s))),
@@ -364,8 +423,12 @@ export function zakaz(
   // ГЛАВНАЯ КНОПКА — одна и отдельно от остальных. Всё прочее ниже,
   // мелким рядом: так шаг не теряется среди возможностей.
   const glavnaya =
+    // Отметка оплаты — деньги, а деньги у владельца. Помощнику кнопки
+    // не показываем; отказ при этом стоит и на самом действии.
     shag === 'oplata'
-      ? knopka('oplata', s.otmetitOplatu)
+      ? o.rol === 'vladelec'
+        ? knopka('oplata', s.otmetitOplatu)
+        : `<p class="tiho">${ekr(s.oplatuOtmechaetVladelec)}</p>`
       : shag === 'vzyat'
         ? knopka('vzyat', s.vzyat)
         : shag === 'kod'
@@ -412,8 +475,14 @@ export function zakaz(
 <form method="post" action="/admin/zakaz/${z.id}/otmena" class="ryad">${pole(o)}
 <div><label>${ekr(s.prichinaOtmeny)}</label>
 <select name="prichina">
-<option value="ruchnaya">${ekr(s.otmenaRuchnaya)}</option>
-${svoyAkk && z.pismo_v ? `<option value="nevernyy_parol">${ekr(s.otmenaParol)}</option>` : ''}
+${zakazy.PRICHINY_VYBORA.filter(
+  // Отмена по паролю доступна только у заказа СО СВОИМ аккаунтом
+  // и только после письма восстановления: замок стоит и в базе,
+  // здесь он лишь не показывает кнопку, которая не сработает.
+  (pr) => (pr === 'nevernyy_parol' ? svoyAkk && Boolean(z.pismo_v) : true),
+)
+  .map((pr) => `<option value="${pr}">${ekr(prichinaSlovami(pr, s))}</option>`)
+  .join('')}
 </select></div>
 <button class="opasnaya">${ekr(s.otmenit)}</button></form>
 ${svoyAkk && !z.pismo_v ? `<p class="tiho">${ekr(s.nuzhnoPismo)}</p>` : ''}</div>`;
@@ -443,8 +512,27 @@ ${otmena}
   return stranica(o, `${s.zakaz} № ${z.id}`, telo);
 }
 
+/**
+ * Причина словами.
+ *
+ * ПОЛНЫЙ ПЕРЕБОР, а не тернарник с хвостом. Хвост `: s.otmenaRuchnaya`
+ * означал, что любая новая причина молча покажется человеку как
+ * «отменён администратором», — и TypeScript об этом не скажет,
+ * потому что тернарник всегда возвращает строку. `switch` без
+ * `default` заставляет разобрать каждый случай.
+ */
 export function prichinaSlovami(p: zakazy.PrichinaOtmeny, s: Slova): string {
-  return p === 'net_koda' ? s.otmenaNetKoda : p === 'nevernyy_parol' ? s.otmenaParol : s.otmenaRuchnaya;
+  switch (p) {
+    case 'net_koda':
+      return s.otmenaNetKoda;
+    case 'nevernyy_parol':
+      return s.otmenaParol;
+    case 'net_deneg':
+      return s.otmenaNetDeneg;
+    case 'ruchnaya':
+      // Выбрать её больше нельзя, но в старых заказах она лежит.
+      return s.otmenaRuchnaya;
+  }
 }
 
 // ── покупатели ───────────────────────────────────────────────────────
@@ -658,7 +746,15 @@ export function oknoPerioda(k: KodPerioda, poyas: string, seychas = Date.now()):
   return { ot: null, do: null };
 }
 
-export function statistika(o: Obstanovka, db: Baza, poyas: string, period: KodPerioda = 'vse'): string {
+export function statistika(
+  o: Obstanovka,
+  db: Baza,
+  poyas: string,
+  period: KodPerioda = 'vse',
+  adresSayta = '',
+  botUrl = '',
+  pokaz: Pokaz = {},
+): string {
   const s = o.s;
   const okno = oknoPerioda(period, poyas);
   const st = zakazy.statistika(db, okno);
@@ -708,8 +804,74 @@ ${granica}</div>
 </dl>
 <p class="tiho" style="margin:10px 0 0">${ekr(s.oknoPoyasnenie)}</p></div>
 <table><tbody>${stroki}</tbody></table>
-${tovary ? `<h2>${ekr(s.poTovaram)}</h2><table><tbody>${tovary}</tbody></table>` : ''}`;
-  return stranica(o, s.statistika, telo);
+${tovary ? `<h2>${ekr(s.poTovaram)}</h2><table><tbody>${tovary}</tbody></table>` : ''}
+${istochniki(o, db, okno, adresSayta, botUrl)}`;
+  return stranica(o, s.statistika, `${pokaz.oshibka ? `<div class="oshibka">${ekr(pokaz.oshibka)}</div>` : ''}${pokaz.horosho ? `<div class="horosho">${ekr(pokaz.horosho)}</div>` : ''}${telo}`);
+}
+
+/**
+ * Откуда пришли: таблица источников и заведение размеченных ссылок.
+ *
+ * СПИСОК СТРОИТСЯ ПО ЛЮДЯМ, а не по заведённым меткам, и это главное
+ * решение раздела. Человек, пришедший по чужой ссылке с `utm_source`,
+ * попадает сюда под своим кодом и без всякой записи в панели; строй
+ * список по таблице меток — и весь неразмеченный нами трафик исчез бы
+ * с экрана, а «без метки» выглядело бы как «никто не приходил».
+ *
+ * Ссылок ДВЕ, и обе нужны. На сайт — для рекламы, где человек сначала
+ * смотрит витрину; прямо в бот — для мест, где витрина по дороге
+ * лишняя. Метка доезжает одинаково: сайт перекладывает её в параметр
+ * `start`, а прямая ссылка несёт его сразу.
+ */
+function istochniki(
+  o: Obstanovka,
+  db: Baza,
+  okno: { ot: string | null; do: string | null },
+  adresSayta: string,
+  botUrl: string,
+): string {
+  const s = o.s;
+  const svodka = metki.svodka(db, okno.ot, okno.do);
+  const stroki = svodka
+    .map((r) => {
+      const imya = r.kod === '' ? `<span class="tiho">${ekr(s.bezMetki)}</span>` : ekr(r.nazvanie);
+      const kod = r.kod === '' ? '' : `<span class="metka">${ekr(r.kod)}</span>`;
+      return `<tr><td>${imya} ${kod}</td><td class="num">${r.lyudey}</td>` +
+        `<td class="num">${r.zakazov}</td><td class="num">${r.vydano}</td></tr>`;
+    })
+    .join('');
+
+  const ssylki = (kod: string): string => {
+    const sayt = adresSayta ? `${adresSayta.replace(/\/$/, '')}/?m=${kod}` : '';
+    const bot = botUrl ? `${botUrl}?start=metka_${kod}` : '';
+    return [sayt, bot]
+      .filter(Boolean)
+      .map((x) => `<div class="tayna">${ekr(x)}</div>`)
+      .join('');
+  };
+
+  const spisok = metki
+    .vse(db)
+    .map(
+      (m) => `<tr><td>${ekr(m.nazvanie)}<br><span class="metka">${ekr(m.kod)}</span></td>
+<td>${ssylki(m.kod)}</td>
+<td><form method="post" action="/admin/metka/${encodeURIComponent(m.kod)}/ubrat" class="ryad">${pole(o)}<button class="opasnaya">${ekr(s.ubrat)}</button></form></td></tr>`,
+    )
+    .join('');
+
+  return `<h2>${ekr(s.otkudaPrishli)}</h2>
+<table><thead><tr><th>${ekr(s.istochnik)}</th><th class="num">${ekr(s.lyudey)}</th>
+<th class="num">${ekr(s.zakazov)}</th><th class="num">${ekr(s.vydano)}</th></tr></thead>
+<tbody>${stroki || `<tr><td colspan="4" class="tiho">${ekr(s.poka_pusto)}</td></tr>`}</tbody></table>
+<p class="tiho">${ekr(s.istochnikiPoyasnenie)}</p>
+<h2>${ekr(s.razmechennyeSsylki)}</h2>
+${spisok ? `<table><tbody>${spisok}</tbody></table>` : `<p class="tiho">${ekr(s.metokNet)}</p>`}
+<div class="karta"><h2>${ekr(s.dobavitMetku)}</h2>
+<form method="post" action="/admin/metka" class="ryad">${pole(o)}
+<div><label>${ekr(s.imya)}</label><input type="text" name="nazvanie" required placeholder="Посты во ВКонтакте"></div>
+<div><label>${ekr(s.kodMetkiPole)}</label><input type="text" name="kod" required placeholder="vk-posty"></div>
+<button>${ekr(s.dobavitMetku)}</button></form>
+<p class="tiho" style="margin:10px 0 0">${ekr(s.kodPoyasnenie)}</p></div>`;
 }
 
 // ── выкладка на сайт ─────────────────────────────────────────────────

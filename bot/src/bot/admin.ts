@@ -22,6 +22,7 @@ import * as kody from '../db/kody.js';
 import * as komanda from '../db/komanda.js';
 import * as nastroykiBd from '../db/nastroyki.js';
 import { raspisanie } from '../db/nastroyki.js';
+import { postavitOpisanie } from './opisanie.js';
 import { rubli, rubliIli } from '../lib/katalog.js';
 import { chasSlovami, dataSlovami, momentSlovami, skolkoOsalos, srokVydachi, dostupDo, sklonenie } from '../lib/vremya.js';
 import * as t from '../lib/texty.js';
@@ -106,7 +107,7 @@ export async function soobshchitOZakaze(l: Lavka, z: zakazy.Zakaz): Promise<void
   try {
     const oplachen = z.status !== 'zhdet_oplaty';
     const shapka = oplachen ? 'Новый оплаченный заказ.' : 'Новый заказ. Оплата пока вне бота.';
-    const itog = await uvedom.komande(l, `${shapka}\n\n${opisanie(l, z)}`, klav.novyZakazAdminu(z, oplachen));
+    const itog = await uvedom.komande(l, `${shapka}\n\n${opisanie(l, z)}`, (tgId: number) => klav.novyZakazAdminu(z, oplachen, komanda.vladelec(l.db, tgId)));
 
     if (itog.doshlo > 0) {
       zakazy.sobytie(l.db, z.id, 'команда уведомлена', null, `дошло ${itog.doshlo} из ${itog.vsego}`);
@@ -205,13 +206,16 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     if (!svoy(l, ctx)) return;
     const z = zakazy.po(l.db, Number(ctx.match![1]));
     if (!z) return pravit(ctx, 'Такого заказа нет.', klav.nazadSluzhebnoe());
-    await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z)));
+    await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z), komanda.vladelec(l.db, ctx.from.id)));
   });
 
   // ── движение заказа ────────────────────────────────────────────────
 
+  /* Отметка оплаты — деньги: см. тот же разбор в admin/index.ts.
+     Панель и бот зовут одни переходы, значит и замок должен стоять
+     на обеих дверях, иначе закрытая панель ничего не значит. */
   bot.callbackQuery(/^aopl:(\d+)$/, async (ctx) => {
-    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(NET_PRAV));
     const id = Number(ctx.match![1]);
     const srok = srokVydachi(new Date(), r());
     const vyshlo = zakazy.otmetitOplachennym(l.db, id, srok.do, ctx.from.id);
@@ -219,7 +223,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     const z = zakazy.po(l.db, id);
     if (!z) return;
     if (vyshlo) await uvedom.cheloveku(l, z.tg_id, t.oplataPodtverzhdena(z, srok, r()));
-    await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z)));
+    await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z), komanda.vladelec(l.db, ctx.from.id)));
   });
 
   bot.callbackQuery(/^avz:(\d+)$/, async (ctx) => {
@@ -233,7 +237,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     // касается: молчание между оплатой и выдачей — это ровно то время,
     // когда человек начинает думать, что его обманули.
     if (vzyal) await uvedom.cheloveku(l, z.tg_id, t.vzyatVRabotu(z));
-    await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z)));
+    await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z), komanda.vladelec(l.db, ctx.from.id)));
   });
 
   bot.callbackQuery(/^aver:(\d+)$/, async (ctx) => {
@@ -242,7 +246,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     zakazy.vernutVOchered(l.db, id, ctx.from.id);
     await ctx.answerCallbackQuery('Вернул в очередь');
     const z = zakazy.po(l.db, id);
-    if (z) await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z)));
+    if (z) await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z), komanda.vladelec(l.db, ctx.from.id)));
   });
 
   /**
@@ -274,12 +278,26 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
       z.tg_id,
       t.zakazOtmenen(z, prichina, itog.vernuli, koshelek.balans(l.db, z.tg_id)),
     );
-    await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z)));
+    await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z), komanda.vladelec(l.db, ctx.from?.id ?? 0)));
   };
 
+  /* «Отменить заказ» больше не отменяет сразу: сначала спрашиваем
+     причину. Причина хранится кодом, по ней считается статистика
+     и решается, что показать покупателю, — молча ставить одну
+     и ту же значило бы, что статистика отмен ничего не показывает. */
   bot.callbackQuery(/^aotm:(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
     if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
-    await otmenit(ctx, Number(ctx.match![1]), 'ruchnaya');
+    const z = zakazy.po(l.db, Number(ctx.match![1]));
+    if (!z) return pravit(ctx, 'Такого заказа нет.', klav.nazadSluzhebnoe());
+    await pravit(ctx, `${opisanie(l, z)}\n\nПочему отменяем?`, klav.prichinaOtmeny(z));
+  });
+
+  bot.callbackQuery(/^aotmp:(\d+):([a-z_]+)$/, async (ctx) => {
+    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    const prichina = zakazy.razobratPrichinu(ctx.match![2]);
+    if (!prichina) return void (await ctx.answerCallbackQuery('Такой причины нет'));
+    await otmenit(ctx, Number(ctx.match![1]), prichina);
   });
 
   // ── свой аккаунт покупателя: код, письмо, неверный пароль ──────────
@@ -316,7 +334,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     if (!doshlo.doshlo) {
       zakazy.sobytie(l.db, id, 'просьба о коде не доставлена', ctx.from.id, doshlo.pochemu);
     }
-    await pravit(ctx, opisanie(l, svezhy), klav.zakazAdminu(svezhy, pod(l, svezhy)));
+    await pravit(ctx, opisanie(l, svezhy), klav.zakazAdminu(svezhy, pod(l, svezhy), komanda.vladelec(l.db, ctx.from.id)));
   });
 
   /** Показать пришедший код. Расшифровка — только здесь и только своим. */
@@ -362,7 +380,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     const vyshlo = zakazy.otmetitPismo(l.db, id, ctx.from.id);
     await ctx.answerCallbackQuery(vyshlo ? 'Отметил. Теперь можно отменять' : 'Сейчас это нельзя отметить');
     const z = zakazy.po(l.db, id);
-    if (z) await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z)));
+    if (z) await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z), komanda.vladelec(l.db, ctx.from.id)));
   });
 
   bot.callbackQuery(/^aparol:(\d+)$/, async (ctx) => {
@@ -446,7 +464,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     zakazy.otmetitVydannym(l.db, id, dostupDoDaty, ctx.from.id);
     await ctx.answerCallbackQuery('Отправил покупателю');
     const svezhy = zakazy.po(l.db, id);
-    if (svezhy) await pravit(ctx, opisanie(l, svezhy), klav.zakazAdminu(svezhy, pod(l, svezhy)));
+    if (svezhy) await pravit(ctx, opisanie(l, svezhy), klav.zakazAdminu(svezhy, pod(l, svezhy), komanda.vladelec(l.db, ctx.from.id)));
   });
 
   // ── владелец ───────────────────────────────────────────────────────
@@ -629,7 +647,12 @@ export function podklyuchitDialogi(bot: Bot, l: Lavka): void {
     // Две команды выходят из разговора всегда. Иначе человек, начавший
     // ввод и передумавший, остаётся заперт: его «/start» уходит в
     // черновик как логин, и кнопок он больше не видит.
-    if (/^\/(start|otmena)(@\S+)?$/.test(text.trim())) {
+    /* `(\s|$)` вместо `$` — и это условие того, чтобы метка вообще
+       могла ехать в ссылке. Пока регулярка требовала конца строки,
+       человек с незаконченным вводом, нажавший ссылку с довеском,
+       оставался ЗАПЕРТ: его `/start metka_vk` уходил в черновик как
+       логин или пароль, и кнопок он больше не видел. */
+    if (/^\/(start|otmena)(@\S+)?(\s|$)/.test(text.trim())) {
       dialogi.zabyt(l.db, tgId);
       return next();
     }
@@ -644,6 +667,26 @@ export function podklyuchitDialogi(bot: Bot, l: Lavka): void {
     if (d.shag === 'zhdem_pochtu') return void (await prinyatPochtu(l, ctx, text));
     if (d.shag === 'zhdem_parol_akkaunta') return void (await prinyatParolAkkaunta(l, ctx, text));
     if (d.shag === 'zhdem_kod') return void (await prinyatKod(l, ctx, text, d.zakazId));
+    /* На сверке ждут нажатия, а не текста. Человек, приславший сюда
+       ещё одно сообщение, чаще всего думает, что его не услышали, —
+       поэтому не молчим и не роняем разговор, а показываем, куда
+       нажать. Сообщение при этом убирается: на шаге сверки в нём
+       вполне может оказаться пароль, набранный ещё раз. */
+    if (d.shag === 'zhdem_svereniya' || d.shag === 'zhdem_svereniya_koda') {
+      await ubratSoobshchenie(ctx);
+      await ctx.reply(t.ZHDEM_KNOPKU);
+      return;
+    }
+
+    /* Покупательский шаг, до которого не дошли руки выше, — это
+       недосмотр, а не служебный шаг: без этой ветки он молча
+       проваливался бы в проверку роли, разговор забывался бы,
+       а человек получал бы «Не понял сообщение» на свой пароль. */
+    if (dialogi.SHAGI_POKUPATELYA.includes(d.shag)) {
+      zhurnal.oshibka(`шаг покупателя «${d.shag}» не разбирается — разговор потерян`);
+      dialogi.zabyt(l.db, tgId);
+      return next();
+    }
 
     // Дальше — только служебные шаги.
     if (!komanda.rol(l.db, tgId)) {
@@ -775,6 +818,13 @@ export function podklyuchitDialogi(bot: Bot, l: Lavka): void {
         `Часы работы теперь с ${chasSlovami(s!)} до ${chasSlovami(po!)}. ` +
           'Тексты подставят их сами — править ничего не нужно.',
       );
+      /* Описание бота — единственный текст, который живёт НЕ у нас,
+         а на стороне Telegram, и сам собой не пересоберётся. Час
+         выдачи в нём есть, значит после смены часов его надо
+         переставить, иначе оно разойдётся с настройками до
+         ближайшей выкладки. Ответ человеку уже ушёл: неудача
+         описания его не касается. */
+      void postavitOpisanie(l).catch((e) => zhurnal.oshibka('описание бота не переставилось:', e));
       return;
     }
 

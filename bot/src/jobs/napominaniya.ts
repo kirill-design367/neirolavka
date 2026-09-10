@@ -13,6 +13,7 @@
 
 import type { Lavka } from '../lavka.js';
 import * as zakazy from '../db/zakazy.js';
+import * as komanda from '../db/komanda.js';
 import * as lyudi from '../db/lyudi.js';
 import * as dostupy from '../db/dostupy.js';
 import * as klav from '../bot/klaviatury.js';
@@ -38,7 +39,7 @@ export async function proverit(l: Lavka, seychas = new Date()): Promise<number> 
         `Покупатель: ${lyudi.podpis(c, z.tg_id)}`,
         `Обещали к ${momentSlovami(srok, r.poyas)} — ${skolkoOsalos(seychas, srok)}`,
       ].join('\n'),
-      klav.zakazAdminu(z, dostupy.est(l.db, z.id)),
+      (tgId: number) => klav.zakazAdminu(z, dostupy.est(l.db, z.id), komanda.vladelec(l.db, tgId)),
     );
     zakazy.otmetitNapominanie(l.db, z.id, seychas);
   }

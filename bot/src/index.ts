@@ -27,6 +27,7 @@ import { proveritKlyuch } from './lib/shifr.js';
 import { zhurnal, skryt } from './lib/zhurnal.js';
 import { sobrat } from './bot/index.js';
 import { proveritKomandu } from './bot/uvedomleniya.js';
+import { postavitOpisanie } from './bot/opisanie.js';
 import { vybratPut, rasskazat, nastroitSokety } from './lib/svyaz.js';
 import type { Semeystvo } from './lib/svyaz.js';
 import { zapustit as zapustitPrismotr } from './jobs/svyaz.js';
@@ -203,6 +204,11 @@ async function glavnaya(): Promise<void> {
   // не открывал бота, и узнать об этом надо до того, как в пустоту
   // уйдёт чей-то оплаченный заказ.
   await proveritKomandu(l).catch((e) => zhurnal.oshibka('проверка команды не прошла:', e));
+
+  // Что человек видит ДО нажатия «Старт». Косметика, но косметика
+  // на входе: до неё пустой экран с одной кнопкой. Стоит последней
+  // из «разговоров с Telegram при подъёме» и уронить подъём не может.
+  await postavitOpisanie(l).catch((e) => zhurnal.oshibka('описание бота не поставилось:', e));
 
   sostoyanie.gotov = true;
   const kak = sostoyanie.dostavka === 'opros' ? 'обновления забираю опросом' : 'обновления приходят вебхуком';

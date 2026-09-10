@@ -26,7 +26,12 @@ export type Shag =
   // покупатель
   | 'zhdem_pochtu'
   | 'zhdem_parol_akkaunta'
+  /* Введённое показано человеку, ждём «Всё верно» или «Исправить».
+     Черновик на этом шаге держит и почту, и пароль: «исправить»
+     не должно стирать то, что человек уже набрал. */
+  | 'zhdem_svereniya'
   | 'zhdem_kod'
+  | 'zhdem_svereniya_koda'
   | 'zhdem_vopros'
   // служебные
   | 'zhdem_login'
@@ -35,8 +40,23 @@ export type Shag =
   | 'zhdem_chasy'
   | 'zhdem_popolnenie';
 
-/** Шаги покупателя: их разбирают ДО проверки роли. */
-export const SHAGI_POKUPATELYA: Shag[] = ['zhdem_pochtu', 'zhdem_parol_akkaunta', 'zhdem_kod', 'zhdem_vopros'];
+/**
+ * Шаги покупателя: их разбирают ДО проверки роли.
+ *
+ * Список ЖИВОЙ, а не справочный: разбор текста сверяется с ним и,
+ * не найдя обработчика покупательскому шагу, кричит в журнал. Пока
+ * константа лежала без дела, добавленный шаг молча проваливался
+ * в ветку «только служебные», где разговор покупателя забывается,
+ * а человек получает «Не понял сообщение» на свой пароль.
+ */
+export const SHAGI_POKUPATELYA: Shag[] = [
+  'zhdem_pochtu',
+  'zhdem_parol_akkaunta',
+  'zhdem_svereniya',
+  'zhdem_kod',
+  'zhdem_svereniya_koda',
+  'zhdem_vopros',
+];
 
 export type Dialog = {
   shag: Shag;

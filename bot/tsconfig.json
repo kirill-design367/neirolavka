@@ -16,5 +16,5 @@
     "declaration": false,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "../src/lib/catalog.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "../src/lib/catalog.ts", "../src/lib/metka.ts"]
 }

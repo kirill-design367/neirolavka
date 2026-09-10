@@ -1,7 +1,8 @@
 'use client';
 
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { findPlan, findProduct, getCatalog, priceOf, type PaymentMethod, type Plan, type Product } from '@/lib/catalog';
+import { KLYUCH_METKI, metkaIzAdresa, sobratPayload } from '@/lib/metka';
 
 type OrderState = {
   /** Выбранный продукт на витрине. null — не выбран ни один. */
@@ -52,6 +53,25 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   // оказался бы заполненным ещё до единого нажатия — то есть
   // за человека. Флаг поднимается только из chooseProduct.
   const [tronul, setTronul] = useState(false);
+
+  /**
+   * Метка рекламного канала из адреса страницы.
+   *
+   * Читается ОДИН раз, в эффекте, а не в теле рендера: сборка
+   * статическая, и на ней `window` не существует вовсе. И держится
+   * в состоянии, а не читается при каждом нажатии, — чтобы ссылка
+   * в бот не зависела от того, успел ли человек уйти по якорю
+   * и вернуться.
+   *
+   * НИЧЕГО НЕ ЗАПОМИНАЕТСЯ В БРАУЗЕРЕ: код канала живёт ровно
+   * столько, сколько открыта вкладка. Класть его в хранилище значило
+   * бы оставлять след о человеке на его же устройстве ради нашей
+   * статистики, а сайт не собирает о людях ничего.
+   */
+  const [metka, setMetka] = useState('');
+  useEffect(() => {
+    setMetka(metkaIzAdresa(window.location.search));
+  }, []);
 
   // Выбор ДЕРЖИТСЯ, пока не выбран другой продукт: повторное нажатие
   // по выбранной карточке ничего не сворачивает. Витрина, с которой
@@ -118,13 +138,20 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       // Telegram разрешает в `start` только латиницу, цифры, дефис
       // и подчёркивание, не длиннее 64 знаков, — отсюда замена
       // «=» и «&» на подчёркивание.
+      //
+      // МЕТКА КАНАЛА ЕДЕТ ОТДЕЛЬНО ОТ ЗАКАЗА и флагом не закрыта.
+      // Две причины, по которым выключен `botStartPayload`, к ней
+      // не относятся: бот метку читает (`/start` разбирает payload),
+      // а человека с незаконченным вводом она больше не запирает —
+      // регулярка выхода из разговора расширена до `(\s|$)`.
+      const pary: Record<string, string> = {};
       if (catalog.botStartPayload) {
-        const params = new URLSearchParams();
-        if (selection) params.set('tovar', selection.plan?.id ?? selection.product.id);
-        if (payment) params.set('oplata', payment.id);
-        const start = params.toString().replace(/[=&]/g, '_').slice(0, 64);
-        if (start) botHref = `${catalog.botUrl}?start=${start}`;
+        if (selection) pary['tovar'] = selection.plan?.id ?? selection.product.id;
+        if (payment) pary['oplata'] = payment.id;
       }
+      if (metka) pary[KLYUCH_METKI] = metka;
+      const start = sobratPayload(pary);
+      if (start) botHref = `${catalog.botUrl}?start=${start}`;
     }
 
     return {
@@ -143,7 +170,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       choosePayment,
       reset,
     };
-  }, [catalog.botUrl, catalog.botStartPayload, catalog.payments, openProductId, paymentId, planId, tronul, chooseProduct, choosePlan, choosePayment, reset]);
+  }, [catalog.botUrl, catalog.botStartPayload, catalog.payments, openProductId, paymentId, planId, tronul, chooseProduct, choosePlan, choosePayment, reset, metka]);
 
   return <OrderContext.Provider value={value}>{children}</OrderContext.Provider>;
 }

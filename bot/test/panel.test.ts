@@ -14,6 +14,7 @@ import * as komanda from '../src/db/komanda.js';
 import * as zakazy from '../src/db/zakazy.js';
 import * as koshelek from '../src/db/koshelek.js';
 import * as lyudi from '../src/db/lyudi.js';
+import * as metki from '../src/db/metki.js';
 import * as svoi from '../src/db/svoi.js';
 import * as kody from '../src/db/kody.js';
 import * as dostupy from '../src/db/dostupy.js';
@@ -202,6 +203,251 @@ test('помощник видит заказы и не видит людей, к
       rubli: '1000',
     });
     assert.equal(koshelek.balans(s.l.db, POKUPATEL), 0, 'помощник пополнил чужой баланс');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+/**
+ * ЭМИССИЯ БАЛАНСА ЧЕРЕЗ ПОМОЩНИКА.
+ *
+ * Отметка «оплачено» ставит `oplacheno_kop = cena_kop`, ничего при
+ * этом не получив; отмена возвращает эту сумму НА БАЛАНС покупателя,
+ * а балансом закрываются заказы. Значит связка «отметил оплату →
+ * отменил» печатает деньги, и повторять её можно сколько угодно:
+ * уникальный индекс держит только открытые статусы, а отменённый
+ * заказ можно оформить заново.
+ *
+ * Пока цен нет, `cena_kop = 0` и начисляется ноль — то есть дыра
+ * заряжается в тот день, когда владелец впишет первую цену. Поэтому
+ * проверка сама ставит цену, а не полагается на пустой прайс.
+ */
+test('помощник не может отметить оплату — ни кнопкой, ни прямым запросом', async () => {
+  const s = await stend();
+  try {
+    komanda.dobavit(s.l.db, POMOSHNIK, 'pomoshnik', 'Помощник', VLADELEC);
+    lyudi.zapomnit(s.l.db, POKUPATEL, 'Покупатель', null);
+    const z = zakazy.sozdatIliVernut(s.l.db, {
+      tgId: POKUPATEL,
+      produktId: 'kling',
+      planId: ZHIVOY_PLAN,
+      nazvanie: 'Kling AI, Pro',
+      cenaKop: 199_000,
+      mesyacev: 0,
+      vidAkkaunta: 'novy',
+    }).zakaz;
+
+    const k = await voyti(s, 'pomoshnik', POMOSHNIK);
+    // Кнопки нет на странице — это удобство.
+    const kartochka = await k.get(`/admin/zakaz/${z.id}`);
+    assert.equal(kartochka.kod, 200, 'помощника не пустили в карточку заказа');
+    assert.ok(
+      !kartochka.telo.includes(`/admin/zakaz/${z.id}/oplata`),
+      'помощнику показали кнопку отметки оплаты',
+    );
+
+    // И отказ на ДЕЙСТВИИ — это защита.
+    await k.post(`/admin/zakaz/${z.id}/oplata`, { zashchita: await k.zashchita() });
+    assert.equal(
+      zakazy.po(s.l.db, z.id)!.status,
+      'zhdet_oplaty',
+      'ПОМОЩНИК ОТМЕТИЛ ОПЛАТУ: заказ стал оплаченным без денег',
+    );
+
+    // Вторая половина связки: отмена вернула бы несуществующие деньги.
+    await k.post(`/admin/zakaz/${z.id}/otmena`, { zashchita: await k.zashchita(), prichina: 'ruchnaya' });
+    assert.equal(koshelek.balans(s.l.db, POKUPATEL), 0, 'ПОМОЩНИК НАПЕЧАТАЛ ДЕНЬГИ на чужом балансе');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+/**
+ * Автообновление очереди: кнопка «Обновить» и выбор частоты.
+ *
+ * Проверяется не наличие ссылок, а то, что выбор ДЕЙСТВУЕТ и
+ * ЗАПОМИНАЕТСЯ: интервал попадает в meta refresh, переживает
+ * переход на другую страницу и обратно, а чужое число в адресе
+ * не превращается в страницу, дёргающуюся каждую секунду.
+ */
+test('очередь: частота обновления выбирается, запоминается и не берётся из адреса', async () => {
+  const s = await stend();
+  try {
+    const k = await voyti(s);
+
+    const poumolchaniyu = await k.get('/admin/ochered');
+    assert.ok(
+      poumolchaniyu.telo.includes('content="30"'),
+      'по умолчанию очередь не обновляется раз в 30 секунд',
+    );
+    assert.ok(poumolchaniyu.telo.includes('/admin/ochered/obnovlenie?t=0'), 'нет выбора «выкл»');
+
+    // Выбор уводит на чистый адрес — иначе самообновление повторило бы
+    // переход и уйти со страницы было бы нельзя.
+    const vybor = await k.get('/admin/ochered/obnovlenie?t=10');
+    assert.equal(vybor.kod, 303);
+    assert.ok(vybor.mesto.startsWith('/admin/ochered?'), `вернули не на очередь: ${vybor.mesto}`);
+
+    const posle = await k.get('/admin/ochered');
+    assert.ok(posle.telo.includes('content="10"'), 'выбранная частота не применилась');
+
+    // Запоминается: сходили на другую страницу и вернулись.
+    await k.get('/admin/statistika');
+    assert.ok((await k.get('/admin/ochered')).telo.includes('content="10"'), 'частота не запомнилась');
+
+    // Выключение — это отсутствие meta refresh, а не ноль в нём.
+    await k.get('/admin/ochered/obnovlenie?t=0');
+    const vykl = await k.get('/admin/ochered');
+    assert.ok(!vykl.telo.includes('http-equiv="refresh"'), 'страница обновляется при выключенном автообновлении');
+
+    // Чужое число из адреса не проходит.
+    await k.get('/admin/ochered/obnovlenie?t=1');
+    const chuzhoe = await k.get('/admin/ochered');
+    assert.ok(chuzhoe.telo.includes('content="30"'), 'в meta refresh уехало число не из списка');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('помощнику говорят, что раздел не для него, а не показывают пустую очередь', async () => {
+  const s = await stend();
+  try {
+    komanda.dobavit(s.l.db, POMOSHNIK, 'pomoshnik', 'Помощник', VLADELEC);
+    lyudi.zapomnit(s.l.db, POKUPATEL, 'Покупатель', null);
+    const k = await voyti(s, 'pomoshnik', POMOSHNIK);
+
+    // Отказ на ДЕЙСТВИИ виден словами на очереди.
+    const otkaz = await k.post(`/admin/pokupatel/${POKUPATEL}/popolnit`, {
+      zashchita: await k.zashchita(),
+      rubli: '1000',
+    });
+    assert.equal(otkaz.kod, 303);
+    const ochered = await k.get(otkaz.mesto);
+    assert.ok(ochered.telo.includes('только для владельца'), 'на очереди нет плашки об отказе');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+/**
+ * Причины отмены.
+ *
+ * «Отменено администратором» владелец снял, и главное здесь — что
+ * снятая причина не возвращается ЧЁРНЫМ ХОДОМ: раньше разбор формы
+ * гласил «всё, что не nevernyy_parol, — это ruchnaya», то есть любой
+ * мусор и любая забытая причина молча записывались снятой.
+ */
+test('в списке причин отмены три причины и нет «отменено администратором»', async () => {
+  const s = await stend();
+  try {
+    const z = zakaz(s);
+    const k = await voyti(s);
+    const telo = (await k.get(`/admin/zakaz/${z.id}`)).telo;
+
+    assert.ok(telo.includes('value="net_koda"'), 'нет причины «код не пришёл»');
+    assert.ok(telo.includes('value="net_deneg"'), 'нет причины «недостаточно средств»');
+    assert.ok(!telo.includes('value="ruchnaya"'), 'снятая причина осталась в списке');
+    assert.ok(telo.includes('Недостаточно средств на балансе'), 'нет формулировки владельца');
+    assert.ok(
+      telo.includes('Превышено время ожидания кода двухфакторной аутентификации'),
+      'нет формулировки владельца про код',
+    );
+    // Отмена по паролю — только у своего аккаунта и только после письма.
+    assert.ok(!telo.includes('value="nevernyy_parol"'), 'отмена по паролю предложена без письма');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('чужая причина в запросе не отменяет заказ', async () => {
+  const s = await stend();
+  try {
+    const z = zakaz(s);
+    const k = await voyti(s);
+    for (const prichina of ['ruchnaya', 'выдумка', '']) {
+      await k.post(`/admin/zakaz/${z.id}/otmena`, { zashchita: await k.zashchita(), prichina });
+      assert.notEqual(
+        zakazy.po(s.l.db, z.id)!.status,
+        'otmenen',
+        `заказ отменён по причине «${prichina}»`,
+      );
+    }
+    // А своя — отменяет, и причина записывается именно та.
+    await k.post(`/admin/zakaz/${z.id}/otmena`, {
+      zashchita: await k.zashchita(),
+      prichina: 'net_deneg',
+    });
+    const posle = zakazy.po(s.l.db, z.id)!;
+    assert.equal(posle.status, 'otmenen');
+    assert.equal(posle.prichina_otmeny, 'net_deneg');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('старая причина из истории показывается своей фразой, а не чужой', async () => {
+  const s = await stend();
+  try {
+    const z = zakaz(s);
+    // Так выглядят заказы, отменённые до того, как причину сняли.
+    s.l.db.prepare("UPDATE zakazy SET status='otmenen', prichina_otmeny='ruchnaya' WHERE id=?").run(z.id);
+    const k = await voyti(s);
+    const telo = (await k.get(`/admin/zakaz/${z.id}`)).telo;
+    assert.ok(telo.includes('Отменён администратором'), 'старая причина потеряла свою фразу');
+    assert.ok(!telo.includes('Недостаточно средств'), 'старая причина показана чужой фразой');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('размеченные ссылки заводятся в панели и попадают в статистику', async () => {
+  const s = await stend();
+  try {
+    const k = await voyti(s);
+    // Кириллица в ссылке не живёт: если после чистки не осталось
+    // ни одного знака, метка не заводится ВОВСЕ — иначе в панели
+    // появился бы канал, который никогда никого не приведёт.
+    const otkaz = await k.post('/admin/metka', {
+      zashchita: await k.zashchita(),
+      nazvanie: 'Посты во ВКонтакте',
+      kod: 'ВК посты',
+    });
+    assert.ok(otkaz.mesto.includes('kodNeGoditsya'), 'об отказе не сказали');
+    assert.equal(metki.vse(s.l.db).length, 0, 'метка с непригодным кодом всё-таки завелась');
+
+    await k.post('/admin/metka', {
+      zashchita: await k.zashchita(),
+      nazvanie: 'Посты во ВКонтакте',
+      kod: 'vk-posty',
+    });
+    const zavedena = metki.vse(s.l.db);
+    assert.equal(zavedena.length, 1);
+    assert.equal(zavedena[0]!.kod, 'vk-posty');
+
+    const stat = (await k.get('/admin/statistika')).telo;
+    assert.ok(stat.includes('Посты во ВКонтакте'), 'метки нет на странице статистики');
+    assert.ok(stat.includes('?m=vk-posty'), 'нет готовой ссылки на сайт');
+    assert.ok(stat.includes('start=metka_vk-posty'), 'нет готовой ссылки прямо в бот');
+    assert.ok(stat.includes('Откуда пришли'), 'нет таблицы источников');
+
+    await k.post('/admin/metka/vk-posty/ubrat', { zashchita: await k.zashchita() });
+    assert.equal(metki.vse(s.l.db).length, 0, 'метка не убралась');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('помощник не заводит размеченных ссылок', async () => {
+  const s = await stend();
+  try {
+    komanda.dobavit(s.l.db, POMOSHNIK, 'pomoshnik', 'Помощник', VLADELEC);
+    const k = await voyti(s, 'pomoshnik', POMOSHNIK);
+    await k.post('/admin/metka', {
+      zashchita: await k.zashchita(),
+      nazvanie: 'Своя',
+      kod: 'svoya',
+    });
+    assert.equal(metki.vse(s.l.db).length, 0, 'помощник завёл метку');
   } finally {
     await s.zakryt();
   }

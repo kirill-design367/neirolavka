@@ -102,7 +102,7 @@ for (const [w, theme, name] of [
     if (!godno) no(`параметр start не пройдёт через Telegram: «${start}» (нужна латиница, цифры, дефис и подчёркивание, до 64 знаков)`);
     else ok(`параметр start пригоден: «${start}», ${start.length} знаков`);
   } else {
-    info('параметр start в ссылке не передаётся — бот его не читает (флаг botStartPayload)');
+    info('параметр start в ссылке не передаётся — заказ за флагом botStartPayload, метки в адресе нет');
   }
 
   // Заглушки и лишние обещания.
@@ -148,6 +148,53 @@ if (process.env.SET_DO_TELEGRAM !== '1') {
   }
 }
 
+/* ── Метка рекламного канала доезжает с сайта до ссылки в бот ──────
+ *
+ * Проверяется САМОЕ ХРУПКОЕ звено всей затеи: сайт статический,
+ * метку он берёт из адреса страницы в эффекте, а дальше она обязана
+ * оказаться в параметре `start`. Порвётся здесь — статистика каналов
+ * просто будет пустой, и заметить это можно будет только через месяц
+ * по строке «без метки» на все сто процентов.
+ *
+ * Заодно это проверка того, что метка едет НЕ за флагом
+ * `botStartPayload`: заказ по-прежнему за ним, а метка нет.
+ */
+{
+  const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU' });
+  const page = await ctx.newPage();
+
+  for (const [adres, zhdem, chto] of [
+    ['?m=vk-posty', 'metka_vk-posty', 'своя короткая метка ?m='],
+    ['?utm_source=VK%20Posty', 'metka_vk-posty', 'чужая ссылка с utm_source'],
+    ['?utm_source=%D0%92%D0%9A', '', 'utm_source из одной кириллицы'],
+    ['', '', 'адрес без метки'],
+  ]) {
+    await page.goto(`${URL}${adres}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    /* Кнопка чека становится ССЫЛКОЙ только когда собран заказ:
+       до этого там `<button>` со словами «выберите тариф», и href
+       у него нет по построению. Проба без этих двух нажатий мерила бы
+       не метку, а незаполненный чек — и молчала бы при любой поломке. */
+    await page.locator('.pcard--active .tariff').first().click({ force: true });
+    await page.waitForTimeout(600);
+    await page.locator('.pays__item').first().click({ force: true });
+    await page.waitForTimeout(400);
+    const href = await page.evaluate(() => document.querySelector('.order__cta')?.getAttribute('href') ?? '');
+    const start = href.includes('?start=') ? href.split('?start=')[1] : '';
+    if (start !== zhdem) {
+      no(`${chto}: в ссылке «${start || 'ничего'}», а ждали «${zhdem || 'ничего'}»`);
+    } else if (zhdem) {
+      ok(`${chto}: метка доехала — ?start=${start}`);
+    } else {
+      ok(`${chto}: метки нет, и в ссылке её тоже нет`);
+    }
+    if (start && !/^[A-Za-z0-9_-]{1,64}$/.test(start)) {
+      no(`метка не пройдёт через Telegram: «${start}»`);
+    }
+  }
+  await ctx.close();
+}
+
 await browser.close();
-console.log(bad ? '\nССЫЛКИ В БОТ РАБОТАЮТ НЕ ТАК' : '\nКнопки ведут в бот, заглушек и лишних обещаний нет');
+console.log(bad ? '\nССЫЛКИ В БОТ РАБОТАЮТ НЕ ТАК' : '\nКнопки ведут в бот, метка доезжает, заглушек и лишних обещаний нет');
 process.exit(bad ? 1 : 0);
