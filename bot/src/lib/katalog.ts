@@ -15,7 +15,7 @@
  * берутся из файла каталога, и разъехаться им негде.
  */
 
-export { getCatalog, findPlan, formatPrice } from '../../../src/lib/catalog.js';
+export { getCatalog, findPlan, formatPrice, poCene } from '../../../src/lib/catalog.js';
 export type { Catalog, Product, Plan } from '../../../src/lib/catalog.js';
 
 import { priceOf } from '../../../src/lib/catalog.js';

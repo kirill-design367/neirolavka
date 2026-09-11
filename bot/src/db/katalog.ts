@@ -18,7 +18,7 @@
 
 import type { Baza } from './index.js';
 import { seychasISO } from './index.js';
-import { getCatalog } from '../../../src/lib/catalog.js';
+import { getCatalog, poCene } from '../../../src/lib/catalog.js';
 import type { Plan, Product } from '../../../src/lib/catalog.js';
 
 export type StrokaProdukta = {
@@ -111,16 +111,27 @@ export function produkty(db: Baza, sVsemi = false): Product[] {
     tagline: p.tagline,
     note: p.note,
     priceRub: vRubli(p.cena_kop),
-    plans: vseUrovni
-      .filter((u) => u.produkt_id === p.id)
-      .map(
-        (u): Plan => ({
-          id: u.id,
-          short: u.short,
-          title: u.title,
-          priceRub: vRubli(u.cena_kop),
-        }),
-      ),
+    /* Уровни выстраиваются ПО ЦЕНЕ, той же общей функцией, что и на
+       витрине: два порядка сортировки разъехались бы молча, и человек,
+       смотревший сайт, увидел бы в боте другой список. Цены нет —
+       уровень уходит в конец: место в ряду по возрастанию читается
+       ценой, и «уточняется» в начале прочлось бы как «дешевле всех».
+       Подробности и причины — в `poCene` в src/lib/catalog.ts.
+
+       Колонка `poryadok` при этом НЕ отменяется: она решает спор
+       при равных ценах и держит порядок уровней без цены. */
+    plans: poCene(
+      vseUrovni
+        .filter((u) => u.produkt_id === p.id)
+        .map(
+          (u): Plan => ({
+            id: u.id,
+            short: u.short,
+            title: u.title,
+            priceRub: vRubli(u.cena_kop),
+          }),
+        ),
+    ),
   }));
 }
 

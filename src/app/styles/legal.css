@@ -1,0 +1,323 @@
+/* Правовые страницы: документ на листе бумаги.
+   Ни одной новой ступени кегля и ни одного цвета мимо токенов. */
+
+/* Шапка — та же капсула, что на главной, но без счётчика и якорей:
+   отсюда ведёт ровно одна дорога, назад в лавку. */
+.legal__shapka {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--c-bg);
+  padding-block: var(--sp-4);
+}
+
+.legal__shapka-in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.legal__nazad {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--c-text);
+  transition: color 0.18s var(--ease-out);
+}
+
+.legal__nazad:hover,
+.legal__nazad:focus-visible {
+  color: var(--c-brand);
+}
+
+.legal {
+  padding-block: var(--sp-5) var(--sp-8);
+}
+
+/* ЛИСТ БУМАГИ. Не украшение: пузыри лежат под всем содержимым сайта,
+   а запретные прямоугольники стерегут только текст на голом фоне.
+   Непрозрачная подложка закрывает пузырь сама — тем же способом,
+   что карточки и чек на главной, — и заодно делает документ
+   документом. Цвет тот же, что у чека: серая бумага. */
+.doc {
+  background: var(--c-paper);
+  border-radius: var(--r-xl);
+  padding: var(--sp-7) var(--sp-6);
+  /* Мера строки: длинная строка юридического текста теряется при
+     возврате к началу. 68 знаков — верх того, что читается подряд. */
+  max-width: 68ch;
+  margin-inline: auto;
+  box-shadow: 0 1px 2px var(--c-shadow-1), 0 12px 32px -20px var(--c-shadow-2);
+}
+
+.doc__title {
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--c-text);
+}
+
+.doc__podtitle {
+  margin-top: var(--sp-2);
+  font-size: var(--t-body);
+  color: var(--c-muted);
+}
+
+/* ── Содержание ──────────────────────────────────────────────── */
+
+/* Утопленная поверхность отделяет оглавление от текста БЕЗ линии —
+   общее правило сайта. */
+.doc__soder {
+  margin-top: var(--sp-6);
+  padding: var(--sp-5);
+  background: var(--c-surface-2);
+  border-radius: var(--r-lg);
+}
+
+.doc__soder-title {
+  font-size: var(--t-label);
+  font-weight: 600;
+  color: var(--c-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.doc__soder-list,
+.doc__soder-vlozh {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.doc__soder-list {
+  margin-top: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.doc__soder-list a {
+  display: flex;
+  gap: var(--sp-3);
+  font-size: var(--t-label);
+  color: var(--c-text);
+  transition: color 0.18s var(--ease-out);
+}
+
+.doc__soder-list a:hover,
+.doc__soder-list a:focus-visible {
+  color: var(--c-brand);
+}
+
+/* Номер в колонке постоянной ширины: иначе однозначные и двузначные
+   номера разъедут названия по разным вертикалям. */
+.doc__soder-nomer {
+  flex: none;
+  width: 2ch;
+  color: var(--c-muted);
+}
+
+.doc__soder-vlozh {
+  margin-top: var(--sp-2);
+  padding-left: calc(2ch + var(--sp-3));
+}
+
+.doc__soder-vlozh a {
+  font-size: var(--t-label);
+  color: var(--c-muted);
+}
+
+.doc__soder-vlozh a:hover,
+.doc__soder-vlozh a:focus-visible {
+  color: var(--c-brand);
+}
+
+/* ── Текст документа ─────────────────────────────────────────── */
+
+.doc__razdel {
+  margin-top: var(--sp-6);
+  /* Якорь из оглавления не должен приводить заголовок вплотную
+     к липкой шапке. */
+  scroll-margin-top: var(--sp-8);
+}
+
+.doc__zagolovok {
+  display: flex;
+  gap: var(--sp-3);
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--c-text);
+}
+
+.doc__nomer-razdela {
+  flex: none;
+  color: var(--c-brand);
+}
+
+.doc__pod {
+  margin-top: var(--sp-5);
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--c-text);
+  scroll-margin-top: var(--sp-8);
+}
+
+.doc__punkty {
+  list-style: none;
+  margin: var(--sp-4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* Номер пункта висит в поле слева: так он не разрывает строку
+   и колонка текста остаётся ровной. */
+.doc__punkt {
+  display: flex;
+  gap: var(--sp-3);
+  font-size: var(--t-label);
+  line-height: 1.6;
+  color: var(--c-text);
+  scroll-margin-top: var(--sp-8);
+}
+
+.doc__nomer {
+  flex: none;
+  min-width: 3.2ch;
+  color: var(--c-muted);
+}
+
+.doc__punkt-text {
+  min-width: 0;
+}
+
+.doc__abzac {
+  margin-top: var(--sp-3);
+  font-size: var(--t-label);
+  line-height: 1.6;
+  color: var(--c-text);
+}
+
+.doc__spisok {
+  margin: var(--sp-3) 0 0;
+  padding-left: calc(3.2ch + var(--sp-3));
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-size: var(--t-label);
+  line-height: 1.6;
+  color: var(--c-text);
+}
+
+.doc__spisok li::marker {
+  color: var(--c-muted);
+}
+
+.doc__opredeleniya {
+  margin: var(--sp-4) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+/* Определение: термин отдельной строкой, объяснение под ним.
+   В документе абзац набран целиком полужирным — это оформление Word,
+   а не выделение по смыслу: выделено там ВСЁ, то есть ничего.
+   Слова при этом не тронуты, меняется только насыщенность. */
+.doc__termin dt {
+  font-size: var(--t-label);
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.doc__termin dd {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--t-label);
+  line-height: 1.6;
+  color: var(--c-text);
+}
+
+/* Реквизиты: подпись и значение в строку. */
+.doc__rekvizit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  font-size: var(--t-label);
+}
+
+.doc__rekvizit dt {
+  flex: none;
+  min-width: 14ch;
+  color: var(--c-muted);
+}
+
+.doc__rekvizit dd {
+  margin: 0;
+  color: var(--c-text);
+}
+
+.doc__opredeleniya .doc__rekvizit + .doc__rekvizit {
+  margin-top: calc(var(--sp-4) * -1 + var(--sp-2));
+}
+
+.doc__ssylka {
+  color: var(--c-brand);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--c-brand) 40%, transparent);
+  text-underline-offset: 0.2em;
+  overflow-wrap: anywhere;
+  transition: color 0.18s var(--ease-out),
+    text-decoration-color 0.18s var(--ease-out);
+}
+
+.doc__ssylka:hover,
+.doc__ssylka:focus-visible {
+  color: var(--c-accent-text);
+  text-decoration-color: currentColor;
+}
+
+/* Подпись под листом — на самой странице, не на бумаге. */
+.legal__podpis {
+  max-width: 68ch;
+  margin: var(--sp-5) auto 0;
+  font-size: var(--t-label);
+  color: var(--c-muted);
+}
+
+@media (max-width: 639px) {
+  .doc {
+    padding: var(--sp-5) var(--sp-4);
+    border-radius: var(--r-lg);
+  }
+
+  /* На узком экране колонка под номер съедает треть строки.
+     Номер уходит в начало строки обычным словом. */
+  .doc__punkt {
+    display: block;
+  }
+
+  .doc__nomer {
+    margin-right: var(--sp-2);
+  }
+
+  .doc__spisok {
+    padding-left: var(--sp-5);
+  }
+
+  .doc__rekvizit {
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+
+  .doc__opredeleniya .doc__rekvizit + .doc__rekvizit {
+    margin-top: calc(var(--sp-4) * -1 + var(--sp-3));
+  }
+}

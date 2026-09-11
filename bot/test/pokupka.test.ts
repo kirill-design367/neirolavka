@@ -14,6 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as zakazy from '../src/db/zakazy.js';
+import * as bdKatalog from '../src/db/katalog.js';
 import {
   stend,
   poslat,
@@ -126,9 +127,15 @@ test('в статистике ноль не печатается как цена
   const s = await stend();
   try {
     const p = PRODUKT_BEZ_UROVNEY;
+    // ЦЕНУ СНИМАЕМ САМИ, а не надеемся, что её нет в каталоге.
+    // Здесь стояло «цены в каталоге ещё нет — в базе ноль», и
+    // проверка покраснела, как только владелец проставил прайс.
+    // Проверяется-то другое: что НОЛЬ В БАЗЕ не печатается как «0 ₽».
+    // Значит ноль надо создать, а не ждать от каталога.
+    bdKatalog.pravitProdukt(s.l.db, p.id, { cenaKop: null });
     await poslat(s.adres, SEKRET, nazhatie(`nov:${p.id}`));
     const z = zakazy.cheloveka(s.l.db, POKUPATEL)[0]!;
-    assert.equal(z.cena_kop, 0, 'цены в каталоге ещё нет — в базе ноль');
+    assert.equal(z.cena_kop, 0, 'цены нет — в базе обязан лежать ноль');
     zakazy.otmetitOplachennym(s.l.db, z.id, new Date(), VLADELEC);
     zakazy.vzyat(s.l.db, z.id, VLADELEC);
     zakazy.otmetitVydannym(s.l.db, z.id, null, VLADELEC);

@@ -653,8 +653,14 @@ test('цена, поставленная в панели, тут же видна
   try {
     const k = await voyti(s);
     const zashchita = await k.zashchita('/admin/katalog');
+    // ЧТО ЗДЕСЬ ПРОВЕРЯЕТСЯ — ПЕРЕДАЧА ЦЕНЫ, А НЕ ЕЁ ИСХОДНОЕ
+    // ЗНАЧЕНИЕ. Стояло `assert.equal(do_.plan.priceRub, null)` —
+    // проверка держалась за то, что в каталоге цен ещё нет, и
+    // покраснела в день, когда владелец их проставил. Берём цену
+    // до правки и убеждаемся, что новая от неё отличается: это
+    // верно и с пустым прайсом, и с заполненным.
     const do_ = tarif(s.l.db, ZHIVOY_PLAN);
-    assert.equal(do_!.plan.priceRub, null, 'у уровня уже стоит цена — проверка мерит не то');
+    assert.notEqual(do_!.plan.priceRub, 1990, 'цена до правки уже равна той, что ставим — проверка мерит не то');
 
     await k.post(`/admin/katalog/uroven/${ZHIVOY_PLAN}`, { zashchita, cena: '1990' });
     assert.equal(tarif(s.l.db, ZHIVOY_PLAN)!.plan.priceRub, 1990, 'бот не увидел новую цену');
