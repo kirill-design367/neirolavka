@@ -91,7 +91,6 @@
 .pays__item,
 .hero__chip,
 .order__cta,
-.referral__link,
 .bar__pay {
   transition: transform 0.28s var(--ease-out);
 }
@@ -111,8 +110,7 @@
   transform: translateY(-1px);
 }
 
-.order__cta:not(.order__cta--off):hover,
-.referral__link:hover {
+.order__cta:not(.order__cta--off):hover {
   transform: translateY(-2px);
 }
 

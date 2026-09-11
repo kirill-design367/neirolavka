@@ -18,9 +18,11 @@ import * as svoi from '../db/svoi.js';
 import * as kody from '../db/kody.js';
 import * as bdKatalog from '../db/katalog.js';
 import * as metki from '../db/metki.js';
+import * as promo from '../db/promokody.js';
 import * as bdVykladki from '../db/vykladki.js';
 import * as vyk from './vykladka.js';
 import { rubli, rubliIli } from '../lib/katalog.js';
+import { KLYUCH_PROMO } from '../lib/promokod.js';
 import { chasti, moment, momentSlovami } from '../lib/vremya.js';
 import { ekr, pole, stranica } from './vid.js';
 import type { Obstanovka } from './vid.js';
@@ -106,8 +108,19 @@ export function skolkoZhdet(ot: string, seychas = Date.now()): string {
   return `${Math.floor(chasov / 24)} д ${chasov % 24} ч`;
 }
 
-const cena = (z: zakazy.Zakaz, s: Slova): string =>
-  z.cena_kop > 0 ? rubli(z.cena_kop) : s.utochnyaetsya;
+/**
+ * Цена заказа для показа.
+ *
+ * Со скидкой она пишется ДВУМЯ числами, а не одним итогом: увидев
+ * только «1 259 ₽», человек не отличит скидку от другого тарифа —
+ * а именно это ему и надо знать, когда он смотрит в очередь или
+ * сверяет выручку.
+ */
+const cena = (z: zakazy.Zakaz, s: Slova): string => {
+  if (z.cena_kop <= 0) return s.utochnyaetsya;
+  if (z.skidka_kop <= 0) return rubli(z.cena_kop);
+  return `${rubli(z.cena_kop)} − ${rubli(z.skidka_kop)} = ${rubli(zakazy.kOplate(z))}`;
+};
 
 /**
  * Как назвать своего — исполнителя заказа.
@@ -397,6 +410,11 @@ export function zakaz(
     d(s.akkaunt, ekr(z.vid_akkaunta === 'svoy' ? s.svoyAkkaunt : s.novyAkkaunt)),
     d(s.status, ekr(statusSlovami(z.status, s))),
     d(s.cena, ekr(cena(z, s))),
+    /* Промокод в карточке — отдельной строкой, а не спрятанный
+       в цену: по нему разбирают жалобы («скидка не засчиталась»),
+       и искать его в арифметике суммы было бы работой на ровном
+       месте. */
+    z.promo_kod ? d(s.promokody, ekr(`${z.promo_kod} · −${rubli(z.skidka_kop)}`)) : '',
     z.oplacheno_kop > 0
       ? d(
           s.oplachen,
@@ -944,6 +962,104 @@ ${
   // Пока идёт — страница обновляет себя: человек не должен гадать,
   // кончилось или нет.
   return stranica(o, s.vykladka, telo, idet ? 15 : 0);
+}
+
+// ── промокоды ────────────────────────────────────────────────────────
+
+/**
+ * Промокоды: завести, посмотреть, отключить досрочно.
+ *
+ * Раздел только для владельца — и на СТРАНИЦЕ, и на ДЕЙСТВИИ (см.
+ * `admin/index.ts`). Спрятанный пункт меню — это удобство; защитой
+ * его считать нельзя: скидка на чужой заказ — это деньги, а деньги
+ * помощнику не поручены нигде.
+ *
+ * Список отвечает на четыре вопроса сразу, потому что владелец
+ * задаёт их вместе: сколько активаций осталось, сколько потрачено,
+ * действует ли код и кем он применялся. Четыре экрана вместо одного
+ * заставляли бы держать это в голове.
+ */
+export function promokody(
+  o: Obstanovka,
+  db: Baza,
+  poyas: string,
+  botUrl: string,
+  pokaz: { oshibka?: string; horosho?: string } = {},
+): string {
+  const s = o.s;
+  const seychas = new Date();
+  const mom = (kogda: string) => momentPaneli(new Date(kogda), poyas, o.yazyk);
+  const den = (kogda: string) =>
+    new Date(kogda).toLocaleDateString(o.yazyk === 'ru' ? 'ru-RU' : 'en-GB', { timeZone: poyas });
+
+  const sostoyanie = (p: promo.Svodka): string => {
+    if (!p.pochemu) return `<span class="metka">${ekr(s.deystvuet)}</span>`;
+    const slovo =
+      p.pochemu === 'istyok' ? s.promoIstyok : p.pochemu === 'konchilis' ? s.promoKonchilis : s.promoOtklyuchen;
+    return `<span class="zhdet">${ekr(slovo)}</span>`;
+  };
+
+  /* Ссылка с промокодом — готовая, чтобы её можно было скопировать
+     и отдать в рекламу. Тот же приём, что у размеченных ссылок:
+     человек не должен собирать адрес руками и ошибаться в нём. */
+  const ssylka = (kod: string) =>
+    botUrl ? `<div class="tayna">${ekr(`${botUrl}?start=${KLYUCH_PROMO}_${kod}`)}</div>` : '';
+
+  const spisok = promo
+    .vse(db, seychas)
+    .map((p) => {
+      const primeneniya = promo.primeneniya(db, p.kod, 20);
+      /* «Кем и когда применялся» — с ПОМЕТКОЙ О ВОЗВРАТЕ, а не без
+         неё. Строка без пометки читалась бы как потраченная
+         активация, и владелец не понял бы, почему занятых мест
+         меньше, чем строк. */
+      const kto = primeneniya.length
+        ? primeneniya
+            .map(
+              (a) =>
+                `<div>${ekr(mom(a.kogda))} · ${ekr(ktoTakoy(db, a.tg_id))} · ` +
+                `<a href="/admin/zakaz/${a.zakaz_id}">№ ${a.zakaz_id}</a> · −${ekr(rubli(a.skidka_kop))}` +
+                (a.snyata_v ? ` <span class="tiho">(${ekr(s.promoVozvrashchena)})</span>` : '') +
+                `</div>`,
+            )
+            .join('')
+        : `<span class="tiho">${ekr(s.primeneniyNet)}</span>`;
+
+      return `<div class="karta">
+<h2>${ekr(p.kod)} · −${p.skidka_proc} % ${sostoyanie(p)}</h2>
+<dl class="fakty">
+<dt>${ekr(s.deystvuetDo)}</dt><dd>${ekr(den(p.do_daty))}</dd>
+<dt>${ekr(s.ostalos)}</dt><dd class="num">${p.ostalos} / ${p.aktivaciy}</dd>
+<dt>${ekr(s.ispolzovano)}</dt><dd class="num">${p.ispolzovano}</dd>
+</dl>
+${ssylka(p.kod)}
+<h3 style="font-size:13px;color:var(--m);margin:12px 0 4px">${ekr(s.kemIKogda)}</h3>
+${kto}
+<form method="post" action="/admin/promokod/${encodeURIComponent(p.kod)}/otklyuchit" class="ryad" style="margin-top:10px">${pole(o)}
+<button name="kak" value="${p.otklyuchen ? '0' : '1'}" class="${p.otklyuchen ? 'tihaya' : 'opasnaya'}">${ekr(p.otklyuchen ? s.vklyuchit : s.otklyuchit)}</button></form>
+</div>`;
+    })
+    .join('');
+
+  /* Срок по умолчанию — месяц вперёд. Не «сегодня»: код, истекающий
+     в момент заведения, — это готовая ловушка, а пустое поле
+     заставляет человека лезть в календарь при каждом коде. */
+  const cherezMesyac = new Date(seychas.getTime() + 30 * 24 * 3600_000).toISOString().slice(0, 10);
+
+  const telo = `<h1>${ekr(s.promokody)}</h1>
+${pokaz.oshibka ? `<div class="oshibka">${ekr(pokaz.oshibka)}</div>` : ''}
+${pokaz.horosho ? `<div class="horosho">${ekr(pokaz.horosho)}</div>` : ''}
+<div class="karta"><h2>${ekr(s.zavestiPromokod)}</h2>
+<form method="post" action="/admin/promokod" class="ryad">${pole(o)}
+<div><label>${ekr(s.kodPromoPole)}</label><input type="text" name="kod" placeholder="LETO25" maxlength="16"></div>
+<div><label>${ekr(s.skidkaProc)}</label><input type="number" name="skidka" min="1" max="100" value="10" required style="width:90px"></div>
+<div><label>${ekr(s.deystvuetDo)}</label><input type="date" name="do" value="${ekr(cherezMesyac)}" required></div>
+<div><label>${ekr(s.chisloAktivaciy)}</label><input type="number" name="aktivaciy" min="1" max="10000" value="50" required style="width:110px"></div>
+<button>${ekr(s.zavestiPromokod)}</button></form>
+<p class="tiho" style="margin:10px 0 0">${ekr(s.kodPromoPoyasnenie)}</p></div>
+<p class="tiho">${ekr(s.promokodyPoyasnenie)}</p>
+${spisok || `<p class="tiho">${ekr(s.promokodyNet)}</p>`}`;
+  return stranica(o, s.promokody, telo);
 }
 
 // ── вход ─────────────────────────────────────────────────────────────

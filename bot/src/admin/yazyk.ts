@@ -164,6 +164,37 @@ export type Slova = {
   stKodPoluchen: string;
   stVydan: string;
   stOtmenen: string;
+  // ── промокоды ──
+  promokody: string;
+  promokodyNet: string;
+  promokodyPoyasnenie: string;
+  zavestiPromokod: string;
+  kodPromoPole: string;
+  pridumatKod: string;
+  kodPromoPoyasnenie: string;
+  skidkaProc: string;
+  deystvuetDo: string;
+  chisloAktivaciy: string;
+  ostalos: string;
+  ispolzovano: string;
+  deystvuet: string;
+  promoIstyok: string;
+  promoKonchilis: string;
+  promoOtklyuchen: string;
+  otklyuchit: string;
+  vklyuchit: string;
+  kemIKogda: string;
+  primeneniyNet: string;
+  ssylkaSPromo: string;
+  promoZaveden: string;
+  promoOtklyuchen2: string;
+  promoVklyuchen: string;
+  promoKodZanyat: string;
+  promoKodNeGoditsya: string;
+  promoSkidkaNeverna: string;
+  promoSrokNeveren: string;
+  promoAktivaciiNeverny: string;
+  promoVozvrashchena: string;
   vykladka: string;
   vylozhitNaSayt: string;
   vykladkaPoyasnenie: string;
@@ -375,6 +406,38 @@ const RU: Slova = {
   stKodPoluchen: 'Код получен',
   stVydan: 'Выдан',
   stOtmenen: 'Отменён',
+  promokody: 'Промокоды',
+  promokodyNet: 'Промокодов пока нет. Заведите первый — и ссылку можно будет дать в рекламу.',
+  promokodyPoyasnenie:
+    'Скидка считается от цены тарифа. Активация тратится в момент оформления заказа, а не когда код введён на сайте: код, сгоревший у того, кто передумал, — это код, отобранный у того, кто дошёл до конца. Отменили заказ — активация вернулась коду.',
+  zavestiPromokod: 'Завести промокод',
+  kodPromoPole: 'Код',
+  pridumatKod: 'Придумать код',
+  kodPromoPoyasnenie:
+    'Только латиница, цифры и дефис: через Telegram кириллица не проходит. Регистр не важен — код всё равно приводится к прописным. Пустое поле — и код придумается сам.',
+  skidkaProc: 'Скидка, %',
+  deystvuetDo: 'Действует до',
+  chisloAktivaciy: 'Активаций',
+  ostalos: 'Осталось',
+  ispolzovano: 'Использовано',
+  deystvuet: 'Действует',
+  promoIstyok: 'Истёк',
+  promoKonchilis: 'Активации кончились',
+  promoOtklyuchen: 'Отключён',
+  otklyuchit: 'Отключить',
+  vklyuchit: 'Включить обратно',
+  kemIKogda: 'Кем и когда применялся',
+  primeneniyNet: 'Ещё не применялся',
+  ssylkaSPromo: 'Ссылка с промокодом',
+  promoZaveden: 'Промокод заведён',
+  promoOtklyuchen2: 'Промокод отключён',
+  promoVklyuchen: 'Промокод снова действует',
+  promoKodZanyat: 'Такой код уже заведён',
+  promoKodNeGoditsya: 'В коде не осталось ни одного знака, который переживёт ссылку',
+  promoSkidkaNeverna: 'Скидка бывает от 1 до 100 процентов',
+  promoSrokNeveren: 'Укажите дату, до которой код работает',
+  promoAktivaciiNeverny: 'Активаций бывает от одной до десяти тысяч',
+  promoVozvrashchena: 'активация промокода вернулась',
   vykladka: 'Выкладка на сайт',
   vylozhitNaSayt: 'Выложить на сайт',
   vykladkaPoyasnenie:
@@ -588,6 +651,38 @@ const EN: Slova = {
   stKodPoluchen: 'Code received',
   stVydan: 'Delivered',
   stOtmenen: 'Cancelled',
+  promokody: 'Promo codes',
+  promokodyNet: 'No promo codes yet. Add the first one and the link is ready for an ad.',
+  promokodyPoyasnenie:
+    'The discount is taken off the plan price. An activation is spent when the order is placed, not when the code is typed on the site: a code burned by someone who changed their mind is a code taken from someone who went through with it. Cancel the order and the activation returns to the code.',
+  zavestiPromokod: 'Add a promo code',
+  kodPromoPole: 'Code',
+  pridumatKod: 'Make one up',
+  kodPromoPoyasnenie:
+    'Latin letters, digits and hyphens only: Cyrillic does not survive Telegram. Case does not matter, the code is upper-cased anyway. Leave it empty and one will be generated.',
+  skidkaProc: 'Discount, %',
+  deystvuetDo: 'Valid until',
+  chisloAktivaciy: 'Activations',
+  ostalos: 'Left',
+  ispolzovano: 'Used',
+  deystvuet: 'Active',
+  promoIstyok: 'Expired',
+  promoKonchilis: 'Activations used up',
+  promoOtklyuchen: 'Switched off',
+  otklyuchit: 'Switch off',
+  vklyuchit: 'Switch back on',
+  kemIKogda: 'Who used it and when',
+  primeneniyNet: 'Not used yet',
+  ssylkaSPromo: 'Link with the promo code',
+  promoZaveden: 'Promo code added',
+  promoOtklyuchen2: 'Promo code switched off',
+  promoVklyuchen: 'Promo code works again',
+  promoKodZanyat: 'That code already exists',
+  promoKodNeGoditsya: 'Nothing in that code survives a link',
+  promoSkidkaNeverna: 'A discount is between 1 and 100 per cent',
+  promoSrokNeveren: 'Set the date the code works until',
+  promoAktivaciiNeverny: 'Activations range from one to ten thousand',
+  promoVozvrashchena: 'promo code activation returned',
   vykladka: 'Publish to the site',
   vylozhitNaSayt: 'Publish to the site',
   vykladkaPoyasnenie:

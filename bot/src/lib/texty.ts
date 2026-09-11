@@ -135,13 +135,25 @@ export function podtverzhdenie(
   srok: Srok,
   r: Raspisanie,
   chto?: string,
+  /* Промокод, который человек принёс, — если он подходит к этому
+     выбору. Показать его НАДО ЗДЕСЬ, до нажатия «Оформить»: человек
+     видел сумму со скидкой на сайте, и если в боте стоит другая,
+     он решит, что скидку не засчитали, и не дойдёт до конца. */
+  promo?: { kod: string; skidkaProc: number; skidkaKop: number } | null,
 ): string {
+  const dengi = promo
+    ? [
+        `Сколько: ${rubliIli(cenaKop)}`,
+        `Промокод ${promo.kod}: −${promo.skidkaProc} % (−${rubli(promo.skidkaKop)})`,
+        `К оплате: ${rubli(Math.max(0, cenaKop - promo.skidkaKop))}`,
+      ]
+    : [`Сколько: ${rubliIli(cenaKop)}`];
   return [
     'Проверьте заказ.',
     '',
     `Что: ${nazvanie}`,
     ...(chto ? [chto] : []),
-    `Сколько: ${rubliIli(cenaKop)}`,
+    ...dengi,
     `Когда придёт: ${kogdaPridet(srok, r)}`,
     '',
     'Доступ приходит в этот чат: логин и пароль от готового аккаунта. ' +
@@ -174,9 +186,27 @@ export function zakazPrinyat(o: {
   spisano: number;
   /** Что осталось на балансе после списания. */
   balansKop: number;
+  /** Промокод, который человек принёс, но применить не вышло. */
+  promoNePodoshel?: { kod: string; pochemu: string } | null;
 }): string {
   const { zakaz, srok, r, spisano } = o;
   const strok = [`Заказ № ${zakaz.id} записан.`, '', `${zakaz.nazvanie} — ${rubliIli(zakaz.cena_kop)}`];
+
+  /* Скидка называется ОТДЕЛЬНОЙ СТРОКОЙ, а не подменяет цену.
+     Человек должен видеть, что промокод сработал и на сколько:
+     одна итоговая сумма не отличается от «цена такая и была». */
+  if (zakaz.skidka_kop > 0 && zakaz.promo_kod) {
+    strok.push(
+      `Промокод ${zakaz.promo_kod}: −${rubli(zakaz.skidka_kop)}`,
+      `К оплате: ${rubli(Math.max(0, zakaz.cena_kop - zakaz.skidka_kop))}`,
+    );
+  }
+
+  /* Код не подошёл — говорим сразу и словами. Промолчать значило бы
+     оставить человека считать, что скидка внутри суммы. */
+  if (o.promoNePodoshel) {
+    strok.push('', `Промокод ${o.promoNePodoshel.kod} не применился: ${o.promoNePodoshel.pochemu}`);
+  }
 
   if (spisano > 0) {
     strok.push('', `С баланса списано ${rubli(spisano)}. Осталось на балансе ${rubli(o.balansKop)}.`);
@@ -295,7 +325,10 @@ export function kartochkaZakaza(z: Zakaz, r: Raspisanie, estDostup: boolean): st
     `Заказ № ${z.id}`,
     '',
     z.nazvanie,
-    `${rubliIli(z.cena_kop)} · ${statusSlovami(z.status)}`,
+    z.skidka_kop > 0 && z.promo_kod
+      ? `${rubliIli(z.cena_kop)} − ${rubli(z.skidka_kop)} по коду ${z.promo_kod} = ` +
+        `${rubli(Math.max(0, z.cena_kop - z.skidka_kop))} · ${statusSlovami(z.status)}`
+      : `${rubliIli(z.cena_kop)} · ${statusSlovami(z.status)}`,
     `Аккаунт: ${vidAkkauntaSlovami(z.vid_akkaunta)}`,
     `Оформлен ${momentSlovami(new Date(z.sozdan), r.poyas)}`,
   ];

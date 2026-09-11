@@ -25,7 +25,8 @@ for (const theme of ['light', 'dark']) {
                          const d = cx.getImageData(0,0,1,1).data; return [d[0],d[1],d[2]]; };
     const tok = (n) => rgb(cs0.getPropertyValue(n).trim());
     const near = (a, t) => Math.hypot(a[0]-t[0], a[1]-t[1], a[2]-t[2]) < 26;
-    // --c-on-fill-muted намеренно нейтральный, в набор акцентов не входит.
+    // Приглушённые токены «на материале» намеренно нейтральные
+    // и в набор акцентов не входят.
     const accents = { brand: tok('--c-brand'), accentText: tok('--c-accent-text') };
     // Насыщенность считается в OKLCH, а не размахом каналов RGB.
     // Размах зависит от светлоты: у светлой кремовой и у тёмной
@@ -56,8 +57,22 @@ for (const theme of ['light', 'dark']) {
         }
       }
     }
-    // отдельно: насколько подкрашен текст на цветной заливке
-    const onFill = [...document.querySelectorAll('.referral__text, .fact__label, .fact__value, .referral__soon')]
+    // Отдельно: насколько подкрашен текст на ЦВЕТНОМ МАТЕРИАЛЕ.
+    // Прежде это был текст реферальной плашки; блока больше нет,
+    // и проба переехала на два материала, которые остались, —
+    // тёмную зелень карточек условий и серый камень карточек
+    // витрины. Оставить её без предмета значило бы считать максимум
+    // по пустому списку и получать −Infinity, то есть вечнозелёную
+    // пробу вместо проверки.
+    //
+    // `.pcard__name` СЮДА НЕ ВХОДИТ, и это не недосмотр: имя
+    // ВЫБРАННОГО продукта покрашено `--c-on-stone-accent`, а в тёмной
+    // теме это зелень — там камень тёмный, и акцент на нём выживает.
+    // Это выбранность, то есть ровно то состояние, которому акцент
+    // и полагается. Проба ловит подкраску ОБЫЧНОГО текста, и имя
+    // в ней давало бы вечный отказ в тёмной теме (0.058 при пороге
+    // 0.028) — то есть красноту на исправной странице.
+    const onFill = [...document.querySelectorAll('.term__title, .term__text, .pcard__tag, .pcard__note')]
       .map((el) => ({ cls: el.className.toString().split(/\s+/)[0], chroma: chroma(rgb(getComputedStyle(el).color)) }));
     // Мерилом служит насыщенность собственного основного текста
     // страницы: закон запрещает красить текст АКЦЕНТОМ, а не иметь
@@ -75,14 +90,18 @@ for (const theme of ['light', 'dark']) {
     if (seen.has(k)) continue; seen.add(k);
     console.log(`  ${x.name.padEnd(12)} .${x.cls.padEnd(28)} «${x.txt}»`);
   }
+  if (!r.onFill.length) {
+    console.log('  ПЛОХО: не нашлось ни одного текста на цветном материале — проба устарела');
+    bad++;
+  }
   const maxCh = Math.max(...r.onFill.map((x) => x.chroma));
   const limit = r.textChroma + 0.012;
-  console.log(`  насыщенность текста на цветной заливке: ${maxCh.toFixed(3)} по OKLCH ` +
+  console.log(`  насыщенность текста на цветном материале (${r.onFill.length} узлов): ${maxCh.toFixed(3)} по OKLCH ` +
     `при ${r.textChroma.toFixed(3)} у основного текста и ${r.brandChroma.toFixed(3)} у акцента ` +
     `${maxCh <= limit ? '(нейтраль этой палитры)' : '(ПОДКРАШЕН)'}`);
   if (maxCh > limit) bad++;
   await c.close();
 }
 await b.close();
-console.log(bad ? '\nТЕКСТ НА ЗАЛИВКЕ ПОДКРАШЕН' : '\nОсновной текст нейтрален в обеих темах');
+console.log(bad ? '\nТЕКСТ НА МАТЕРИАЛЕ ПОДКРАШЕН' : '\nОсновной текст нейтрален в обеих темах');
 process.exit(bad ? 1 : 0);

@@ -10,6 +10,8 @@
 import type { Baza } from './index.js';
 import { seychasISO } from './index.js';
 import * as koshelek from './koshelek.js';
+import * as promokody from './promokody.js';
+import type { OtkazPromo } from '../lib/promokod.js';
 
 /**
  * Путь заказа.
@@ -67,7 +69,15 @@ export type Zakaz = {
   produkt_id: string;
   plan_id: string;
   nazvanie: string;
+  /** Цена ТАРИФА снимком. Скидка в неё не входит — см. `skidka_kop`. */
   cena_kop: number;
+  /**
+   * Промокод, применённый к этому заказу. Снимок, как и название:
+   * код могут отключить, а в истории заказа он обязан остаться.
+   */
+  promo_kod: string | null;
+  /** Сколько скинул промокод, копейками. Снимок на момент заказа. */
+  skidka_kop: number;
   mesyacev: number;
   status: StatusZakaza;
   vid_akkaunta: VidAkkaunta;
@@ -90,6 +100,24 @@ export type Zakaz = {
   napominany_raz: number;
   napominanie_v: string | null;
 };
+
+/**
+ * Сколько за заказ надо заплатить: цена тарифа минус скидка.
+ *
+ * ОТДЕЛЬНАЯ ФУНКЦИЯ, А НЕ ВЫЧИТАНИЕ ПО МЕСТУ. Мест, где считаются
+ * деньги заказа, пять — оплата, баланс, счёт поставщику, статистика,
+ * чек покупателю, — и разъехаться им нельзя ни на копейку: одно
+ * забытое вычитание означает либо взятые лишние деньги, либо выдачу
+ * за половину цены.
+ *
+ * `cena_kop` при этом остаётся ЦЕНОЙ ТАРИФА. Вычесть скидку прямо
+ * из неё было бы проще и стоило бы истории: в чеке негде взять
+ * строку «было столько», а в статистике исчезла бы разница между
+ * «продали дёшево» и «дали скидку».
+ */
+export function kOplate(z: Pick<Zakaz, 'cena_kop' | 'skidka_kop'>): number {
+  return Math.max(0, z.cena_kop - z.skidka_kop);
+}
 
 /** Статусы, в которых заказ ещё «живой». */
 export const OTKRYTYE: StatusZakaza[] = [
@@ -129,7 +157,25 @@ export type Novy = {
   cenaKop: number;
   mesyacev: number;
   vidAkkaunta: VidAkkaunta;
+  /**
+   * Промокод, который человек принёс по ссылке с сайта.
+   *
+   * Пусто — без промокода. Активация тратится ЗДЕСЬ, при создании
+   * заказа, а не тогда, когда код введён на сайте: код, сгоревший
+   * у человека, который посмотрел и передумал, — это код, отобранный
+   * у того, кто дошёл до конца.
+   */
+  promoKod?: string;
 };
+
+/** Что вышло с промокодом при оформлении. */
+export type ItogPromoZakaza =
+  /** Кода не приносили — или заказ не новый и ничего не тратилось. */
+  | { vid: 'net' }
+  | { vid: 'primenen'; kod: string; skidkaKop: number; skidkaProc: number }
+  | { vid: 'ne_podoshel'; kod: string; pochemu: OtkazPromo };
+
+export type Sozdanie = { zakaz: Zakaz; novy: boolean; promo: ItogPromoZakaza };
 
 /**
  * Создать заказ — или вернуть уже существующий.
@@ -140,29 +186,62 @@ export type Novy = {
  * попытка завести второй открытый заказ на тот же тариф не проходит,
  * и мы честно возвращаем первый, пометив, что он не новый.
  */
-export function sozdatIliVernut(db: Baza, n: Novy): { zakaz: Zakaz; novy: boolean } {
-  const est = db
-    .prepare(`SELECT * FROM zakazy WHERE tg_id = ? AND plan_id = ? AND status IN (${V_SPISKE(OTKRYTYE)})`)
-    .get(n.tgId, n.planId) as Zakaz | undefined;
-  if (est) return { zakaz: est, novy: false };
+export function sozdatIliVernut(db: Baza, n: Novy): Sozdanie {
+  const nayti = () =>
+    db
+      .prepare(`SELECT * FROM zakazy WHERE tg_id = ? AND plan_id = ? AND status IN (${V_SPISKE(OTKRYTYE)})`)
+      .get(n.tgId, n.planId) as Zakaz | undefined;
+
+  const est = nayti();
+  if (est) return { zakaz: est, novy: false, promo: { vid: 'net' } };
 
   try {
-    const r = db
-      .prepare(
-        `INSERT INTO zakazy (tg_id, produkt_id, plan_id, nazvanie, cena_kop, mesyacev, vid_akkaunta, status, sozdan)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'zhdet_oplaty', ?)`,
-      )
-      .run(n.tgId, n.produktId, n.planId, n.nazvanie, n.cenaKop, n.mesyacev, n.vidAkkaunta, seychasISO());
-    const id = Number(r.lastInsertRowid);
-    sobytie(db, id, 'заказ создан', n.tgId);
-    return { zakaz: po(db, id) as Zakaz, novy: true };
+    /* ЗАКАЗ И АКТИВАЦИЯ ПРОМОКОДА — ОДНА ТРАНЗАКЦИЯ, и это то же
+       правило, по которому отмена и возврат денег неразделимы.
+       Раздельно они дают два одинаково плохих состояния: «заказ есть,
+       активация сгорела» и «скидка в заказе есть, а у кода не занято
+       ни одного места» — то есть код, который можно потратить дважды. */
+    return db.transaction((): Sozdanie => {
+      const r = db
+        .prepare(
+          `INSERT INTO zakazy (tg_id, produkt_id, plan_id, nazvanie, cena_kop, mesyacev, vid_akkaunta, status, sozdan)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'zhdet_oplaty', ?)`,
+        )
+        .run(n.tgId, n.produktId, n.planId, n.nazvanie, n.cenaKop, n.mesyacev, n.vidAkkaunta, seychasISO());
+      const id = Number(r.lastInsertRowid);
+      sobytie(db, id, 'заказ создан', n.tgId);
+
+      let promo: ItogPromoZakaza = { vid: 'net' };
+      if (n.promoKod) {
+        const z = promokody.zanyat(db, n.promoKod, id, n.tgId, n.cenaKop);
+        if (z.zanyali) {
+          db.prepare('UPDATE zakazy SET promo_kod = ?, skidka_kop = ? WHERE id = ?').run(
+            promokody.po(db, n.promoKod)?.kod ?? n.promoKod,
+            z.skidkaKop,
+            id,
+          );
+          const kod = (po(db, id) as Zakaz).promo_kod as string;
+          sobytie(db, id, 'применён промокод', n.tgId, `${kod}, −${z.skidkaProc} %`);
+          promo = { vid: 'primenen', kod, skidkaKop: z.skidkaKop, skidkaProc: z.skidkaProc };
+        } else {
+          /* Код не подошёл — заказ всё равно остаётся. Человек пришёл
+             за подпиской, а не за скидкой; уронить заказ из-за кода
+             значило бы наказать его за чужую ошибку. Что именно
+             не вышло, ему говорят словами. */
+          promo = {
+            vid: 'ne_podoshel',
+            kod: n.promoKod,
+            pochemu: z.pochemu.godit ? 'net' : z.pochemu.pochemu,
+          };
+        }
+      }
+      return { zakaz: po(db, id) as Zakaz, novy: true, promo };
+    })();
   } catch (e) {
     // Гонка: между проверкой и вставкой заказ успел появиться.
     // Индекс нас поймал — значит заказ есть, отдаём его.
-    const povtor = db
-      .prepare(`SELECT * FROM zakazy WHERE tg_id = ? AND plan_id = ? AND status IN (${V_SPISKE(OTKRYTYE)})`)
-      .get(n.tgId, n.planId) as Zakaz | undefined;
-    if (povtor) return { zakaz: povtor, novy: false };
+    const povtor = nayti();
+    if (povtor) return { zakaz: povtor, novy: false, promo: { vid: 'net' } };
     throw e;
   }
 }
@@ -247,8 +326,13 @@ export function neoplachennye(db: Baza): Zakaz[] {
 export function otmetitOplachennym(db: Baza, id: number, srokDo: Date, kto: number | null): boolean {
   const r = db
     .prepare(
+      // Заказ держит СТОЛЬКО, СКОЛЬКО С ЧЕЛОВЕКА ВЗЯЛИ, то есть цену
+      // за вычетом скидки. Записать сюда цену тарифа значило бы
+      // вернуть при отмене больше, чем получено, — то есть печатать
+      // деньги промокодом.
       `UPDATE zakazy
-          SET status = 'oplachen', oplachen = ?, srok_do = ?, oplacheno_kop = cena_kop
+          SET status = 'oplachen', oplachen = ?, srok_do = ?,
+              oplacheno_kop = MAX(0, cena_kop - skidka_kop)
         WHERE id = ? AND status = 'zhdet_oplaty'`,
     )
     .run(seychasISO(), srokDo.toISOString(), id);
@@ -276,11 +360,23 @@ export function oplatitSBalansa(
   return db.transaction(() => {
     const z = po(db, id);
     if (!z || z.status !== 'zhdet_oplaty' || z.cena_kop <= 0) return { spisano: 0, hvatilo: false };
-    const nuzhno = z.cena_kop - z.oplacheno_kop;
+    const nuzhno = kOplate(z) - z.oplacheno_kop;
+    /* СКИДКА ЗАКРЫЛА ВЕСЬ ЗАКАЗ. Такое бывает при ста процентах,
+       и оставлять заказ висеть в «ждёт оплаты» нельзя: платить
+       нечего, а администратору нечего подтверждать. Отмечаем
+       оплаченным на ноль — деньги не списаны, и при отмене
+       возвращать тоже нечего. */
+    if (nuzhno <= 0) {
+      db.prepare(
+        "UPDATE zakazy SET status = 'oplachen', oplachen = ?, srok_do = ? WHERE id = ? AND status = 'zhdet_oplaty'",
+      ).run(seychasISO(), srokDo.toISOString(), id);
+      sobytie(db, id, 'оплачен промокодом целиком', z.tg_id);
+      return { spisano: 0, hvatilo: true };
+    }
     const spisano = koshelek.spisatSkolkoEst(db, z.tg_id, nuzhno, z.id, `заказ № ${z.id} · ${z.nazvanie}`);
     if (spisano <= 0) return { spisano: 0, hvatilo: false };
     const stalo = z.oplacheno_kop + spisano;
-    const hvatilo = stalo >= z.cena_kop;
+    const hvatilo = stalo >= kOplate(z);
     db.prepare(
       `UPDATE zakazy
           SET oplacheno_kop = ?, s_balansa_kop = s_balansa_kop + ?,
@@ -424,6 +520,13 @@ export function otmenit(
     if (vernuli > 0) {
       koshelek.vernut(db, z.tg_id, vernuli, z.id, `возврат по заказу № ${z.id} · ${z.nazvanie}`);
     }
+    /* АКТИВАЦИЯ ПРОМОКОДА ВОЗВРАЩАЕТСЯ ТОЙ ЖЕ ТРАНЗАКЦИЕЙ, что
+       и деньги, и по той же причине: отдельными шагами бывает
+       состояние «заказ отменён, активация сгорела». Строка в истории
+       применений остаётся — освобождается только место. */
+    if (promokody.vernut(db, id) > 0) {
+      sobytie(db, id, 'активация промокода возвращена', kto, z.promo_kod ?? undefined);
+    }
     sobytie(db, id, 'заказ отменён', kto, podrobnosti ?? prichina);
     return { otmenen: true, vernuli };
   })();
@@ -530,16 +633,21 @@ export function statistika(db: Baza, okno: Okno = VSE_VREMYA): Statistika {
   const vsego = (
     db.prepare(`SELECT COUNT(*) n FROM zakazy WHERE 1=1${po_sozdan.gde}`).get(...po_sozdan.dovody) as { n: number }
   ).n;
+  /* ВЫРУЧКА — ЭТО ТО, ЧТО ВЗЯЛИ, а не цена по прайсу: заказ со скидкой
+     принёс меньше, и считать его полной ценой значило бы приписать
+     лавке деньги, которых никто не платил. `bez_ceny` при этом
+     по-прежнему считается по `cena_kop`: ноль там значит «цена
+     не объявлена», а не «отдали даром». */
   const vyruchka = db
     .prepare(
-      `SELECT COALESCE(SUM(cena_kop), 0) s,
+      `SELECT COALESCE(SUM(MAX(0, cena_kop - skidka_kop)), 0) s,
               COALESCE(SUM(CASE WHEN cena_kop = 0 THEN 1 ELSE 0 END), 0) bez
          FROM zakazy WHERE status = 'vydan'${po_vydan.gde}`,
     )
     .get(...po_vydan.dovody) as { s: number; bez: number };
   const poTovaram = db
     .prepare(
-      `SELECT produkt_id, COUNT(*) skolko, COALESCE(SUM(cena_kop),0) summa_kop,
+      `SELECT produkt_id, COUNT(*) skolko, COALESCE(SUM(MAX(0, cena_kop - skidka_kop)),0) summa_kop,
               COALESCE(SUM(CASE WHEN cena_kop = 0 THEN 1 ELSE 0 END), 0) bez_ceny
          FROM zakazy WHERE status = 'vydan'${po_vydan.gde} GROUP BY produkt_id ORDER BY skolko DESC`,
     )

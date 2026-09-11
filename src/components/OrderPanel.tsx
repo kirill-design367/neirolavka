@@ -1,11 +1,119 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useId, useState } from 'react';
 import { getCatalog } from '@/lib/catalog';
 import { useOrder } from '@/lib/order';
+import { PREDEL_KODA } from '@/lib/promokod';
 import { useCountUp, useExpand } from '@/lib/motion';
 
-const formatRub = (n: number) => `${n.toLocaleString('ru-RU')} ₽`;
+/* Копейки печатаются, только если они есть, — теми же правилами,
+   что у `rubli` в боте. Десять процентов от 1 399 ₽ это 139,90,
+   и «139,9 ₽» в чеке читается опечаткой. */
+const formatRub = (n: number) =>
+  `${n.toLocaleString('ru-RU', {
+    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    maximumFractionDigits: 2,
+  })} ₽`;
+
+/**
+ * Поле промокода.
+ *
+ * Стоит рядом с чипами оплаты — там же, где человек выбирает, чем
+ * платить. Проверяется ПО КНОПКЕ, а не на каждую букву: у проверки
+ * предел частоты в nginx, и «код не подошёл» на середине набора
+ * читается отказом, хотя человек ещё печатает.
+ *
+ * Свёрнуто в ссылку, пока код не введён: поле ввода в чеке на сайте,
+ * который ничего не обрабатывает, — это лишний вопрос «а что сюда
+ * писать» у того, кому промокод не давали.
+ */
+function PromoPole({ compact = false }: { compact?: boolean }) {
+  const { promo, skidka, priceKnown, primenitPromo, ubratPromo } = useOrder();
+  const [otkryto, setOtkryto] = useState(false);
+  const [vvod, setVvod] = useState('');
+  const id = useId();
+
+  const primenen = promo.vid === 'godit';
+  const klass = compact ? 'promo promo--bar' : 'promo';
+
+  if (primenen) {
+    return (
+      <div className={klass}>
+        <p className="promo__est">
+          <span className="promo__kod">{promo.kod}</span>
+          <span className="promo__skidka">−{promo.skidkaProc} %</span>
+          <button type="button" className="promo__ubrat" onClick={() => { setVvod(''); setOtkryto(false); ubratPromo(); }}>
+            убрать
+          </button>
+        </p>
+        {/* Цены нет — и скидку считать не от чего. Молча показать
+            ноль значило бы выдать «мы не знаем» за «выгоды нет». */}
+        {!priceKnown && (
+          <p className="promo__otvet promo__otvet--tiho">
+            Цена этого уровня ещё не объявлена — скидка посчитается, когда она появится.
+          </p>
+        )}
+        {priceKnown && skidka <= 0 && (
+          <p className="promo__otvet promo__otvet--tiho">Скидка появится вместе с ценой.</p>
+        )}
+      </div>
+    );
+  }
+
+  if (!otkryto) {
+    return (
+      <div className={klass}>
+        <button type="button" className="promo__zvat" onClick={() => setOtkryto(true)}>
+          У меня есть промокод
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={klass}>
+      <div className="promo__ryad">
+        <label className="promo__podpis" htmlFor={id}>
+          Промокод
+        </label>
+        <input
+          id={id}
+          className="promo__vvod"
+          type="text"
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          maxLength={PREDEL_KODA}
+          value={vvod}
+          placeholder="LETO25"
+          onChange={(e) => setVvod(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              primenitPromo(vvod);
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="promo__knopka"
+          onClick={() => primenitPromo(vvod)}
+          disabled={promo.vid === 'proveryaem' || vvod.trim().length === 0}
+        >
+          {promo.vid === 'proveryaem' ? 'Проверяю…' : 'Применить'}
+        </button>
+      </div>
+      {/* Отказ объясняется словами: «не подошёл» без причины
+          заставляет набрать код ещё раз, чтобы получить тот же ответ. */}
+      {promo.vid === 'ne_podoshel' && <p className="promo__otvet">{promo.soobshchenie}</p>}
+      {promo.vid === 'ne_proverili' && (
+        <p className="promo__otvet promo__otvet--tiho">
+          Не удалось проверить код прямо сейчас — он поедет в бот, и скидку посчитает он.
+        </p>
+      )}
+    </div>
+  );
+}
 
 /**
  * Панель заказа — она же чек.
@@ -27,8 +135,9 @@ const formatRub = (n: number) => `${n.toLocaleString('ru-RU')} ₽`;
  */
 export function OrderPanel() {
   const catalog = getCatalog();
-  const { selection, payment, paymentId, total, priceKnown, ready, botReady, botHref, choosePayment } = useOrder();
-  const totalRef = useCountUp(total, useCallback(formatRub, []));
+  const { selection, payment, paymentId, total, priceKnown, ready, botReady, botHref, choosePayment,
+          promo, skidka, kOplate } = useOrder();
+  const totalRef = useCountUp(kOplate, useCallback(formatRub, []));
   const restRef = useExpand<HTMLDivElement>(Boolean(selection));
 
   // Строки «Доступ до <дата>» здесь больше нет, и это не потеря.
@@ -58,6 +167,17 @@ export function OrderPanel() {
                 <p className="order__item-note">
                   {selection.plan?.note ?? selection.product.tagline}
                 </p>
+                {/* СТРОКА СКИДКИ ОТДЕЛЬНАЯ, а не подменяет цену.
+                    Один итог не отличается от «цена такая и была»:
+                    человек должен увидеть, что промокод сработал
+                    и на сколько. */}
+                {promo.vid === 'godit' && skidka > 0 && (
+                  <p className="order__item-row order__item-row--skidka">
+                    <span className="order__item-name">Промокод {promo.kod}</span>
+                    <span className="order__leader" aria-hidden="true" />
+                    <span className="order__item-price tnum">−{formatRub(skidka)}</span>
+                  </p>
+                )}
               </div>
             ) : (
               <p className="order__empty">
@@ -94,6 +214,7 @@ export function OrderPanel() {
                 <p className="order__pay-caption">
                   {payment ? payment.caption : 'Выберите, чем привычнее заплатить'}
                 </p>
+                <PromoPole />
               </div>
             </div>
           </div>
@@ -108,7 +229,7 @@ export function OrderPanel() {
                   а не число, и добегающий счётчик к нему не цепляется. */}
               {priceKnown ? (
                 <span ref={totalRef} className="order__total-value tnum">
-                  {formatRub(total)}
+                  {formatRub(kOplate)}
                 </span>
               ) : (
                 <span className="order__total-value order__total-value--soon">уточняется</span>
@@ -149,8 +270,9 @@ export function OrderPanel() {
 /** Нижняя полоса для телефона. Та же логика, другая раскладка. */
 export function OrderBar() {
   const catalog = getCatalog();
-  const { selection, total, priceKnown, ready, botReady, botHref, paymentId, choosePayment } = useOrder();
-  const totalRef = useCountUp<HTMLParagraphElement>(total, useCallback(formatRub, []));
+  const { selection, total, priceKnown, ready, botReady, botHref, paymentId, choosePayment,
+          promo, skidka, kOplate } = useOrder();
+  const totalRef = useCountUp<HTMLSpanElement>(kOplate, useCallback(formatRub, []));
 
   return (
     <div className="bar" aria-label="Заказ">
@@ -170,6 +292,12 @@ export function OrderBar() {
         </div>
       )}
 
+      {/* Поле промокода есть и на телефоне: панель чека там не
+          показывается вовсе, и без него половина покупателей
+          не смогла бы применить код. Свёрнуто в одну строку,
+          пока его не тронули. */}
+      {selection && <PromoPole compact />}
+
       <div className="bar__row">
         <div className="bar__info">
           {selection ? (
@@ -178,8 +306,19 @@ export function OrderBar() {
                 {selection.plan ? selection.plan.title : selection.product.name}
               </p>
               {priceKnown ? (
-                <p ref={totalRef} className="bar__total tnum">
-                  {formatRub(total)}
+                /* ЗАЧЁРКНУТАЯ ЦЕНА — СОСЕД СЧЁТЧИКА, А НЕ ЕГО РЕБЁНОК.
+                   `useCountUp` пишет в узел `textContent`, то есть
+                   сносит всех его детей разом; React о сносе не знает
+                   и при следующей отрисовке падает на removeChild —
+                   а вместе с ним пропадает весь чек. Это уже случилось
+                   ровно здесь. */
+                <p className="bar__total">
+                  <span ref={totalRef} className="bar__summa tnum">
+                    {formatRub(kOplate)}
+                  </span>
+                  {promo.vid === 'godit' && skidka > 0 && (
+                    <span className="bar__bylo tnum">{formatRub(total)}</span>
+                  )}
                 </p>
               ) : (
                 <p className="bar__total bar__total--soon">Цена уточняется</p>

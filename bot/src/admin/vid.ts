@@ -54,7 +54,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .shag h2{margin:0 0 8px}
 form.ryad{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin:0}
 label{display:block;font-size:12px;color:var(--m);margin-bottom:3px}
-input[type=text],input[type=password],input[type=number],textarea,select{font:inherit;padding:7px 9px;border:1px solid var(--l);background:var(--p);color:var(--t);border-radius:3px;min-width:0}
+input[type=text],input[type=password],input[type=number],input[type=date],textarea,select{font:inherit;padding:7px 9px;border:1px solid var(--l);background:var(--p);color:var(--t);border-radius:3px;min-width:0}
 textarea{min-height:60px;width:100%}
 button{font:inherit;padding:8px 14px;border:1px solid var(--a);background:var(--a);color:#fff;border-radius:3px;cursor:pointer}
 button.tihaya{background:var(--p);color:var(--t);border-color:var(--l)}
@@ -124,6 +124,7 @@ export function stranica(o: Obstanovka, zagolovok: string, telo: string, obnovly
           ? [
               `<a href="/admin/pokupateli">${ekr(o.s.pokupateli)}</a>`,
               `<a href="/admin/katalog">${ekr(o.s.katalog)}</a>`,
+              `<a href="/admin/promokody">${ekr(o.s.promokody)}</a>`,
               `<a href="/admin/statistika">${ekr(o.s.statistika)}</a>`,
               `<a href="/admin/vykladka">${ekr(o.s.vykladka)}</a>`,
             ]

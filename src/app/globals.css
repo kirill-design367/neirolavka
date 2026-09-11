@@ -1,7 +1,6 @@
 @import 'tailwindcss';
 @import './styles/layout.css';
 @import './styles/steps.css';
-@import './styles/referral.css';
 @import './styles/footer.css';
 @import './styles/order.css';
 @import './styles/shop.css';
@@ -153,36 +152,6 @@
   initial-value: #fdfbf9;
 }
 
-@property --c-fill {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: #22421d;
-}
-
-@property --c-on-fill {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: #fdfbf9;
-}
-
-@property --c-on-fill-muted {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: #c6bcb2;
-}
-
-@property --c-fill-btn {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: #fdfbf9;
-}
-
-@property --c-on-fill-btn {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: #22421d;
-}
-
 @property --c-accent {
   syntax: '<color>';
   inherits: true;
@@ -217,30 +186,6 @@
   syntax: '<color>';
   inherits: true;
   initial-value: rgb(46 34 20 / 0.13);
-}
-
-@property --c-fill-1 {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: #22421d;
-}
-
-@property --c-fill-2 {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: #22421d;
-}
-
-@property --c-fill-3 {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: #22421d;
-}
-
-@property --c-fill-glow {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: rgb(0 0 0 / 0);
 }
 
 @property --c-scroll-thumb {
@@ -452,21 +397,6 @@
      #feead9 был ступенью бежевой шкалы; на белой странице он читался
      бы желтоватым пятном на зелёном. */
   --c-on-brand: #fdfbf9;    /* 7.45:1 на зелёном */
-  /* Заливка больших плоскостей — отдельный токен. Акцентный цвет
-     годится для текста, но не для целого блока. */
-  --c-fill: #013300;
-  /* Точки градиента плашки. В светлой теме все три одного цвета,
-     а свечение прозрачное: плашка остаётся ровной заливкой.
-     Способ отрисовки при этом один и тот же в обеих темах,
-     поэтому смена темы не подменяет слои, а только перекрашивает. */
-  --c-fill-1: #013300;
-  --c-fill-2: #013300;
-  --c-fill-3: #013300;
-  --c-fill-glow: rgb(0 0 0 / 0);
-  --c-on-fill: #fdfbf9;     /* 13.79:1 на заливке */
-  --c-on-fill-muted: #c6bcb2; /* 7.62:1 на заливке */
-  --c-fill-btn: #fdfbf9;
-  --c-on-fill-btn: #013300; /* 13.79:1 на кнопке */
   --c-accent: #d79b66;      /* охра образца, не тронута: фон кнопки */
   --c-on-accent: #1a2518;   /* 6.64:1 на охре */
   --c-accent-text: #8e5327; /* охра, пригодная как текст: 5.95:1 на странице */
@@ -564,19 +494,6 @@
   --c-brand: #92af8d;       /* тот же зелёный, приглушённый: 6.45:1 на фоне */
   --c-hover: #afcfaa;
   --c-on-brand: #152013;    /* 15.87:1 на зелёном */
-  /* Заливка больших плоскостей и её три точки: мягкий переход от неба
-     к земле. Небо 218°, трава 169°, земля 96° — дуга в 122°, но
-     насыщенность всюду 0.040–0.046, поэтому это переход света, а не
-     радуга. Ни неона, ни кислотной подсветки. */
-  --c-fill: #0f2b2b;
-  --c-fill-1: #0c333d;      /* небо */
-  --c-fill-2: #0e2d23;      /* трава */
-  --c-fill-3: #272108;      /* земля */
-  --c-fill-glow: rgb(198 140 84 / 0.42); /* последнее тепло неба за плашкой */
-  --c-on-fill: #eee4db;     /* 11.96:1 на заливке */
-  --c-on-fill-muted: #a0958a; /* 4.66:1 на самой светлой точке */
-  --c-fill-btn: #92af8d;
-  --c-on-fill-btn: #152013; /* 15.87:1 */
   --c-title-edge: #92af8d;
   --c-title-mid: #d8dabf;
   --c-accent: #c49369;      /* охра вечером: фон кнопки */
@@ -613,8 +530,6 @@
   --color-line-strong: var(--c-line-strong);
   --color-brand: var(--c-brand);
   --color-on-brand: var(--c-on-brand);
-  --color-fill: var(--c-fill);
-  --color-on-fill: var(--c-on-fill);
   --color-accent: var(--c-accent);
   --color-on-accent: var(--c-on-accent);
   --color-accent-text: var(--c-accent-text);
@@ -791,21 +706,12 @@ body {
     --c-spark-3 var(--theme-dur) var(--ease-inout),
     --c-brand var(--theme-dur) var(--ease-inout),
     --c-on-brand var(--theme-dur) var(--ease-inout),
-    --c-fill var(--theme-dur) var(--ease-inout),
-    --c-on-fill var(--theme-dur) var(--ease-inout),
-    --c-on-fill-muted var(--theme-dur) var(--ease-inout),
-    --c-fill-btn var(--theme-dur) var(--ease-inout),
-    --c-on-fill-btn var(--theme-dur) var(--ease-inout),
     --c-accent var(--theme-dur) var(--ease-inout),
     --c-on-accent var(--theme-dur) var(--ease-inout),
     --c-accent-text var(--theme-dur) var(--ease-inout),
     --c-shadow-1 var(--theme-dur) var(--ease-inout),
     --c-shadow-2 var(--theme-dur) var(--ease-inout),
     --c-shadow-3 var(--theme-dur) var(--ease-inout),
-    --c-fill-1 var(--theme-dur) var(--ease-inout),
-    --c-fill-2 var(--theme-dur) var(--ease-inout),
-    --c-fill-3 var(--theme-dur) var(--ease-inout),
-    --c-fill-glow var(--theme-dur) var(--ease-inout),
     --c-title-edge var(--theme-dur) var(--ease-inout),
     --c-title-mid var(--theme-dur) var(--ease-inout),
     --c-bubble-1 var(--theme-dur) var(--ease-inout),

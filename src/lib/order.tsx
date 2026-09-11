@@ -1,8 +1,28 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { findPlan, findProduct, getCatalog, priceOf, type PaymentMethod, type Plan, type Product } from '@/lib/catalog';
 import { KLYUCH_METKI, metkaIzAdresa, sobratPayload } from '@/lib/metka';
+import { KLYUCH_PROMO, kodPromo, otkazSlovami, skidkaKop, type OtkazPromo } from '@/lib/promokod';
+
+/**
+ * Что сейчас с промокодом.
+ *
+ * Состояние, а не булево «есть/нет»: у отказа пять разных причин,
+ * и человеку надо сказать, какая именно, — «код не подошёл» без
+ * объяснения заставляет набирать его ещё раз, чтобы получить тот же
+ * ответ.
+ */
+export type PromoSostoyanie =
+  | { vid: 'net' }
+  | { vid: 'proveryaem'; kod: string }
+  | { vid: 'godit'; kod: string; skidkaProc: number }
+  | { vid: 'ne_podoshel'; kod: string; soobshchenie: string }
+  /** Спросить было некого: бот не ответил. Это НЕ «кода нет». */
+  | { vid: 'ne_proverili'; kod: string };
+
+/** Адрес проверки. Тот же домен, что и сайт: бот стоит за nginx. */
+const PROVERKA = '/api/promo';
 
 type OrderState = {
   /** Выбранный продукт на витрине. null — не выбран ни один. */
@@ -28,6 +48,18 @@ type OrderState = {
   botReady: boolean;
   /** Ссылка в бот с выбранным заказом в параметре, либо пусто. */
   botHref: string;
+  /** Что сейчас с введённым промокодом. */
+  promo: PromoSostoyanie;
+  /**
+   * Размер скидки в рублях. Ноль — скидки нет или цена неизвестна:
+   * процент от неизвестной цены — это неизвестное, а не ноль выгоды.
+   */
+  skidka: number;
+  /** Сколько остаётся заплатить: цена минус скидка. */
+  kOplate: number;
+  /** Проверить введённый код. Пусто — просто снять применённый. */
+  primenitPromo: (syroe: string) => void;
+  ubratPromo: () => void;
   chooseProduct: (id: string) => void;
   choosePlan: (id: string) => void;
   choosePayment: (id: PaymentMethod['id']) => void;
@@ -71,6 +103,57 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   const [metka, setMetka] = useState('');
   useEffect(() => {
     setMetka(metkaIzAdresa(window.location.search));
+  }, []);
+
+  /**
+   * Промокод.
+   *
+   * НА САЙТЕ НЕ ХРАНИТСЯ НИЧЕГО — ни в `localStorage`, ни в куках,
+   * ровно как метка канала. Код живёт столько, сколько открыта
+   * вкладка, и уезжает в ссылку на бота.
+   *
+   * Проверяется он по кнопке, а не на каждую букву. Две причины:
+   * у проверки стоит предел частоты в nginx (перебором код из восьми
+   * знаков ловится за ночь), и «не подошёл» на середине набора
+   * читается отказом, хотя человек ещё печатает.
+   */
+  const [promo, setPromo] = useState<PromoSostoyanie>({ vid: 'net' });
+  /* Номер запроса: ответ на позапрошлый код не должен перебивать
+     ответ на нынешний. Сеть ответы не упорядочивает. */
+  const zapros = useRef(0);
+
+  const primenitPromo = useCallback((syroe: string) => {
+    const kod = kodPromo(syroe);
+    const nomer = ++zapros.current;
+    if (!kod) {
+      setPromo({ vid: 'net' });
+      return;
+    }
+    setPromo({ vid: 'proveryaem', kod });
+    fetch(`${PROVERKA}?kod=${encodeURIComponent(kod)}`, { headers: { accept: 'application/json' } })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: { godit?: boolean; kod?: string; skidkaProc?: number; pochemu?: string }) => {
+        if (nomer !== zapros.current) return;
+        if (d.godit && typeof d.skidkaProc === 'number') {
+          setPromo({ vid: 'godit', kod: d.kod ?? kod, skidkaProc: d.skidkaProc });
+        } else {
+          setPromo({ vid: 'ne_podoshel', kod, soobshchenie: otkazSlovami((d.pochemu ?? 'net') as OtkazPromo) });
+        }
+      })
+      .catch(() => {
+        if (nomer !== zapros.current) return;
+        /* СПРОСИТЬ БЫЛО НЕКОГО — это не «кода нет». Сказать человеку,
+           что его код не существует, когда мы просто не дозвонились,
+           значит соврать ровно там, где он проверяет, можно ли нам
+           верить. Код при этом всё равно уезжает в бот: настоящее
+           решение принимает он. */
+        setPromo({ vid: 'ne_proverili', kod });
+      });
+  }, []);
+
+  const ubratPromo = useCallback(() => {
+    zapros.current++;
+    setPromo({ vid: 'net' });
   }, []);
 
   // Выбор ДЕРЖИТСЯ, пока не выбран другой продукт: повторное нажатие
@@ -123,6 +206,15 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
     const priceKnown = price !== null;
     const ready = Boolean(selection && payment);
 
+    /* Скидка считается ОТ ЦЕНЫ ТАРИФА — теми же копейками и той же
+       функцией, что в боте. Иначе сайт показал бы одно число,
+       а в заказе оказалось бы другое, и разошлись бы они на копейку
+       в первый же день. */
+    const skidka = promo.vid === 'godit' && priceKnown
+      ? skidkaKop(Math.round(total * 100), promo.skidkaProc) / 100
+      : 0;
+    const kOplate = Math.max(0, total - skidka);
+
     // Пока адрес бота пуст, ссылки не собираются вовсе: вести
     // на несуществующего бота хуже, чем честно ничего не предлагать.
     const botReady = catalog.botUrl.length > 0;
@@ -149,6 +241,17 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
         if (selection) pary['tovar'] = selection.plan?.id ?? selection.product.id;
         if (payment) pary['oplata'] = payment.id;
       }
+      /* ПРОМОКОД ЕДЕТ ТЕМ ЖЕ PAYLOAD, ЧТО И МЕТКА, и флагом
+         `botStartPayload` не закрыт — по той же причине: бот его
+         ЧИТАЕТ. Тот флаг про пару «товар + оплата», которую
+         обработчик `/start` не разбирает; промокод он разбирает
+         и записывает человеку.
+
+         Стоит ПЕРЕД меткой: payload обрезается до 64 знаков,
+         и при обрезке пострадать должно то, что дешевле потерять.
+         Потерянная метка — это строка в статистике; потерянный
+         промокод — это деньги человека. */
+      if (promo.vid === 'godit' || promo.vid === 'ne_proverili') pary[KLYUCH_PROMO] = promo.kod;
       if (metka) pary[KLYUCH_METKI] = metka;
       const start = sobratPayload(pary);
       if (start) botHref = `${catalog.botUrl}?start=${start}`;
@@ -165,12 +268,17 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       ready,
       botReady,
       botHref,
+      promo,
+      skidka,
+      kOplate,
+      primenitPromo,
+      ubratPromo,
       chooseProduct,
       choosePlan,
       choosePayment,
       reset,
     };
-  }, [catalog.botUrl, catalog.botStartPayload, catalog.payments, openProductId, paymentId, planId, tronul, chooseProduct, choosePlan, choosePayment, reset, metka]);
+  }, [catalog.botUrl, catalog.botStartPayload, catalog.payments, openProductId, paymentId, planId, tronul, chooseProduct, choosePlan, choosePayment, reset, metka, promo, primenitPromo, ubratPromo]);
 
   return <OrderContext.Provider value={value}>{children}</OrderContext.Provider>;
 }

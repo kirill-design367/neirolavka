@@ -112,12 +112,6 @@ export type Catalog = {
    * от бота — в CLAUDE.md, раздел про подключение бота к сайту.
    */
   botStartPayload: boolean;
-  /**
-   * Работает ли реферальная программа. Её в боте пока нет вовсе,
-   * поэтому звать «забрать свою ссылку» некуда: это была бы не
-   * заглушка, а обещание того, чего не существует.
-   */
-  referralReady: boolean;
   reviews: Review[];
 };
 
@@ -165,7 +159,6 @@ const REVIEWS: Review[] = [
 const CATALOG: Catalog = {
   botUrl: 'https://t.me/neirolavka_ai_bot',
   botStartPayload: false,
-  referralReady: false,
   subscribers: 2417,
   reviews: REVIEWS,
   payments: [

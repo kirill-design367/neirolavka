@@ -36,7 +36,9 @@ import * as t from '../lib/texty.js';
 import { rubli } from '../lib/katalog.js';
 import { getCatalog } from '../lib/katalog.js';
 import { kodMetki } from '../lib/metka.js';
+import { kodPromo } from '../lib/promokod.js';
 import * as metki from '../db/metki.js';
+import * as promo from '../db/promokody.js';
 import * as uvedom from '../bot/uvedomleniya.js';
 import { zhurnal } from '../lib/zhurnal.js';
 import { SLOVAR, razobratYazyk } from './yazyk.js';
@@ -369,6 +371,13 @@ export function sozdatPanel(l: Lavka): Panel {
         }
         return otdat(res, 200, str.vykladka(o, db, poyas, l.n.adresSayta, pokaz));
       }
+      if (put === `${KOREN}/promokody`) {
+        /* ПРАВА ПРОВЕРЯЮТСЯ И ЗДЕСЬ, И НА ДЕЙСТВИИ. Скидка на чужой
+           заказ — это деньги, а деньги помощнику не поручены нигде;
+           спрятанный пункт меню — удобство, а не защита. */
+        if (!vladelec) return otdat(res, 403, ocheredStranica());
+        return otdat(res, 200, str.promokody(o, db, poyas, getCatalog().botUrl, pokaz));
+      }
       if (put === `${KOREN}/statistika`) {
         if (!vladelec) return otdat(res, 403, ocheredStranica());
         return otdat(
@@ -478,6 +487,58 @@ export function sozdatPanel(l: Lavka): Panel {
       if (!vladelec) return kuda(res, sSoobshcheniem(`${KOREN}/ochered`, { oshibka: 'netPrav' }));
       metki.ubrat(db, decodeURIComponent(metkaUbrat[1] as string));
       return kuda(res, sSoobshcheniem(`${KOREN}/statistika`, { ok: 'metkaUbrana' }));
+    }
+
+    // ── промокоды: только владельцу ─────────────────────────────────
+
+    if (put === `${KOREN}/promokod`) {
+      if (!vladelec) return kuda(res, sSoobshcheniem(`${KOREN}/ochered`, { oshibka: 'netPrav' }));
+      /* Пустое поле кода — это «придумай сам», а не отказ: владелец
+         чаще всего не хочет сочинять буквы, ему нужна скидка. Код
+         из непустого поля при этом чистится теми же правилами, что
+         на сайте, — иначе введённый кириллицей он молча стал бы
+         другим кодом. */
+      const vvedeno = kodPromo(f.get('kod') ?? '');
+      const kod = vvedeno || promo.pridumatKod();
+      const skidka = Number((f.get('skidka') ?? '').trim());
+      const aktivaciy = Number((f.get('aktivaciy') ?? '').trim());
+      /* Дата из формы — это ДЕНЬ, а «до 30 сентября» человек читает
+         как «тридцатое ещё работает». Поэтому берётся конец этого
+         дня, а не его полночь: иначе код умирал бы на сутки раньше
+         обещанного. */
+      const den = (f.get('do') ?? '').trim();
+      const doDaty = /^\d{4}-\d{2}-\d{2}$/.test(den) ? `${den}T23:59:59.999Z` : '';
+      const itog = promo.zavesti(db, { kod, skidkaProc: skidka, doDaty, aktivaciy }, kto);
+      if ('oshibka' in itog) {
+        const slovo =
+          itog.oshibka === 'zanyat'
+            ? 'promoKodZanyat'
+            : itog.oshibka === 'nevernaya_skidka'
+              ? 'promoSkidkaNeverna'
+              : itog.oshibka === 'net_sroka'
+                ? 'promoSrokNeveren'
+                : itog.oshibka === 'nevernye_aktivacii'
+                  ? 'promoAktivaciiNeverny'
+                  : 'promoKodNeGoditsya';
+        return kuda(res, sSoobshcheniem(`${KOREN}/promokody`, { oshibka: slovo as keyof Slova }));
+      }
+      zhurnal.info(`панель: заведён промокод ${itog.promokod.kod}`);
+      return kuda(res, sSoobshcheniem(`${KOREN}/promokody`, { ok: 'promoZaveden' }));
+    }
+
+    const promoOtkl = put.match(/^\/admin\/promokod\/([^/]+)\/otklyuchit$/);
+    if (promoOtkl) {
+      if (!vladelec) return kuda(res, sSoobshcheniem(`${KOREN}/ochered`, { oshibka: 'netPrav' }));
+      /* Отключение, а НЕ удаление: на код ссылаются заказы, и стереть
+         его значило бы переписать их историю. Тот же закон, что
+         у спрятанного продукта в каталоге. */
+      const vyklyuchaem = (f.get('kak') ?? '1') === '1';
+      const nashli = promo.otklyuchit(db, decodeURIComponent(promoOtkl[1] as string), vyklyuchaem);
+      if (!nashli) return kuda(res, sSoobshcheniem(`${KOREN}/promokody`, { oshibka: 'nelzyaSeychas' }));
+      return kuda(
+        res,
+        sSoobshcheniem(`${KOREN}/promokody`, { ok: vyklyuchaem ? 'promoOtklyuchen2' : 'promoVklyuchen' }),
+      );
     }
 
     // ── деньги покупателя: только владельцу ──────────────────────────

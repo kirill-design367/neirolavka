@@ -13,6 +13,8 @@ import type { Lavka } from './lavka.js';
 import { putVebhuka } from './config.js';
 import { zhurnal } from './lib/zhurnal.js';
 import { sozdatPanel, KOREN as KOREN_PANELI } from './admin/index.js';
+import * as promokody from './db/promokody.js';
+import { otkazSlovami } from './lib/promokod.js';
 
 /**
  * Сколько ждём обработчик, прежде чем ответить Telegram и доделать
@@ -144,6 +146,56 @@ export function sozdatServer(l: Lavka, vypusk: string, sostoyanie: Sostoyanie): 
         if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
         if (!res.writableEnded) res.end('панель не смогла ответить');
       });
+      return;
+    }
+    /**
+     * Проверка промокода для САЙТА.
+     *
+     * Сайт статический и базы не видит, а показать в чеке «исходная
+     * цена — скидка — итого» можно только зная, что код существует,
+     * не истёк и не разобран. Запечь список кодов в сборку нельзя
+     * дважды: остаток активаций и досрочное отключение — живые
+     * сведения, и статическая копия врала бы ровно в тот момент,
+     * когда код кончился; да и весь список кодов лежал бы на виду.
+     *
+     * ОТВЕТ ПРЕДВАРИТЕЛЬНЫЙ, И ЭТО СКАЗАНО ПРЯМО. Настоящее решение
+     * принимается один раз — при создании заказа в боте, и принимает
+     * его база. Между «сайт спросил» и «человек оформил» проходит
+     * время, за которое последнюю активацию может забрать другой.
+     *
+     * Отдаётся РОВНО ОДИН БИТ И ПРОЦЕНТ: годится или нет и на сколько
+     * скидка. Ни срока, ни остатка активаций, ни имени — перебором
+     * по этому ответу можно узнать только то, что и так узнаётся
+     * вводом кода в поле. От самого перебора стоит предел частоты
+     * в nginx, тот же приём, что у входа в панель.
+     */
+    if (adres === '/api/promo') {
+      const zagolovki = {
+        'content-type': 'application/json; charset=utf-8',
+        // Ответ живой: остаток активаций меняется, и кешировать его
+        // нельзя ни браузеру, ни промежуточному узлу.
+        'cache-control': 'no-store, no-cache, must-revalidate',
+        'x-content-type-options': 'nosniff',
+      };
+      if (req.method !== 'GET') {
+        res.writeHead(405, zagolovki).end(JSON.stringify({ godit: false, pochemu: 'net' }));
+        return;
+      }
+      const kod = new URL(req.url ?? '/', 'http://bot').searchParams.get('kod') ?? '';
+      let otvet: Record<string, unknown>;
+      try {
+        const itog = promokody.proverit(l.db, kod);
+        otvet = itog.godit
+          ? { godit: true, kod: itog.kod, skidkaProc: itog.skidkaProc }
+          : { godit: false, pochemu: itog.pochemu, soobshchenie: otkazSlovami(itog.pochemu) };
+      } catch (e) {
+        // Поломка базы — это не «кода нет»: соврать человеку, что его
+        // код не существует, хуже, чем признаться, что не проверили.
+        zhurnal.oshibka('проверка промокода не удалась:', e);
+        res.writeHead(503, zagolovki).end(JSON.stringify({ godit: false, pochemu: 'ne_proverili' }));
+        return;
+      }
+      res.writeHead(200, zagolovki).end(JSON.stringify(otvet));
       return;
     }
     if (adres === '/yookassa') {

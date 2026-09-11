@@ -5,7 +5,6 @@ import { useMergedRefs, useParallax, useReveal } from '@/lib/motion';
 const CHIPS = [
   { href: '#magazin', label: 'Магазин' },
   { href: '#otzyvy', label: 'Отзывы' },
-  { href: '#referalka', label: 'Рефералка' },
 ];
 
 export function Hero() {

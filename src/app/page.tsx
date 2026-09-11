@@ -5,7 +5,6 @@ import { Nav } from '@/components/Nav';
 import { Hero } from '@/components/Hero';
 import { Shop } from '@/components/Shop';
 import { Steps } from '@/components/Steps';
-import { Referral } from '@/components/Referral';
 import { Footer } from '@/components/Footer';
 import { OrderPanel, OrderBar } from '@/components/OrderPanel';
 
@@ -24,7 +23,6 @@ export default function Home() {
           <Hero />
           <Shop />
           <Steps />
-          <Referral />
         </main>
 
         <div className="layout__side">

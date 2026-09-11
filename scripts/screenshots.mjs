@@ -67,19 +67,17 @@ for (const vp of VIEWPORTS) {
 
     // 5. Шаги
     await shotBlock(page, '.steps', p(5, 'как-устроено'));
-    // 6. Реферальная программа
-    await shotBlock(page, '.referral', p(6, 'рефералка'));
-    // 7. Отзывы в подвале
-    await shotBlock(page, '.reviews', p(7, 'отзывы'));
-    // 8. Низ подвала
+    // 6. Отзывы в подвале
+    await shotBlock(page, '.reviews', p(6, 'отзывы'));
+    // 7. Низ подвала
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(1100);
-    await page.screenshot({ path: p(8, 'подвал') });
+    await page.screenshot({ path: p(7, 'подвал') });
 
-    // 9. Страница целиком
+    // 8. Страница целиком
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(600);
-    await page.screenshot({ path: p(9, 'целиком'), fullPage: true });
+    await page.screenshot({ path: p(8, 'целиком'), fullPage: true });
 
     await ctx.close();
   }

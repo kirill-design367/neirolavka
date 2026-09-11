@@ -19,7 +19,9 @@ import * as koshelek from '../db/koshelek.js';
 import * as svoi from '../db/svoi.js';
 import * as kody from '../db/kody.js';
 import * as metki from '../db/metki.js';
-import { metkaIzPayload } from '../lib/metka.js';
+import * as promokody from '../db/promokody.js';
+import { metkaIzPayload, razobratPayload } from '../lib/metka.js';
+import { kodPromo, otkazSlovami, skidkaKop, KLYUCH_PROMO } from '../lib/promokod.js';
 import { raspisanie } from '../db/nastroyki.js';
 import { rol } from '../db/komanda.js';
 import { srokVydachi } from '../lib/vremya.js';
@@ -62,10 +64,18 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
        покупать, а метка — наше служебное дело. */
     if (ctx.from) {
       try {
-        const kod = metkaIzPayload(typeof ctx.match === 'string' ? ctx.match : '');
+        const payload = typeof ctx.match === 'string' ? ctx.match : '';
+        const kod = metkaIzPayload(payload);
         if (kod) metki.zapisatCheloveku(l.db, ctx.from.id, kod);
+        /* ПРОМОКОД ЕДЕТ ТЕМ ЖЕ PAYLOAD, ЧТО И МЕТКА, но ложится
+           иначе: метка пишется при первом касании и не меняется
+           никогда, промокод перезаписывается — последняя ссылка
+           и есть та, по которой человек пришёл покупать сейчас.
+           Тратится он не здесь, а при оформлении заказа. */
+        const promo = kodPromo(razobratPayload(payload)[KLYUCH_PROMO]);
+        if (promo) promokody.zapomnitCheloveku(l.db, ctx.from.id, promo);
       } catch (e) {
-        zhurnal.vnimanie('метку из ссылки записать не вышло:', e);
+        zhurnal.vnimanie('метку или промокод из ссылки записать не вышло:', e);
       }
     }
     await ctx.reply(t.privetstvie(imya, r()), { reply_markup: klav.nizhnyaya(rol(l.db, ctx.from?.id ?? 0)) });
@@ -99,9 +109,17 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     // с Seedance выходил тупик: ни одной кнопки, кроме «← К списку».
     if (tv.plans.length === 0) {
       const v: Vybor = { product: tv, plan: null };
+      const cena = kopeykiVybora(v);
       return pravit(
         ctx,
-        t.podtverzhdenie(nazvanieVybora(v), kopeykiVybora(v), srokVydachi(new Date(), r()), r(), tv.note),
+        t.podtverzhdenie(
+          nazvanieVybora(v),
+          cena,
+          srokVydachi(new Date(), r()),
+          r(),
+          tv.note,
+          promoDlyaPokaza(l, ctx.from.id, cena),
+        ),
         klav.oformitPodpisku(tv.id),
       );
     }
@@ -117,7 +135,14 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     const srok = srokVydachi(new Date(), r());
     await pravit(
       ctx,
-      t.podtverzhdenie(plan.title, kopeyki(plan), srok, r()),
+      t.podtverzhdenie(
+        plan.title,
+        kopeyki(plan),
+        srok,
+        r(),
+        undefined,
+        promoDlyaPokaza(l, ctx.from.id, kopeyki(plan)),
+      ),
       klav.oformit(plan.id, product.id),
     );
   });
@@ -305,10 +330,12 @@ export type Oformlenie = {
   spisano: number;
   /** Что осталось на балансе. */
   balans: number;
+  /** Что вышло с промокодом: применён, не подошёл или его не было. */
+  promo: zakazy.ItogPromoZakaza;
 };
 
 export function oformit(l: Lavka, tgId: number, v: Vybor, vid: zakazy.VidAkkaunta): Oformlenie {
-  const { zakaz, novy } = zakazy.sozdatIliVernut(l.db, {
+  const { zakaz, novy, promo } = zakazy.sozdatIliVernut(l.db, {
     tgId,
     produktId: v.product.id,
     planId: idVybora(v),
@@ -319,8 +346,17 @@ export function oformit(l: Lavka, tgId: number, v: Vybor, vid: zakazy.VidAkkaunt
     // он не выходит ни одной строкой.
     mesyacev: 0,
     vidAkkaunta: vid,
+    // Промокод, принесённый по ссылке. Активация тратится ВНУТРИ
+    // создания заказа, одной транзакцией с ним.
+    promoKod: promokody.chelovekPrines(l.db, tgId) || undefined,
   });
-  if (!novy) return { zakaz, novy, spisano: 0, balans: koshelek.balans(l.db, tgId) };
+  if (!novy) return { zakaz, novy, spisano: 0, balans: koshelek.balans(l.db, tgId), promo };
+
+  /* Код потрачен — забываем его у человека. Иначе однажды открытая
+     ссылка с промокодом давала бы скидку на каждый следующий заказ
+     молча, и код с десятью активациями разобрал бы один покупатель.
+     Нужен второй раз — ссылка открывается второй раз. */
+  if (promo.vid === 'primenen') promokody.zabytUCheloveka(l.db, tgId);
 
   // Баланс тратится СРАЗУ и молча только в одну сторону: заплатить.
   // Хватило целиком — заказ оплачен и администратору подтверждать
@@ -335,12 +371,20 @@ export function oformit(l: Lavka, tgId: number, v: Vybor, vid: zakazy.VidAkkaunt
   if (svezhy.status === 'zhdet_oplaty') {
     void l.oplata.vystavit(svezhy).then((schet) => {
       if (schet.vneshnyId || schet.adres) {
-        zakazy.zavestiPlatezh(l.db, svezhy.id, l.oplata.imya, schet.vneshnyId, svezhy.cena_kop - svezhy.oplacheno_kop);
+        // Счёт выставляется на то, что ОСТАЛОСЬ заплатить: цена
+        // за вычетом скидки и уже списанного с баланса.
+        zakazy.zavestiPlatezh(
+          l.db,
+          svezhy.id,
+          l.oplata.imya,
+          schet.vneshnyId,
+          zakazy.kOplate(svezhy) - svezhy.oplacheno_kop,
+        );
       }
     });
   }
 
-  return { zakaz: svezhy, novy, spisano, balans: koshelek.balans(l.db, tgId) };
+  return { zakaz: svezhy, novy, spisano, balans: koshelek.balans(l.db, tgId), promo };
 }
 
 /** Что показать покупателю сразу после оформления. */
@@ -352,7 +396,32 @@ export function soobshchenieOZakaze(l: Lavka, o: Oformlenie): string {
     oplataRabotaet: l.oplata.rabotaet,
     spisano: o.spisano,
     balansKop: o.balans,
+    promoNePodoshel:
+      o.promo.vid === 'ne_podoshel'
+        ? { kod: o.promo.kod, pochemu: otkazSlovami(o.promo.pochemu) }
+        : null,
   });
+}
+
+/**
+ * Промокод, принесённый человеком, — в приложении к выбранному.
+ *
+ * Нужен ДО оформления, на карточке подтверждения: человек видел
+ * сумму со скидкой на сайте и должен увидеть ту же в боте. Ничего
+ * не тратит и ничего не пишет — это только показ.
+ */
+export function promoDlyaPokaza(
+  l: Lavka,
+  tgId: number,
+  cenaKop: number,
+): { kod: string; skidkaProc: number; skidkaKop: number } | null {
+  const kod = promokody.chelovekPrines(l.db, tgId);
+  if (!kod) return null;
+  const itog = promokody.proverit(l.db, kod);
+  if (!itog.godit) return null;
+  const skidka = skidkaKop(cenaKop, itog.skidkaProc);
+  if (skidka <= 0) return null;
+  return { kod: itog.kod, skidkaProc: itog.skidkaProc, skidkaKop: skidka };
 }
 
 /* ── разговоры покупателя ────────────────────────────────────────── */

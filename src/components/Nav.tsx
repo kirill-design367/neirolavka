@@ -6,7 +6,6 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 const LINKS = [
   { href: '#magazin', label: 'Магазин' },
   { href: '#otzyvy', label: 'Отзывы' },
-  { href: '#referalka', label: 'Реферальная программа' },
 ];
 
 const formatCount = (n: number) => n.toLocaleString('ru-RU');
