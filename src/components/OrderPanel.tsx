@@ -16,46 +16,60 @@ const formatRub = (n: number) =>
   })} ₽`;
 
 /**
- * Поле промокода.
+ * Поле промокода — В ОДНОМ РЯДУ С ЧИПАМИ ОПЛАТЫ.
  *
- * Стоит рядом с чипами оплаты — там же, где человек выбирает, чем
- * платить. Проверяется ПО КНОПКЕ, а не на каждую букву: у проверки
- * предел частоты в nginx, и «код не подошёл» на середине набора
- * читается отказом, хотя человек ещё печатает.
+ * Раньше оно стояло отдельной строкой под подписью способа оплаты,
+ * то есть в самом низу прокручиваемой части чека, — а цена и строка
+ * скидки живут наверху, в блоке «Товар». Получалось, что человек
+ * листает вниз, чтобы набрать код, и обратно вверх, чтобы увидеть,
+ * что скидка засчиталась. Владелец на это и пожаловался.
  *
- * Свёрнуто в ссылку, пока код не введён: поле ввода в чеке на сайте,
- * который ничего не обрабатывает, — это лишний вопрос «а что сюда
- * писать» у того, кому промокод не давали.
+ * Теперь это третий предмет того же ряда: «Карта РФ», «СБП»,
+ * промокод. Ряд и без того был вдвое шире, чем нужно двум чипам
+ * (`flex: 1 1 0` делит его поровну, а слов в чипах на две трети
+ * меньше), так что место взято из запаса, а не отнято у высоты.
+ * Строка под чеком стала на один ряд короче — и ввод, цена, скидка
+ * и итог помещаются в кадр одновременно.
+ *
+ * Три состояния, и все три — ОДИН предмет ряда, а не разная высота:
+ *   • свёрнутое: чип «+ Промокод». Плюс, а не просто слово, чтобы
+ *     чип не читался третьим способом оплаты;
+ *   • открытое: поле ввода и квадратная кнопка со стрелкой. Кнопка
+ *     квадратная не из любви к иконкам: «Применить» словом отнимает
+ *     у чипов оплаты семьдесят пикселей, и «Карта РФ» перестаёт
+ *     помещаться в свой чип;
+ *   • применённое: чип с кодом, размером скидки и крестиком.
+ *
+ * Проверяется код ПО КНОПКЕ (или по Enter), а не на каждую букву:
+ * у проверки предел частоты в nginx, и «не подошёл» на середине
+ * набора читается отказом, хотя человек ещё печатает.
  */
 function PromoPole({ compact = false }: { compact?: boolean }) {
-  const { promo, skidka, priceKnown, primenitPromo, ubratPromo } = useOrder();
+  const { promo, primenitPromo, ubratPromo } = useOrder();
   const [otkryto, setOtkryto] = useState(false);
   const [vvod, setVvod] = useState('');
   const id = useId();
 
-  const primenen = promo.vid === 'godit';
-  const klass = compact ? 'promo promo--bar' : 'promo';
+  const klass = `promo${compact ? ' promo--bar' : ''}`;
 
-  if (primenen) {
+  if (promo.vid === 'godit') {
     return (
-      <div className={klass}>
-        <p className="promo__est">
-          <span className="promo__kod">{promo.kod}</span>
-          <span className="promo__skidka">−{promo.skidkaProc} %</span>
-          <button type="button" className="promo__ubrat" onClick={() => { setVvod(''); setOtkryto(false); ubratPromo(); }}>
-            убрать
-          </button>
-        </p>
-        {/* Цены нет — и скидку считать не от чего. Молча показать
-            ноль значило бы выдать «мы не знаем» за «выгоды нет». */}
-        {!priceKnown && (
-          <p className="promo__otvet promo__otvet--tiho">
-            Цена этого уровня ещё не объявлена — скидка посчитается, когда она появится.
-          </p>
-        )}
-        {priceKnown && skidka <= 0 && (
-          <p className="promo__otvet promo__otvet--tiho">Скидка появится вместе с ценой.</p>
-        )}
+      <div className={`${klass} promo--est`}>
+        <span className="promo__kod">{promo.kod}</span>
+        <span className="promo__skidka tnum">−{promo.skidkaProc}&nbsp;%</span>
+        <button
+          type="button"
+          className="promo__ubrat"
+          aria-label={`Убрать промокод ${promo.kod}`}
+          title="Убрать промокод"
+          onClick={() => {
+            setVvod('');
+            setOtkryto(false);
+            ubratPromo();
+          }}
+        >
+          <span aria-hidden="true">✕</span>
+        </button>
       </div>
     );
   }
@@ -64,55 +78,86 @@ function PromoPole({ compact = false }: { compact?: boolean }) {
     return (
       <div className={klass}>
         <button type="button" className="promo__zvat" onClick={() => setOtkryto(true)}>
-          У меня есть промокод
+          <span className="promo__plus" aria-hidden="true">
+            +
+          </span>
+          Промокод
         </button>
       </div>
     );
   }
 
   return (
-    <div className={klass}>
-      <div className="promo__ryad">
-        <label className="promo__podpis" htmlFor={id}>
-          Промокод
-        </label>
-        <input
-          id={id}
-          className="promo__vvod"
-          type="text"
-          autoComplete="off"
-          autoCapitalize="characters"
-          spellCheck={false}
-          maxLength={PREDEL_KODA}
-          value={vvod}
-          placeholder="LETO25"
-          onChange={(e) => setVvod(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              primenitPromo(vvod);
-            }
-          }}
-        />
-        <button
-          type="button"
-          className="promo__knopka"
-          onClick={() => primenitPromo(vvod)}
-          disabled={promo.vid === 'proveryaem' || vvod.trim().length === 0}
-        >
-          {promo.vid === 'proveryaem' ? 'Проверяю…' : 'Применить'}
-        </button>
-      </div>
-      {/* Отказ объясняется словами: «не подошёл» без причины
-          заставляет набрать код ещё раз, чтобы получить тот же ответ. */}
-      {promo.vid === 'ne_podoshel' && <p className="promo__otvet">{promo.soobshchenie}</p>}
-      {promo.vid === 'ne_proverili' && (
-        <p className="promo__otvet promo__otvet--tiho">
-          Не удалось проверить код прямо сейчас — он поедет в бот, и скидку посчитает он.
-        </p>
-      )}
+    <div className={`${klass} promo--vvod`}>
+      <input
+        id={id}
+        className="promo__vvod"
+        type="text"
+        aria-label="Промокод"
+        autoComplete="off"
+        autoCapitalize="characters"
+        spellCheck={false}
+        maxLength={PREDEL_KODA}
+        value={vvod}
+        placeholder="LETO25"
+        autoFocus
+        onChange={(e) => setVvod(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            primenitPromo(vvod);
+          }
+        }}
+      />
+      <button
+        type="button"
+        className="promo__knopka"
+        aria-label="Применить промокод"
+        title="Применить промокод"
+        onClick={() => primenitPromo(vvod)}
+        disabled={promo.vid === 'proveryaem' || vvod.trim().length === 0}
+      >
+        <span aria-hidden="true">{promo.vid === 'proveryaem' ? '…' : '→'}</span>
+      </button>
     </div>
   );
+}
+
+/**
+ * Ответ на введённый код — ОТДЕЛЬНОЙ строкой под рядом.
+ *
+ * Внутри самого поля ему места нет: поле теперь предмет ряда,
+ * а не блок, и абзац внутри него разорвал бы ряд надвое. Строка
+ * появляется только тогда, когда есть что сказать, поэтому в обычном
+ * случае она ничего не занимает.
+ *
+ * Отказ объясняется СЛОВАМИ: «не подошёл» без причины заставляет
+ * набрать код ещё раз, чтобы получить тот же ответ.
+ */
+function PromoOtvet() {
+  const { promo, skidka, priceKnown } = useOrder();
+
+  if (promo.vid === 'ne_podoshel') return <p className="promo__otvet">{promo.soobshchenie}</p>;
+  if (promo.vid === 'ne_proverili') {
+    return (
+      <p className="promo__otvet promo__otvet--tiho">
+        Не удалось проверить код прямо сейчас — он поедет в бот, и скидку посчитает он.
+      </p>
+    );
+  }
+  /* Цены нет — и скидку считать не от чего. Молча показать ноль
+     значило бы выдать «мы не знаем» за «выгоды нет». */
+  if (promo.vid === 'godit' && !priceKnown) {
+    return (
+      <p className="promo__otvet promo__otvet--tiho">
+        Цена этого уровня ещё не объявлена — скидка посчитается, когда она появится.
+      </p>
+    );
+  }
+  if (promo.vid === 'godit' && skidka <= 0) {
+    return <p className="promo__otvet promo__otvet--tiho">Скидка появится вместе с ценой.</p>;
+  }
+  return null;
 }
 
 /**
@@ -197,24 +242,39 @@ export function OrderPanel() {
                     так блок занимает втрое меньше высоты, а подпись
                     показывается только у выбранного. Сколько их —
                     решает каталог, ряд делится поровну между теми,
-                    что пришли. */}
-                <div className="pays" role="group" aria-labelledby="sposob-oplaty">
-                  {catalog.payments.map((method) => (
-                    <button
-                      key={method.id}
-                      type="button"
-                      className={`pays__item${paymentId === method.id ? ' pays__item--active' : ''}`}
-                      onClick={() => choosePayment(method.id)}
-                      aria-pressed={paymentId === method.id}
-                    >
-                      {method.title}
-                    </button>
-                  ))}
+                    что пришли.
+
+                    ПРОМОКОД СТОИТ В ТОМ ЖЕ РЯДУ, но СНАРУЖИ группы
+                    способов оплаты: внутри `role="group"` с подписью
+                    «Способ оплаты» он назывался бы скринридеру третьим
+                    способом заплатить. Ряд общий, группа прежняя. */}
+                <div className="payrow">
+                  <div className="pays" role="group" aria-labelledby="sposob-oplaty">
+                    {catalog.payments.map((method) => (
+                      <button
+                        key={method.id}
+                        type="button"
+                        className={`pays__item${paymentId === method.id ? ' pays__item--active' : ''}`}
+                        onClick={() => choosePayment(method.id)}
+                        aria-pressed={paymentId === method.id}
+                      >
+                        {method.title}
+                      </button>
+                    ))}
+                  </div>
+                  <PromoPole />
                 </div>
                 <p className="order__pay-caption">
                   {payment ? payment.caption : 'Выберите, чем привычнее заплатить'}
                 </p>
-                <PromoPole />
+                {/* Ответ про код — ПОСЛЕ подписи способа оплаты, а не
+                    между нею и чипами. Подпись объясняет выбранный
+                    способ («Любой российский банк»), и вклиненная
+                    между ними строка про промокод разрывала эту пару,
+                    а сама начинала читаться примечанием ко всему ряду
+                    сразу. До переезда поля порядок был ровно такой же:
+                    чипы, подпись, промокод. */}
+                <PromoOtvet />
               </div>
             </div>
           </div>
@@ -276,27 +336,30 @@ export function OrderBar() {
 
   return (
     <div className="bar" aria-label="Заказ">
+      {/* Поле промокода есть и на телефоне: панель чека там
+          не показывается вовсе, и без него половина покупателей
+          не смогла бы применить код. Стоит в ТОМ ЖЕ ряду, что
+          и чипы оплаты, — полоса и так занимает низ экрана,
+          и третий ряд отнимал бы у страницы ещё одну строку. */}
       {selection && (
-        <div className="bar__pays" role="group" aria-label="Способ оплаты">
-          {catalog.payments.map((method) => (
-            <button
-              key={method.id}
-              type="button"
-              className={`bar__pay${paymentId === method.id ? ' bar__pay--active' : ''}`}
-              onClick={() => choosePayment(method.id)}
-              aria-pressed={paymentId === method.id}
-            >
-              {method.title}
-            </button>
-          ))}
+        <div className="payrow payrow--bar">
+          <div className="bar__pays" role="group" aria-label="Способ оплаты">
+            {catalog.payments.map((method) => (
+              <button
+                key={method.id}
+                type="button"
+                className={`bar__pay${paymentId === method.id ? ' bar__pay--active' : ''}`}
+                onClick={() => choosePayment(method.id)}
+                aria-pressed={paymentId === method.id}
+              >
+                {method.title}
+              </button>
+            ))}
+          </div>
+          <PromoPole compact />
         </div>
       )}
-
-      {/* Поле промокода есть и на телефоне: панель чека там не
-          показывается вовсе, и без него половина покупателей
-          не смогла бы применить код. Свёрнуто в одну строку,
-          пока его не тронули. */}
-      {selection && <PromoPole compact />}
+      {selection && <PromoOtvet />}
 
       <div className="bar__row">
         <div className="bar__info">

@@ -136,9 +136,24 @@
    треть ряда, с рваным правым краем под подписью во всю ширину.
    Число колонок, вбитое в CSS, разъезжается с каталогом при первой
    же правке списка — растяжимые доли не разъезжаются никогда. */
+/* ОДИН РЯД НА ОПЛАТУ И ПРОМОКОД.
+   Способы делят свою долю поровну (`flex: 1 1 0` у чипов — правило
+   не тронуто), а промокод берёт фиксированную ширину справа. Расти
+   ему нельзя: с `flex-grow` он съедал бы половину ряда, и «Карта РФ»
+   переставала помещаться в свой чип. */
+.payrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
 .pays {
   display: flex;
   gap: var(--sp-2);
+  /* Доля ряда, оставшаяся от промокода. `min-width: 0` — чтобы
+     доля могла сжаться уже содержимого, иначе ряд переполняется. */
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .pays__item {
@@ -172,51 +187,65 @@
 }
 
 /* ── Промокод ──────────────────────────────────────────────────────
-   Стоит там же, где чипы оплаты: человек решает «чем платить»
-   и «есть ли у меня скидка» одним заходом.
+   ПРЕДМЕТ РЯДА ОПЛАТЫ, а не блок под ним. Раньше он стоял отдельной
+   строкой ниже подписи способа оплаты — то есть в самом низу
+   прокручиваемой части чека, тогда как цена и строка скидки живут
+   наверху. Замер на 1366×768: прокручиваемая часть переполнялась
+   (284 видимых из 304), и человек листал вниз набрать код и вверх
+   посмотреть скидку.
 
-   Пока код не введён — одна строка-приглашение, а не открытое поле.
-   Поле ввода в чеке на сайте, который ничего не обрабатывает, —
-   это лишний вопрос «а что сюда писать» у того, кому промокод
-   не давали. Ни одной новой ступени кегля: подпись — --t-micro,
-   сам код — --t-label. */
+   Три состояния — один и тот же предмет ряда и одна и та же высота,
+   чтобы ряд не прыгал при вводе. Ни одной новой ступени кегля:
+   всё на --t-micro. */
 .promo {
-  margin-top: var(--sp-3);
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
+/* Свёрнутый вид — чип «+ Промокод». Плюс не украшение: без него
+   чип читается третьим способом оплаты, рядом с «Карта РФ» и «СБП». */
 .promo__zvat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.4375rem 0.5rem;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--c-line-strong);
+  background: transparent;
   font-size: var(--t-micro);
   color: var(--c-accent-text);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in oklab, var(--c-accent-text) 40%, transparent);
-  text-underline-offset: 0.2em;
-  transition: color 0.18s var(--ease-out);
+  white-space: nowrap;
+  transition:
+    color 0.18s var(--ease-out),
+    border-color 0.18s var(--ease-out);
 }
 
 .promo__zvat:hover,
 .promo__zvat:focus-visible {
   color: var(--c-brand);
+  border-color: var(--c-brand);
 }
 
-.promo__ryad {
+.promo__plus {
+  font-weight: 600;
+}
+
+/* Открытый вид: поле и квадратная кнопка. Ширина фиксированная —
+   восьми знаков прописными хватает на любой наш код, а остаток ряда
+   остаётся чипам оплаты. */
+.promo--vvod {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--sp-2);
-}
-
-.promo__podpis {
-  flex: none;
-  font-size: var(--t-micro);
-  color: var(--c-muted);
+  gap: 0.25rem;
+  flex: 0 1 8rem;
 }
 
 .promo__vvod {
-  flex: 1 1 6rem;
+  flex: 1 1 0;
   min-width: 0;
-  padding: 0.375rem 0.5rem;
+  padding: 0.375rem 0.4375rem;
   border-radius: var(--r-sm);
-  border: 1px solid var(--c-line);
+  border: 1px solid var(--c-line-strong);
   background: var(--c-bg);
   color: var(--c-text);
   font: inherit;
@@ -226,20 +255,35 @@
   letter-spacing: 0.04em;
 }
 
+.promo__vvod::placeholder {
+  color: var(--c-muted);
+  letter-spacing: 0.04em;
+}
+
 .promo__vvod:focus-visible {
   outline: 2px solid var(--c-brand);
   outline-offset: 1px;
 }
 
+/* КНОПКА КВАДРАТНАЯ, И ЭТО НЕ ЛЮБОВЬ К ИКОНКАМ. Слово «Применить»
+   в этом ряду стоит около семидесяти пикселей, и ровно на столько
+   же сжимаются чипы оплаты — «Карта РФ» перестаёт помещаться
+   в свой чип. У стрелки есть aria-label и подсказка, а Enter
+   в поле делает то же самое. */
 .promo__knopka {
   flex: none;
-  padding: 0.375rem 0.75rem;
+  width: 1.875rem;
+  height: 1.875rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--r-sm);
   border: 1px solid var(--c-brand);
   background: transparent;
   color: var(--c-brand);
   font-size: var(--t-micro);
   font-weight: 600;
+  line-height: 1;
   transition: background-color 0.18s var(--ease-out);
 }
 
@@ -253,23 +297,26 @@
   cursor: default;
 }
 
-/* Применённый код: сам код, размер скидки и способ его снять. */
-.promo__est {
+/* Применённый код: сам код, размер скидки и крестик — одним чипом,
+   чтобы ряд остался рядом из трёх предметов. */
+.promo--est {
   display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  font-size: var(--t-micro);
-}
-
-.promo__kod {
-  padding: 0.125rem 0.4375rem;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.3125rem 0.4375rem;
   border-radius: var(--r-sm);
   border: 1px solid var(--c-brand);
   background: color-mix(in oklab, var(--c-brand) 10%, var(--c-paper));
-  color: var(--c-text);
+  font-size: var(--t-micro);
+  white-space: nowrap;
+}
+
+.promo__kod {
   font-weight: 600;
   letter-spacing: 0.04em;
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .promo__skidka {
@@ -278,11 +325,15 @@
 }
 
 .promo__ubrat {
-  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: var(--r-sm);
   color: var(--c-muted);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in oklab, var(--c-muted) 40%, transparent);
-  text-underline-offset: 0.2em;
+  line-height: 1;
   transition: color 0.18s var(--ease-out);
 }
 
@@ -291,8 +342,11 @@
   color: var(--c-accent-text);
 }
 
-/* Ответ на код. Отказ — акцентной охрой (это НЕ украшение: цвет
-   здесь несёт состояние, а не выделение), пояснение — приглушённо. */
+/* Ответ на код — отдельной строкой ПОД рядом: внутри предмета ряда
+   абзацу места нет. Появляется только когда есть что сказать,
+   поэтому в обычном случае не занимает ничего. Отказ — акцентной
+   охрой (цвет здесь несёт состояние, а не выделение), пояснение —
+   приглушённо. */
 .promo__otvet {
   margin-top: var(--sp-2);
   font-size: var(--t-micro);
@@ -477,9 +531,13 @@
   gap: var(--sp-2);
   padding-block: 3px;
   margin-block: -3px;
-  margin-bottom: calc(var(--sp-3) - 3px);
   overflow-x: auto;
   scrollbar-width: none;
+  /* Доля ряда, оставшаяся от промокода: прокручивается только она,
+     а само поле ввода в прокрутку не попадает — поле, уезжающее
+     вбок под пальцем, набрать нельзя. */
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .bar__pays::-webkit-scrollbar {
@@ -504,10 +562,18 @@
   font-weight: 600;
 }
 
-/* На полосе промокод стоит одной строкой над рядом с итогом. */
-.promo--bar {
-  margin-top: 0;
-  margin-bottom: var(--sp-3);
+/* Отступ ряда до строки с итогом стоит на САМОМ ряду, а не
+   на прокручиваемой полосе чипов: у той свои поля ±3px, которыми
+   она отодвигает рамку обрезки от скруглённых краёв пилюль. */
+.payrow--bar {
+  margin-bottom: calc(var(--sp-3) - 3px);
+}
+
+/* На полосе чипы-пилюли, значит и промокод пилюлей. */
+.promo--bar .promo__zvat,
+.promo--bar.promo--est {
+  border-radius: 999px;
+  padding-inline: 0.75rem;
 }
 
 .bar__row {
