@@ -4,12 +4,15 @@
   "private": true,
   "type": "module",
   "description": "Бот Нейролавки: приём заказа, уведомление администратора, ручная выдача доступа",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/bot/src/index.js",
     "test": "tsc -p tsconfig.json && node --test 'dist/bot/test/*.test.js'",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "proba-oplaty": "node dist/bot/src/oplata/proba.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",

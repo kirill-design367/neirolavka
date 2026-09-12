@@ -246,12 +246,28 @@ export function sozdatIliVernut(db: Baza, n: Novy): Sozdanie {
   }
 }
 
+export type Platezh = {
+  id: number;
+  zakaz_id: number;
+  postavshchik: string;
+  vneshny_id: string | null;
+  summa_kop: number;
+  valyuta: string;
+  status: 'sozdan' | 'oplachen' | 'otmenen' | 'vozvrat';
+  sozdan: string;
+  podtverzhden: string | null;
+};
+
 /**
- * Завести платёж рядом с заказом.
+ * Завести платёж рядом с заказом и ВЕРНУТЬ ЕГО НОМЕР.
  *
- * Пока поставщик — заглушка, сюда не попадает ничего. Функция есть
- * затем, чтобы следующим заходом запись платежа не пришлось изобретать
- * посреди обработчика нажатия.
+ * Номер — это `id` строки, и он же уезжает в Робокассу как `InvId`.
+ * Так сделано намеренно: у колонки стоит AUTOINCREMENT, а значит
+ * номер не повторяется НИКОГДА — даже после удаления строк, даже
+ * после перезапуска, даже при переходе с тестового режима на боевой.
+ * Повторный номер Робокасса встречает ошибкой 40, и «уникальность»
+ * счётчиком в памяти процесса, который обнуляется каждой выкладкой,
+ * тут не годится.
  */
 export function zavestiPlatezh(
   db: Baza,
@@ -259,11 +275,59 @@ export function zavestiPlatezh(
   postavshchik: string,
   vneshnyId: string | null,
   summaKop: number,
-): void {
-  db.prepare(
-    `INSERT INTO platezhi (zakaz_id, postavshchik, vneshny_id, summa_kop, valyuta, status, sozdan)
-     VALUES (?, ?, ?, ?, 'RUB', 'sozdan', ?)`,
-  ).run(zakazId, postavshchik, vneshnyId, summaKop, seychasISO());
+): number {
+  const r = db
+    .prepare(
+      `INSERT INTO platezhi (zakaz_id, postavshchik, vneshny_id, summa_kop, valyuta, status, sozdan)
+       VALUES (?, ?, ?, ?, 'RUB', 'sozdan', ?)`,
+    )
+    .run(zakazId, postavshchik, vneshnyId, summaKop, seychasISO());
+  return Number(r.lastInsertRowid);
+}
+
+export function platezhPo(db: Baza, id: number): Platezh | null {
+  return (db.prepare('SELECT * FROM platezhi WHERE id = ?').get(id) as Platezh | undefined) ?? null;
+}
+
+/**
+ * Неоплаченный счёт того же заказа НА ТУ ЖЕ СУММУ.
+ *
+ * Нужен, чтобы повторное нажатие «Оплатить» не плодило счета.
+ * Сумма в условии обязательна: человек мог за это время пополнить
+ * баланс, и тогда платить он должен меньше — старый счёт стал
+ * неверным, и переиспользовать его нельзя.
+ */
+export function otkrytyPlatezh(
+  db: Baza,
+  zakazId: number,
+  postavshchik: string,
+  summaKop: number,
+): Platezh | null {
+  return (
+    (db
+      .prepare(
+        `SELECT * FROM platezhi
+          WHERE zakaz_id = ? AND postavshchik = ? AND summa_kop = ? AND status = 'sozdan'
+          ORDER BY id DESC LIMIT 1`,
+      )
+      .get(zakazId, postavshchik, summaKop) as Platezh | undefined) ?? null
+  );
+}
+
+/**
+ * Отметить платёж оплаченным. `false` — если он уже отмечен.
+ *
+ * ЭТО И ЕСТЬ ЗАЩИТА ОТ ДВОЙНОГО УВЕДОМЛЕНИЯ, и держит её база,
+ * а не проверка в коде. Робокасса повторяет уведомление, пока
+ * не получит «OK»; два повтора могут прийти одновременно, и между
+ * «прочитали статус» и «записали новый» помещается второй. Условие
+ * `status = 'sozdan'` прямо в UPDATE такого зазора не оставляет.
+ */
+export function otmetitPlatezhOplachennym(db: Baza, id: number): boolean {
+  const r = db
+    .prepare("UPDATE platezhi SET status = 'oplachen', podtverzhden = ? WHERE id = ? AND status = 'sozdan'")
+    .run(seychasISO(), id);
+  return r.changes > 0;
 }
 
 export function po(db: Baza, id: number): Zakaz | null {

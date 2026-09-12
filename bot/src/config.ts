@@ -11,6 +11,9 @@
  * не требует правки ни одной строки сообщения.
  */
 
+import type { NastroykiRobokassy, Algoritm, VidChekaVPodpisi } from './oplata/robokassa.js';
+import { ALGORITMY } from './oplata/robokassa.js';
+
 /**
  * Как бот получает обновления.
  *
@@ -88,6 +91,12 @@ export type Nastroyki = {
    * хранилища, а не копию логики.
    */
   apiHranilishcha: string;
+  /**
+   * Робокасса. Пустой логин или пустой пароль — оплата не работает,
+   * и бот честно говорит об этом вместо того, чтобы падать: заказ
+   * обязан приниматься и без настроенной оплаты.
+   */
+  robokassa: NastroykiRobokassy;
 };
 
 class OshibkaNastroyek extends Error {}
@@ -159,6 +168,57 @@ export function razobratKlyuch(stroka: string): Buffer {
  */
 export const BAZA_PO_UMOLCHANIYU = '/var/lib/neirolavka-bot/baza.sqlite';
 
+/** Флаг из окружения: «1», «da», «true» — это да; пусто — умолчание. */
+function flag(env: NodeJS.ProcessEnv, imya: string, poumolchaniyu: boolean): boolean {
+  const v = (env[imya] ?? '').trim().toLowerCase();
+  if (!v) return poumolchaniyu;
+  if (['1', 'da', 'true', 'yes', 'on'].includes(v)) return true;
+  if (['0', 'net', 'false', 'no', 'off'].includes(v)) return false;
+  throw new OshibkaNastroyek(`${imya}: «${v}» — это да или нет? Пишите 1 или 0.`);
+}
+
+/**
+ * Настройки Робокассы.
+ *
+ * ТЕСТОВЫЙ РЕЖИМ ВКЛЮЧЁН ПО УМОЛЧАНИЮ, и это не осторожность ради
+ * осторожности. Забытая переменная в боевом окружении означала бы
+ * приём НАСТОЯЩИХ денег там, где их принимать ещё не собирались;
+ * забытая переменная при умолчании «тест» означает всего лишь, что
+ * деньги не списались и это сразу видно. Из двух ошибок выбрана
+ * та, которую можно исправить.
+ *
+ * В ТЕСТОВОМ РЕЖИМЕ БЕРУТСЯ ТЕСТОВЫЕ ПАРОЛИ. Боевые пароли при
+ * `IsTest=1` дают ошибку 29 — «неверная подпись», — неотличимую
+ * от настоящей ошибки в формуле. Поэтому выбор пароля стоит рядом
+ * с выбором режима и делается одним местом: см. `robokassa.ts`.
+ */
+function robokassa(env: NodeJS.ProcessEnv): NastroykiRobokassy {
+  const algoritm = (env['NEIROLAVKA_ROBOKASSA_ALGORITM'] ?? 'md5').trim().toLowerCase();
+  if (!(ALGORITMY as string[]).includes(algoritm)) {
+    throw new OshibkaNastroyek(
+      `NEIROLAVKA_ROBOKASSA_ALGORITM: «${algoritm}» Робокасса не знает. ` +
+        `Можно: ${ALGORITMY.join(', ')}. Значение обязано совпадать с тем, что выбрано в кабинете.`,
+    );
+  }
+  const chek = (env['NEIROLAVKA_ROBOKASSA_CHEK_V_PODPISI'] ?? 'kodirovanny').trim().toLowerCase();
+  if (chek !== 'kodirovanny' && chek !== 'syroy') {
+    throw new OshibkaNastroyek(
+      `NEIROLAVKA_ROBOKASSA_CHEK_V_PODPISI должно быть kodirovanny или syroy, а не «${chek}»`,
+    );
+  }
+  return {
+    login: (env['NEIROLAVKA_ROBOKASSA_LOGIN'] ?? '').trim(),
+    parol1: (env['NEIROLAVKA_ROBOKASSA_PAROL1'] ?? '').trim(),
+    parol2: (env['NEIROLAVKA_ROBOKASSA_PAROL2'] ?? '').trim(),
+    testParol1: (env['NEIROLAVKA_ROBOKASSA_TEST_PAROL1'] ?? '').trim(),
+    testParol2: (env['NEIROLAVKA_ROBOKASSA_TEST_PAROL2'] ?? '').trim(),
+    test: flag(env, 'NEIROLAVKA_ROBOKASSA_TEST', true),
+    algoritm: algoritm as Algoritm,
+    sno: (env['NEIROLAVKA_ROBOKASSA_SNO'] ?? '').trim(),
+    chekVPodpisi: chek as VidChekaVPodpisi,
+  };
+}
+
 export function prochitat(env: NodeJS.ProcessEnv): Nastroyki {
   const rabotaS = chislo(env, 'NEIROLAVKA_RABOTA_S', 8);
   const rabotaDo = chislo(env, 'NEIROLAVKA_RABOTA_DO', 22);
@@ -204,6 +264,7 @@ export function prochitat(env: NodeJS.ProcessEnv): Nastroyki {
     vetka: (env['NEIROLAVKA_VETKA'] ?? 'main').trim(),
     faylKataloga: (env['NEIROLAVKA_FAYL_KATALOGA'] ?? 'src/lib/catalog.ts').trim(),
     apiHranilishcha: (env['NEIROLAVKA_API_HRANILISHCHA'] ?? 'https://api.github.com').trim().replace(/\/+$/, ''),
+    robokassa: robokassa(env),
   };
 }
 

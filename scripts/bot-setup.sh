@@ -229,7 +229,7 @@ printf '%s\n' 'include /etc/nginx/snippets/neirolavka-bot.conf;' \
   > /etc/nginx/snippets/neirolavka-bot-vkl.conf
 if nginx -t 2>&1 | sed 's/^/        /'; then
   systemctl reload nginx
-  ok "вебхуки включены: /tg/… и /yookassa уходят на 127.0.0.1"
+  ok "вебхуки включены: /tg/… и /robokassa/… уходят на 127.0.0.1"
 else
   rm -f /etc/nginx/snippets/neirolavka-bot-vkl.conf
   vni "с включёнными вебхуками конфигурация не проходит — откатил"

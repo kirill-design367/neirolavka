@@ -42,6 +42,7 @@ import {
   razobrat as razobratDostavku,
 } from './jobs/dostavka.js';
 import { zaglushka } from './oplata/zaglushka.js';
+import { sozdatRobokassu } from './oplata/robokassa.js';
 import type { Lavka } from './lavka.js';
 import { sozdatBota, zapomnitOpros } from './lavka.js';
 
@@ -106,6 +107,16 @@ async function glavnaya(): Promise<void> {
   // Ключ хранилища вырезается из журнала на тех же правах, что токен
   // бота: попав в трассировку, он даёт запись в репозиторий.
   skryt(n.klyuchHranilishcha);
+  /* ВСЕ ЧЕТЫРЕ ПАРОЛЯ РОБОКАССЫ — секреты, и тестовые тоже. Тестовым
+     паролем подписывается тестовый платёж, но утёкший в журнал пароль
+     остаётся утёкшим паролем: в кабинете он меняется у всех четырёх
+     сразу, а журнал переписать задним числом нельзя. */
+  skryt(
+    n.robokassa.parol1,
+    n.robokassa.parol2,
+    n.robokassa.testParol1,
+    n.robokassa.testParol2,
+  );
 
   proveritKlyuch(n.klyuchDostupov);
   zhurnal.info('ключ доступов проходит проверку');
@@ -117,7 +128,20 @@ async function glavnaya(): Promise<void> {
   const bot = sozdatBota(n);
   // Ссылку на опрос берём ЗДЕСЬ, до создания вебхук-сервера:
   // после него grammY подменяет bot.start исключением.
-  const l: Lavka = { db, n, bot, oplata: zaglushka, nachatOpros: zapomnitOpros(bot) };
+  /* Поставщик оплаты выбирается ОДИН раз, при подъёме. Не настроена
+     Робокасса — остаётся заглушка: заказ обязан приниматься и без
+     оплаты, а «оплата не подключена» бот говорит словами. */
+  const oplata = n.robokassa.login ? sozdatRobokassu(n.robokassa) : zaglushka;
+  if (oplata.rabotaet) {
+    zhurnal.info(
+      `оплата: Робокасса, магазин ${n.robokassa.login}, ` +
+        `режим ${n.robokassa.test ? 'ТЕСТОВЫЙ (деньги не списываются)' : 'боевой'}, ` +
+        `подпись ${n.robokassa.algoritm}`,
+    );
+  } else {
+    zhurnal.vnimanie('оплата не настроена — заказы принимаются, платить в боте негде');
+  }
+  const l: Lavka = { db, n, bot, oplata, nachatOpros: zapomnitOpros(bot) };
   sobrat(l);
 
   // Отметка выпуска. Кладётся выкладкой рядом с кодом; выкладка потом

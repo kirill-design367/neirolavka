@@ -15,6 +15,8 @@ import { zhurnal } from './lib/zhurnal.js';
 import { sozdatPanel, KOREN as KOREN_PANELI } from './admin/index.js';
 import * as promokody from './db/promokody.js';
 import { otkazSlovami } from './lib/promokod.js';
+import { prinyatUvedomlenie } from './oplata/schet.js';
+import { proveritVozvrat } from './oplata/robokassa.js';
 
 /**
  * Сколько ждём обработчик, прежде чем ответить Telegram и доделать
@@ -198,12 +200,33 @@ export function sozdatServer(l: Lavka, vypusk: string, sostoyanie: Sostoyanie): 
       res.writeHead(200, zagolovki).end(JSON.stringify(otvet));
       return;
     }
-    if (adres === '/yookassa') {
-      // Место под уведомления об оплате. Пока поставщик — заглушка,
-      // и разбирать нечего: отвечаем «принято», чтобы никто не копил
-      // очередь повторов, но ничего не делаем.
-      zhurnal.vnimanie('пришло уведомление об оплате, а оплата не подключена');
-      res.writeHead(200).end('ok');
+    /**
+     * РОБОКАССА: уведомление и возврат человека.
+     *
+     * Три пути, и роли у них РАЗНЫЕ — путать их нельзя.
+     *
+     * `/robokassa/result` — сервер Робокассы говорит серверу лавки,
+     * что деньги получены. ТОЛЬКО ЭТОТ ПУТЬ МЕНЯЕТ СОСТОЯНИЕ ЗАКАЗА.
+     * Подпись проверяется паролем № 2, который в браузер не уезжает
+     * никогда.
+     *
+     * `/robokassa/uspeh` и `/robokassa/neudacha` — сюда возвращается
+     * ЧЕЛОВЕК из браузера. Здесь не меняется ничего: страницу можно
+     * открыть руками, а подпись на ней считается паролем № 1, который
+     * человек уже видел в составе ссылки на оплату. Заказ на этих
+     * страницах не оплачивается — он оплачивается уведомлением,
+     * и только им.
+     *
+     * Метод — и GET, и POST: в кабинете Робокассы он выбирается
+     * галочкой, и принимать надо оба, иначе «у нас всё настроено,
+     * а не работает» превращается в вечер поисков.
+     */
+    if (adres.startsWith('/robokassa/')) {
+      void robokassa(l, adres, req, res).catch((e) => {
+        zhurnal.oshibka('робокасса: запрос не обработан:', e);
+        if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+        if (!res.writableEnded) res.end('ошибка');
+      });
       return;
     }
     // Всё остальное — не наше. Ни намёка на то, что здесь бот.
@@ -211,4 +234,151 @@ export function sozdatServer(l: Lavka, vypusk: string, sostoyanie: Sostoyanie): 
   });
 
   return { server, put };
+}
+
+/**
+ * Сколько байт тела принимаем от Робокассы.
+ *
+ * Уведомление — это десяток коротких полей. Мегабайт здесь не бывает,
+ * а копить в память чужой запрос без предела нельзя ни при каких
+ * обстоятельствах: порт хоть и на петле, но за ним nginx, а за nginx
+ * интернет.
+ */
+const PREDEL_TELA_OPLATY = 64 * 1024;
+
+/** Тело запроса как пары. Пустое — это пустое, а не отказ. */
+async function paryIzTela(req: IncomingMessage): Promise<Record<string, string>> {
+  const kuski: Buffer[] = [];
+  let dlina = 0;
+  for await (const k of req) {
+    const b = k as Buffer;
+    dlina += b.length;
+    if (dlina > PREDEL_TELA_OPLATY) throw new Error('слишком большое тело уведомления об оплате');
+    kuski.push(b);
+  }
+  const out: Record<string, string> = {};
+  if (kuski.length === 0) return out;
+  for (const [k, v] of new URLSearchParams(Buffer.concat(kuski).toString('utf8'))) out[k] = v;
+  return out;
+}
+
+/**
+ * Пары запроса: строка запроса ПЛЮС тело.
+ *
+ * Робокасса шлёт и так, и так — метод выбирается галочкой в кабинете.
+ * Собирать оба источника дешевле, чем однажды выяснять, почему
+ * «всё настроено, а уведомления не доходят».
+ */
+async function paryZaprosa(req: IncomingMessage): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of new URL(req.url ?? '/', 'http://bot').searchParams) out[k] = v;
+  if (req.method === 'POST') {
+    for (const [k, v] of Object.entries(await paryIzTela(req))) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Страница для человека, вернувшегося из оплаты.
+ *
+ * Своя, а не на сайте, и это решение: сайт — витрина, он ничего
+ * не обрабатывает и про платежи не знает. Скриптов на странице нет
+ * вовсе — по той же причине, что и в панели.
+ */
+function stranicaVozvrata(zagolovok: string, text: string, botUrl: string): string {
+  const ekr = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return `<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>${ekr(zagolovok)} — Нейролавка</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+         background: #fdfbf9; color: #1a2518;
+         font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: 24px; }
+  main { max-width: 26rem; text-align: center; }
+  h1 { font-size: 1.5rem; margin: 0 0 .75rem; color: #365c30; }
+  p { margin: 0 0 1.25rem; }
+  a { display: inline-block; padding: .7rem 1.25rem; border-radius: .75rem;
+      background: #365c30; color: #fdfbf9; text-decoration: none; font-weight: 600; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0c2223; color: #e8e2da; }
+    h1 { color: #92af8d; }
+    a { background: #92af8d; color: #0c2223; }
+  }
+</style></head>
+<body><main>
+<h1>${ekr(zagolovok)}</h1>
+<p>${ekr(text)}</p>
+<a href="${ekr(botUrl)}">Вернуться в бот</a>
+</main></body></html>`;
+}
+
+/** Обработка трёх путей Робокассы. */
+async function robokassa(
+  l: Lavka,
+  adres: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const botUrl = 'https://t.me/neirolavka_ai_bot';
+  const html = (kod: number, zagolovok: string, text: string) => {
+    res.writeHead(kod, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-robots-tag': 'noindex, nofollow',
+    });
+    res.end(stranicaVozvrata(zagolovok, text, botUrl));
+  };
+
+  if (adres === '/robokassa/result') {
+    const pary = await paryZaprosa(req);
+    const itog = await prinyatUvedomlenie(l, pary);
+    zhurnal.info(`робокасса: уведомление — ${itog.chto}`);
+    res.writeHead(itog.kod, { 'content-type': 'text/plain; charset=utf-8' });
+    res.end(itog.otvet);
+    return;
+  }
+
+  if (adres === '/robokassa/uspeh') {
+    /* НИЧЕГО НЕ МЕНЯЕМ. Эту страницу открывает браузер человека,
+       и подпись на ней считается паролем № 1 — тем, который человек
+       уже видел в ссылке на оплату. Верить ей как доказательству
+       оплаты нельзя; заказ засчитывает уведомление на /result. */
+    const pary = await paryZaprosa(req);
+    const ok = l.n.robokassa.login ? proveritVozvrat(l.n.robokassa, pary) : null;
+    if (!ok) {
+      html(
+        200,
+        'Проверьте заказ в боте',
+        'Мы не смогли подтвердить возврат с платёжной страницы. ' +
+          'Откройте «Мои заказы» — там видно, оплачен ли заказ.',
+      );
+      return;
+    }
+    html(
+      200,
+      'Оплата принята',
+      'Спасибо. Деньги получены, заказ уже у помощника — доступ придёт в бот. ' +
+        'Если бот ещё молчит, дайте ему минуту.',
+    );
+    return;
+  }
+
+  if (adres === '/robokassa/neudacha') {
+    /* Отказ или закрытое окно. Заказ НИКУДА НЕ ДЕЛСЯ: он ждёт оплаты,
+       и кнопка «Оплатить» в боте по-прежнему работает. Сказать об этом
+       здесь важнее, чем извиниться. */
+    html(
+      200,
+      'Оплата не прошла',
+      'Ничего не списано. Заказ на месте — откройте его в боте и нажмите «Оплатить» ещё раз.',
+    );
+    return;
+  }
+
+  res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+  res.end('нет такого');
 }

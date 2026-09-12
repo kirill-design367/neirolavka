@@ -110,8 +110,18 @@ export function svereniyeKoda(): InlineKeyboard {
   return new InlineKeyboard().text('Всё верно', 'kd:da').row().text('Исправить', 'kd:pr');
 }
 
-export function poslePokupki(zakazId: number): InlineKeyboard {
-  return new InlineKeyboard().text('Мои заказы', 'zak').row().text('Заказ целиком', `z:${zakazId}`);
+/**
+ * Кнопка оплаты — ССЫЛКА, а не нажатие.
+ *
+ * Нажатие пришлось бы обрабатывать боту, а он в этот момент может
+ * ждать Telegram; ссылка открывается мгновенно и не зависит от нас
+ * вовсе. Стоит первой и одна в ряду: это единственное, что человеку
+ * сейчас нужно сделать.
+ */
+export function poslePokupki(zakazId: number, oplataUrl?: string | null): InlineKeyboard {
+  const k = new InlineKeyboard();
+  if (oplataUrl) k.url('Оплатить', oplataUrl).row();
+  return k.text('Мои заказы', 'zak').row().text('Заказ целиком', `z:${zakazId}`);
 }
 
 export function moiZakazy(spisok: Zakaz[]): InlineKeyboard {
@@ -120,9 +130,14 @@ export function moiZakazy(spisok: Zakaz[]): InlineKeyboard {
   return k;
 }
 
-export function zakazCheloveka(z: Zakaz, estDostup: boolean): InlineKeyboard {
+export function zakazCheloveka(z: Zakaz, estDostup: boolean, oplataUrl?: string | null): InlineKeyboard {
   const k = new InlineKeyboard();
   if (estDostup) k.text('Показать логин и пароль', `d:${z.id}`).row();
+  /* Оплата ЗДЕСЬ ЖЕ, и это главное в карточке неоплаченного заказа:
+     человек, закрывший окно оплаты, возвращается в бот и должен
+     найти вторую попытку там, где смотрел первый раз. Заново
+     оформлять заказ ради этого он не должен. */
+  if (oplataUrl) k.url('Оплатить', oplataUrl).row();
   k.text('← К заказам', 'zak');
   return k;
 }

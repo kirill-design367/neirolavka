@@ -16,6 +16,7 @@ import { sobrat } from '../src/bot/index.js';
 import { sozdatServer } from '../src/server.js';
 import type { Sostoyanie } from '../src/server.js';
 import { zaglushka } from '../src/oplata/zaglushka.js';
+import { sozdatRobokassu } from '../src/oplata/robokassa.js';
 import type { Lavka } from '../src/lavka.js';
 import { sozdatBota, zapomnitOpros } from '../src/lavka.js';
 import { getCatalog } from '../../src/lib/catalog.js';
@@ -67,6 +68,15 @@ export type Stend = {
   zakryt: () => Promise<void>;
 };
 
+/**
+ * Поднять стенд.
+ *
+ * `dop` уезжает в РАЗБОР НАСТРОЕК, а не мимо него: проверка оплаты
+ * обязана получать поставщика, собранного тем же кодом, что и бой.
+ * Подсунуть готовый объект было бы проще и доказывало бы свойства
+ * подсунутого объекта — тот же довод, по которому бот создаётся
+ * одной функцией `sozdatBota`.
+ */
 export async function stend(dop: Record<string, string> = {}): Promise<Stend> {
   const tg = await podnyat();
   // Настройки читаются ТЕМ ЖЕ разбором, что в бою; проверка может
@@ -84,7 +94,8 @@ export async function stend(dop: Record<string, string> = {}): Promise<Stend> {
   // Тот же конструктор, что в бою: иначе проверка про таймауты
   // доказывала бы свойства стенда, а не боевого бота.
   const bot = sozdatBota(n, tg.adres);
-  const l: Lavka = { db, n, bot, oplata: zaglushka, nachatOpros: zapomnitOpros(bot) };
+  const oplata = n.robokassa.login ? sozdatRobokassu(n.robokassa) : zaglushka;
+  const l: Lavka = { db, n, bot, oplata, nachatOpros: zapomnitOpros(bot) };
   sobrat(l);
   await bot.init();
 

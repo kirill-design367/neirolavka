@@ -298,11 +298,11 @@ if [ ! -f "$BOT_DIR/.env" ]; then
 # Секреты бота. Этот файл НИКОГДА не попадает в репозиторий.
 # Права 600, владелец — пользователь bot.
 #
-# Заполнять по SSH руками:
-#   TELEGRAM_BOT_TOKEN=
-#   TELEGRAM_WEBHOOK_SECRET=
-#   YOOKASSA_SHOP_ID=
-#   YOOKASSA_SECRET_KEY=
+# ЗДЕСЬ НИЧЕГО НЕ ЛЕЖИТ, и это не недоделка. Настоящие секреты бота
+# живут в /etc/neirolavka-bot/okruzhenie под root с правами 600:
+# в эту папку пишет выкладка, и держать токен там, куда дотягивается
+# ключ выкладки, нельзя. Образец имён — deploy/bot/okruzhenie.primer,
+# раскладывает файл scripts/bot-setup.sh.
 EOF
 fi
 chown "$BOT_USER:$BOT_USER" "$BOT_DIR/.env"

@@ -20,6 +20,7 @@ import * as svoi from '../db/svoi.js';
 import * as kody from '../db/kody.js';
 import * as metki from '../db/metki.js';
 import * as promokody from '../db/promokody.js';
+import { vystavitSchet } from '../oplata/schet.js';
 import { metkaIzPayload, razobratPayload } from '../lib/metka.js';
 import { kodPromo, otkazSlovami, skidkaKop, KLYUCH_PROMO } from '../lib/promokod.js';
 import { raspisanie } from '../db/nastroyki.js';
@@ -173,8 +174,12 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     // пока мы не ответили, и второе нажатие человек делает именно
     // из-за этого ожидания.
     await ctx.answerCallbackQuery(itog.novy ? 'Записал' : 'Такой заказ уже есть');
-    if (!itog.novy) return pravit(ctx, t.zakazUzheEst(itog.zakaz), klav.poslePokupki(itog.zakaz.id));
-    await pravit(ctx, soobshchenieOZakaze(l, itog), klav.poslePokupki(itog.zakaz.id));
+    if (!itog.novy) {
+      const povtor = await vystavitSchet(l, itog.zakaz);
+      return pravit(ctx, t.zakazUzheEst(itog.zakaz), klav.poslePokupki(itog.zakaz.id, povtor.adres));
+    }
+    const schet = await vystavitSchet(l, itog.zakaz);
+    await pravit(ctx, sZametkoyOplaty(l, itog, schet), klav.poslePokupki(itog.zakaz.id, schet.adres));
     await soobshchitOZakaze(l, itog.zakaz);
   });
 
@@ -260,7 +265,16 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     // соседний — дело одной попытки.
     if (!z || z.tg_id !== ctx.from.id) return pravit(ctx, 'Такого заказа у вас нет.');
     const est = dostupy.est(l.db, z.id);
-    await pravit(ctx, t.kartochkaZakaza(z, r(), est && z.status === 'vydan'), klav.zakazCheloveka(z, est && z.status === 'vydan'));
+    /* Ссылка на оплату пересобирается при КАЖДОМ открытии карточки,
+       а не хранится в сообщении. Сумма могла измениться (пополнили
+       баланс), а старая ссылка подписана старой суммой и уедет
+       в ошибку 29. Счёт при этом переиспользуется, пока сумма та же. */
+    const schet = await vystavitSchet(l, z);
+    await pravit(
+      ctx,
+      t.kartochkaZakaza(z, r(), est && z.status === 'vydan'),
+      klav.zakazCheloveka(z, est && z.status === 'vydan', schet.adres),
+    );
   });
 
   // Показ доступа. Единственное место, где шифротекст превращается
@@ -365,26 +379,25 @@ export function oformit(l: Lavka, tgId: number, v: Vybor, vid: zakazy.VidAkkaunt
   const { spisano } = zakazy.oplatitSBalansa(l.db, zakaz.id, srok.do);
   const svezhy = zakazy.po(l.db, zakaz.id) ?? zakaz;
 
-  // Место под настоящую оплату остатка. Поставщик сейчас заглушка
-  // и не возвращает ничего; когда появится живой, здесь же появится
-  // счёт — и переписывать поток не придётся.
-  if (svezhy.status === 'zhdet_oplaty') {
-    void l.oplata.vystavit(svezhy).then((schet) => {
-      if (schet.vneshnyId || schet.adres) {
-        // Счёт выставляется на то, что ОСТАЛОСЬ заплатить: цена
-        // за вычетом скидки и уже списанного с баланса.
-        zakazy.zavestiPlatezh(
-          l.db,
-          svezhy.id,
-          l.oplata.imya,
-          schet.vneshnyId,
-          zakazy.kOplate(svezhy) - svezhy.oplacheno_kop,
-        );
-      }
-    });
-  }
-
+  /* Счёт НЕ выставляется здесь. Оформление — синхронное и обязано
+     таким остаться: заказ должен быть записан в базу до того, как
+     что-либо уйдёт по сети. Ссылка на оплату берётся отдельно,
+     `vystavitSchet`, и её отсутствие (Робокасса не настроена, сеть
+     отвалилась) не имеет права помешать заказу состояться. */
   return { zakaz: svezhy, novy, spisano, balans: koshelek.balans(l.db, tgId), promo };
+}
+
+/**
+ * Сообщение о заказе плюс то, что поставщик оплаты просил сказать.
+ *
+ * В бою поставщику сказать нечего — там всё говорит кнопка. А вот
+ * про ТЕСТОВЫЙ режим смолчать нельзя: человек уйдёт на страницу
+ * Робокассы, деньги не спишутся, доступа не будет, и объяснить это
+ * будет некому.
+ */
+export function sZametkoyOplaty(l: Lavka, o: Oformlenie, schet: { adres: string | null; soobshchenie: string }): string {
+  const text = soobshchenieOZakaze(l, o);
+  return schet.adres && schet.soobshchenie ? `${text}\n\n${schet.soobshchenie}` : text;
 }
 
 /** Что показать покупателю сразу после оформления. */
@@ -524,7 +537,8 @@ export async function podtverditAkkaunt(l: Lavka, ctx: Context): Promise<void> {
 
   const itog = oformit(l, tgId, v, 'svoy');
   if (!itog.novy) {
-    await pravit(ctx, t.zakazUzheEst(itog.zakaz), klav.poslePokupki(itog.zakaz.id));
+    const povtor = await vystavitSchet(l, itog.zakaz);
+    await pravit(ctx, t.zakazUzheEst(itog.zakaz), klav.poslePokupki(itog.zakaz.id, povtor.adres));
     return;
   }
   // Данные аккаунта ложатся ПОСЛЕ создания заказа: они привязаны
@@ -535,7 +549,10 @@ export async function podtverditAkkaunt(l: Lavka, ctx: Context): Promise<void> {
   // Экран сверки правится на месте: почта из переписки уходит вместе
   // с ним, а на её месте остаётся ответ.
   await pravit(ctx, t.AKKAUNT_PRINYAT);
-  await ctx.reply(soobshchenieOZakaze(l, itog), { reply_markup: klav.poslePokupki(itog.zakaz.id) });
+  const schet = await vystavitSchet(l, itog.zakaz);
+  await ctx.reply(sZametkoyOplaty(l, itog, schet), {
+    reply_markup: klav.poslePokupki(itog.zakaz.id, schet.adres),
+  });
   await soobshchitOZakaze(l, itog.zakaz);
 }
 
