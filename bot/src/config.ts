@@ -191,8 +191,18 @@ function flag(env: NodeJS.ProcessEnv, imya: string, poumolchaniyu: boolean): boo
  * `IsTest=1` дают ошибку 29 — «неверная подпись», — неотличимую
  * от настоящей ошибки в формуле. Поэтому выбор пароля стоит рядом
  * с выбором режима и делается одним местом: см. `robokassa.ts`.
+ *
+ * У КОНКРЕТНОГО МАГАЗИНА ТЕСТОВОГО РЕЖИМА МОЖЕТ НЕ БЫТЬ ВОВСЕ.
+ * Тестовые пароли заводятся отдельно, в «Технических настройках»
+ * кабинета, и пока их там нет, Робокасса отвечает на тестовый платёж
+ * ошибкой 838 — «параметры тестовых платежей не заполнены». Умолчание
+ * здесь остаётся «тест» (из двух ошибок это та, которая не берёт
+ * чужих денег), а боевой режим включается строкой в окружении.
+ *
+ * Функция ЭКСПОРТИРУЕТСЯ намеренно: проба оплаты читает ровно этот
+ * кусок настроек, не трогая ни токена бота, ни ключа хранилища.
  */
-function robokassa(env: NodeJS.ProcessEnv): NastroykiRobokassy {
+export function robokassa(env: NodeJS.ProcessEnv): NastroykiRobokassy {
   const algoritm = (env['NEIROLAVKA_ROBOKASSA_ALGORITM'] ?? 'md5').trim().toLowerCase();
   if (!(ALGORITMY as string[]).includes(algoritm)) {
     throw new OshibkaNastroyek(
@@ -200,7 +210,7 @@ function robokassa(env: NodeJS.ProcessEnv): NastroykiRobokassy {
         `Можно: ${ALGORITMY.join(', ')}. Значение обязано совпадать с тем, что выбрано в кабинете.`,
     );
   }
-  const chek = (env['NEIROLAVKA_ROBOKASSA_CHEK_V_PODPISI'] ?? 'kodirovanny').trim().toLowerCase();
+  const chek = (env['NEIROLAVKA_ROBOKASSA_CHEK_V_PODPISI'] ?? 'syroy').trim().toLowerCase();
   if (chek !== 'kodirovanny' && chek !== 'syroy') {
     throw new OshibkaNastroyek(
       `NEIROLAVKA_ROBOKASSA_CHEK_V_PODPISI должно быть kodirovanny или syroy, а не «${chek}»`,

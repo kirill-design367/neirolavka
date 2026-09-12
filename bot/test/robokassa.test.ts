@@ -30,6 +30,8 @@ import * as lyudi from '../src/db/lyudi.js';
 import {
   chek,
   podpisSsylki,
+  nomerOshibki,
+  OSHIBKI,
   podpisUvedomleniya,
   podpisVozvrata,
   rubliStrokoy,
@@ -65,7 +67,7 @@ function nastroyki(dop: Partial<NastroykiRobokassy> = {}): NastroykiRobokassy {
     test: true,
     algoritm: 'md5',
     sno: '',
-    chekVPodpisi: 'kodirovanny',
+    chekVPodpisi: 'syroy',
     ...dop,
   };
 }
@@ -148,18 +150,37 @@ test('система налогообложения попадает в чек, 
   assert.equal(c.sno, 'usn_income');
 });
 
-test('ссылка: чек закодирован РОВНО ОДИН раз и совпадает с тем, что в подписи', () => {
-  const n = nastroyki();
+test('ссылка: чек закодирован РОВНО ОДИН раз, а в подпись уходит РАСКОДИРОВАННЫЙ', () => {
+  const n = nastroyki(); // syroy — замерено на живой Робокассе, см. VidChekaVPodpisi
   const url = ssylkaOplaty(n, { zakaz: obrazec(), nomer: 55, summaKop: 125910 });
   const q = new URL(url).searchParams;
   // URL сам раскодирует значение: если бы мы закодировали дважды,
   // здесь оказался бы «%7B…» вместо «{…».
-  assert.ok(q.get('Receipt')!.startsWith('{'), 'чек закодирован дважды');
+  const chekSyroy = q.get('Receipt')!;
+  assert.ok(chekSyroy.startsWith('{'), 'чек закодирован дважды');
   assert.equal(q.get('OutSum'), '1259.10');
   assert.equal(q.get('InvId'), '55');
   assert.equal(q.get('IsTest'), '1', 'в тестовом режиме обязан быть IsTest=1');
-  const chekKod = encodeURIComponent(q.get('Receipt')!);
-  assert.equal(q.get('SignatureValue'), podpisSsylki(n, '1259.10', 55, chekKod));
+  assert.equal(q.get('SignatureValue'), podpisSsylki(n, '1259.10', 55, chekSyroy));
+
+  /* И что два вида чека в подписи ВООБЩЕ различаются. Без этого
+     проверка выше зелена при любом из них — то есть не проверяет
+     ничего. Ровно эта разница стоила захода: на глаз оба дают
+     «ошибку 29», и различить их можно только живым ответом. */
+  assert.notEqual(
+    podpisSsylki(n, '1259.10', 55, encodeURIComponent(chekSyroy)),
+    podpisSsylki(n, '1259.10', 55, chekSyroy),
+  );
+});
+
+test('kodirovanny подписывает закодированный чек, но строку запроса не меняет', () => {
+  const n = nastroyki({ chekVPodpisi: 'kodirovanny' });
+  const url = ssylkaOplaty(n, { zakaz: obrazec(), nomer: 55, summaKop: 125910 });
+  const q = new URL(url).searchParams;
+  // В строке запроса чек тот же и закодирован тот же один раз:
+  // вид влияет ТОЛЬКО на строку подписи.
+  assert.ok(q.get('Receipt')!.startsWith('{'), 'чек закодирован дважды');
+  assert.equal(q.get('SignatureValue'), podpisSsylki(n, '1259.10', 55, encodeURIComponent(q.get('Receipt')!)));
 });
 
 test('боевой режим не ставит IsTest', () => {
@@ -590,4 +611,39 @@ test('поставщик собирается из НАСТРОЕК, а не и�
      и сборка поставщика — те же функции. */
   const p = sozdatRobokassu(nastroyki({ login: '', parol1: '', testParol1: '' }));
   assert.equal(p.rabotaet, false, 'без логина и пароля оплата не работает');
+});
+
+/* ── ответ страницы Робокассы ──────────────────────────────────── */
+
+test('номер ошибки вынимается из страницы, а HTTP при этом 200', () => {
+  const stranica =
+    '<html><body><div class="err">Ошибка: 838. Тестовые параметры не заполнены</div></body></html>';
+  const o = nomerOshibki(stranica);
+  assert.equal(o.nomer, '838');
+  assert.ok(o.tekst.includes('Тестовые параметры'), 'текст ответа обязан сохраниться целиком');
+});
+
+test('трёхзначный номер не обрезается до двух', () => {
+  /* Первая редакция искала \d{1,3} и на 838 сработала по везению:
+     номер мог оказаться и четырёхзначным, а обрезанный номер —
+     это неверное толкование, а не отсутствие толкования. */
+  assert.equal(nomerOshibki('код 29').nomer, '29');
+  assert.equal(nomerOshibki('Error code: 838').nomer, '838');
+  assert.equal(nomerOshibki('ошибка 1024').nomer, '1024');
+});
+
+test('страница без номера — это отсутствие номера, а не выдуманный ноль', () => {
+  assert.equal(nomerOshibki('<html><body>Оплата заказа</body></html>').nomer, null);
+});
+
+test('838 истолковано словами и названо НЕ подписью', () => {
+  /* Главная строчка всего захода: 838 приходит там, где подпись
+     ПРИНЯТА. Пока проба считала её просто «ошибкой», единственное
+     верное сочетание выглядело таким же провалом, как остальные
+     одиннадцать. */
+  const t = OSHIBKI['838']!;
+  assert.ok(t.includes('ПОДПИСЬ ПРИНЯТА'), 'толкование обязано говорить, что подпись прошла');
+  assert.ok(t.includes('Технические настройки'), 'и куда идти чинить');
+  assert.ok(OSHIBKI['29']!.includes('подпись'));
+  assert.ok(OSHIBKI['40']!.includes('счёт'));
 });
