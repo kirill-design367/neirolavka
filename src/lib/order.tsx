@@ -24,6 +24,80 @@ export type PromoSostoyanie =
 /** Адрес проверки. Тот же домен, что и сайт: бот стоит за nginx. */
 const PROVERKA = '/api/promo';
 
+/** Адрес заведения заказа. Тот же бот за тем же nginx. */
+const ZAKAZ = '/api/zakaz';
+
+/**
+ * Где браузер помнит начатую оплату.
+ *
+ * ЭТО ЕДИНСТВЕННОЕ, ЧТО САЙТ ХРАНИТ, и исключение объявлено вслух.
+ * Правило «на сайте не хранится ничего» написано про данные
+ * О ЧЕЛОВЕКЕ — метку канала, промокод, что он смотрел. Здесь другое:
+ * это его собственная квитанция, ссылка на его же оплаченный заказ.
+ *
+ * Без неё человек, закрывший вкладку после оплаты и не нажавший
+ * «забрать в боте», теряет единственную ниточку к своим деньгам:
+ * входа на сайте нет, и опознать его мы не можем ничем. Ниточка
+ * есть и у нас — команда видит такой заказ в панели, — но она
+ * требует живого человека и переписки. Квитанция в браузере
+ * возвращает её самому покупателю.
+ *
+ * Хранится ровно две вещи: номер заказа и готовая ссылка в бот.
+ * Ни выбора, ни цены, ни промокода, ни метки.
+ */
+const KLYUCH_KVITANCII = 'neirolavka:zakaz';
+
+export type Kvitanciya = { nomer: number; vBot: string };
+
+function prochitatKvitanciyu(): Kvitanciya | null {
+  try {
+    const syroe = window.localStorage.getItem(KLYUCH_KVITANCII);
+    if (!syroe) return null;
+    const d = JSON.parse(syroe) as Partial<Kvitanciya>;
+    return typeof d.nomer === 'number' && typeof d.vBot === 'string' && d.vBot
+      ? { nomer: d.nomer, vBot: d.vBot }
+      : null;
+  } catch {
+    // Приватное окно, запрещённые данные сайта, мусор в хранилище —
+    // всё это не поломка: квитанции просто нет.
+    return null;
+  }
+}
+
+function zapisatKvitanciyu(k: Kvitanciya | null): void {
+  try {
+    if (k) window.localStorage.setItem(KLYUCH_KVITANCII, JSON.stringify(k));
+    else window.localStorage.removeItem(KLYUCH_KVITANCII);
+  } catch {
+    /* Не записалось — не беда: ссылку человек получит на странице
+       возврата из Робокассы, а заказ в любом случае виден команде. */
+  }
+}
+
+/**
+ * Ключ ОДНОГО нажатия.
+ *
+ * Сайт придумывает его сам и держит, пока не изменился выбор.
+ * Второе нажатие с тем же ключом возвращает ТОТ ЖЕ заказ — иначе
+ * человек, нажавший «Оплатить» дважды, получил бы два заказа
+ * и потратил бы две активации промокода. Разнимает их база, а ключ
+ * даёт ей, по чему разнимать.
+ */
+function novyKlyuchNazhatiya(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  // Древний браузер без randomUUID: годится что угодно, лишь бы
+  // не повторялось у одного человека за одну сессию.
+  return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Что сейчас с оплатой. */
+export type OplataSostoyanie =
+  | { vid: 'net' }
+  /** Заводим заказ и ждём адрес Робокассы. Кнопка в это время занята. */
+  | { vid: 'idem' }
+  | { vid: 'otkaz'; soobshchenie: string };
+
 type OrderState = {
   /** Выбранный продукт на витрине. null — не выбран ни один. */
   openProductId: string | null;
@@ -57,6 +131,18 @@ type OrderState = {
   skidka: number;
   /** Сколько остаётся заплатить: цена минус скидка. */
   kOplate: number;
+  /** Что сейчас с оплатой: ничего, идём заводить заказ, отказ. */
+  oplata: OplataSostoyanie;
+  /**
+   * Начатая оплата, о которой помнит браузер. Нужна человеку,
+   * закрывшему вкладку: без неё ссылка на свой оплаченный заказ
+   * теряется навсегда.
+   */
+  kvitanciya: Kvitanciya | null;
+  /** Завести заказ и уйти на страницу оплаты. */
+  oplatit: () => void;
+  /** Убрать квитанцию: заказ забран или человек не хочет её видеть. */
+  zabytKvitanciyu: () => void;
   /** Проверить введённый код. Пусто — просто снять применённый. */
   primenitPromo: (syroe: string) => void;
   ubratPromo: () => void;
@@ -118,6 +204,29 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
    * читается отказом, хотя человек ещё печатает.
    */
   const [promo, setPromo] = useState<PromoSostoyanie>({ vid: 'net' });
+
+  /**
+   * Оплата и квитанция.
+   *
+   * Квитанция читается В ЭФФЕКТЕ, а не при первой отрисовке: сборка
+   * статическая, и на сервере `window` не существует вовсе. Тот же
+   * приём, что у метки канала.
+   */
+  const [oplata, setOplata] = useState<OplataSostoyanie>({ vid: 'net' });
+  const [kvitanciya, setKvitanciya] = useState<Kvitanciya | null>(null);
+  useEffect(() => {
+    setKvitanciya(prochitatKvitanciyu());
+  }, []);
+
+  /* Ключ нажатия живёт, пока не изменился ВЫБОР. Два нажатия подряд
+     по одной и той же подписке — это одно нажатие; сменил человек
+     уровень или код — это уже другой заказ. */
+  const popytka = useRef<{ podpis: string; id: string }>({ podpis: '', id: '' });
+
+  const zabytKvitanciyu = useCallback(() => {
+    zapisatKvitanciyu(null);
+    setKvitanciya(null);
+  }, []);
   /* Номер запроса: ответ на позапрошлый код не должен перебивать
      ответ на нынешний. Сеть ответы не упорядочивает. */
   const zapros = useRef(0);
@@ -257,6 +366,80 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       if (start) botHref = `${catalog.botUrl}?start=${start}`;
     }
 
+    /**
+     * ОПЛАТА НА САЙТЕ.
+     *
+     * Сайт не заводит заказ сам и не хранит ничего о покупке: он
+     * отдаёт выбор боту, получает адрес Робокассы и уводит туда
+     * браузер. Всё, что дальше, — заказ, активация промокода, счёт,
+     * подпись — по-прежнему живёт в боте, то есть правило «сайт
+     * ничего не обрабатывает» цело.
+     *
+     * КВИТАНЦИЯ ПИШЕТСЯ ДО УХОДА НА ОПЛАТУ, а не после. После —
+     * не получится: со страницы Робокассы человек к нам не вернётся,
+     * а вернётся на страницу бота. И это правильнее по смыслу: заказ
+     * уже заведён и уже виден команде, независимо от того, дойдут ли
+     * деньги.
+     */
+    const oplatit = () => {
+      if (!selection || !payment || !priceKnown || oplata.vid === 'idem') return;
+      const tovar = selection.plan?.id ?? selection.product.id;
+      const kod = promo.vid === 'godit' || promo.vid === 'ne_proverili' ? promo.kod : '';
+      const podpis = `${tovar}|${kod}`;
+      if (popytka.current.podpis !== podpis) {
+        popytka.current = { podpis, id: novyKlyuchNazhatiya() };
+      }
+      setOplata({ vid: 'idem' });
+      const telo = new URLSearchParams({
+        tovar,
+        oplata: payment.id,
+        promo: kod,
+        metka,
+        popytka: popytka.current.id,
+      });
+      fetch(ZAKAZ, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: telo.toString(),
+      })
+        .then((r) => r.json())
+        .then((d: { vyshlo?: boolean; adres?: string; nomer?: number; vBot?: string; soobshchenie?: string }) => {
+          if (!d.vyshlo || !d.adres) {
+            setOplata({
+              vid: 'otkaz',
+              soobshchenie: d.soobshchenie || 'Не получилось завести заказ. Попробуйте ещё раз.',
+            });
+            return;
+          }
+          if (typeof d.nomer === 'number' && d.vBot) {
+            const k = { nomer: d.nomer, vBot: d.vBot };
+            zapisatKvitanciyu(k);
+            setKvitanciya(k);
+          }
+          window.location.href = d.adres;
+          /* КНОПКУ НАДО ОТПУСТИТЬ, хотя страница уже уходит.
+             Браузер сохраняет её в кеше «назад-вперёд» как есть,
+             и человек, нажавший «Назад» со страницы Робокассы (это
+             делают постоянно: передумал, не тот способ, не пришла
+             смска), вернулся бы на страницу с кнопкой «Уводим
+             на оплату…», которая больше не нажимается никогда.
+
+             Второе нажатие от этого не опасно: ключ нажатия тот же,
+             и бот вернёт ТОТ ЖЕ заказ, а не заведёт второй. */
+          setOplata({ vid: 'net' });
+        })
+        .catch(() => {
+          /* НЕ ДОЗВОНИЛИСЬ — это не «оплата сломана». Заказ мог
+             и завестись: ответ потерялся, а запрос дошёл. Поэтому
+             ключ нажатия НЕ сбрасывается — повторное нажатие вернёт
+             тот же заказ, а не заведёт второй. */
+          setOplata({
+            vid: 'otkaz',
+            soobshchenie: 'Не дозвонились до лавки. Проверьте связь и нажмите ещё раз.',
+          });
+        });
+    };
+
     return {
       openProductId,
       planId,
@@ -271,6 +454,10 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       promo,
       skidka,
       kOplate,
+      oplata,
+      kvitanciya,
+      oplatit,
+      zabytKvitanciyu,
       primenitPromo,
       ubratPromo,
       chooseProduct,
@@ -278,7 +465,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       choosePayment,
       reset,
     };
-  }, [catalog.botUrl, catalog.botStartPayload, catalog.payments, openProductId, paymentId, planId, tronul, chooseProduct, choosePlan, choosePayment, reset, metka, promo, primenitPromo, ubratPromo]);
+  }, [catalog.botUrl, catalog.botStartPayload, catalog.payments, openProductId, paymentId, planId, tronul, chooseProduct, choosePlan, choosePayment, reset, metka, promo, primenitPromo, ubratPromo, oplata, kvitanciya, zabytKvitanciyu]);
 
   return <OrderContext.Provider value={value}>{children}</OrderContext.Provider>;
 }

@@ -17,4 +17,5 @@ export {
   razobratPayload,
   PREDEL_KODA,
   KLYUCH_METKI,
+  KLYUCH_ZAKAZA,
 } from '../../../src/lib/metka.js';

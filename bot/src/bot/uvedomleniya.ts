@@ -19,7 +19,15 @@ import * as lyudi from '../db/lyudi.js';
 import { zhurnal } from '../lib/zhurnal.js';
 
 /** Почему не дошло. Разные причины лечатся по-разному. */
-export type Pochemu = 'ne_zapuskal' | 'zablokiroval' | 'inoe';
+/**
+ * Почему сообщение не дошло.
+ *
+ * `nekomu` — не отказ Telegram, а состояние заказа: он ничей.
+ * Отдельным значением, а не «inoe», потому что лечится иначе:
+ * настоящую поломку чинят, заблокировавшего бота не трогают,
+ * а ничейный заказ ждёт, пока покупатель откроет свою ссылку.
+ */
+export type Pochemu = 'nekomu' | 'ne_zapuskal' | 'zablokiroval' | 'inoe';
 
 export type Itog = { doshlo: true } | { doshlo: false; pochemu: Pochemu };
 
@@ -40,8 +48,10 @@ export function pochemuNeDoshlo(e: unknown): Pochemu {
   return 'inoe';
 }
 
-export function pochemuSlovami(p: Pochemu, tgId: number): string {
+export function pochemuSlovami(p: Pochemu, tgId: number | null): string {
   switch (p) {
+    case 'nekomu':
+      return 'заказ ничей: оплачен на сайте и ещё не забран в боте';
     case 'ne_zapuskal':
       return `${tgId} ни разу не запускал бота — пусть откроет его и нажмёт «Начать»`;
     case 'zablokiroval':
@@ -51,12 +61,26 @@ export function pochemuSlovami(p: Pochemu, tgId: number): string {
   }
 }
 
+/**
+ * Сказать покупателю.
+ *
+ * `tgId` МОЖЕТ БЫТЬ ПУСТ, и это не оплошность вызывающего: заказ,
+ * оплаченный на сайте и ещё не забранный в боте, — ничей, и адресата
+ * у него нет вовсе. Telegram не знает, кому писать, и узнать неоткуда:
+ * входа на сайте нет. Единственный честный ответ — «не дошло, потому
+ * что некому», и он должен быть ЗНАЧЕНИЕМ, а не исключением: путь
+ * покупателя не имеет права падать из-за служебного сообщения.
+ *
+ * Такой заказ при этом не теряется: его видит команда в панели
+ * отдельной группой «ждут покупателя с сайта».
+ */
 export async function cheloveku(
   l: Lavka,
-  tgId: number,
+  tgId: number | null,
   text: string,
   klaviatura?: InlineKeyboard,
 ): Promise<Itog> {
+  if (tgId === null) return { doshlo: false, pochemu: 'nekomu' };
   try {
     await l.bot.api.sendMessage(tgId, text, klaviatura ? { reply_markup: klaviatura } : {});
     return { doshlo: true };

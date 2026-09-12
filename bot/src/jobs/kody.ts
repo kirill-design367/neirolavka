@@ -37,14 +37,18 @@ export async function proverit(l: Lavka, seychas = new Date()): Promise<number> 
 
     // Разговор о коде больше не идёт: иначе следующее сообщение
     // человека уйдёт кодом в отменённый заказ.
-    dialogi.zabyt(l.db, z.tg_id);
-
+    //
+    // Ничейный заказ сюда не доходит — часа на код у него не бывает,
+    // пока его не забрали, — но и разговора, и адресата у него нет.
     const svezhy = zakazy.po(l.db, z.id) ?? z;
-    await uvedom.cheloveku(
-      l,
-      z.tg_id,
-      t.zakazOtmenen(svezhy, 'net_koda', itog.vernuli, koshelek.balans(l.db, z.tg_id)),
-    );
+    if (z.tg_id !== null) {
+      dialogi.zabyt(l.db, z.tg_id);
+      await uvedom.cheloveku(
+        l,
+        z.tg_id,
+        t.zakazOtmenen(svezhy, 'net_koda', itog.vernuli, koshelek.balans(l.db, z.tg_id)),
+      );
+    }
     const c = lyudi.chelovek(l.db, z.tg_id);
     await uvedom.komande(
       l,

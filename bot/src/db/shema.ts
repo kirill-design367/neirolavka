@@ -501,4 +501,164 @@ ALTER TABLE zakazy ADD COLUMN skidka_kop INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE lyudi ADD COLUMN promo TEXT;
 `,
   },
+
+  {
+    /*
+     * ОПЛАТА НА САЙТЕ: заказ, у которого ПОКА НЕТ ХОЗЯИНА.
+     *
+     * До сих пор заказ и человек были неразделимы: `tg_id NOT NULL`,
+     * потому что заказ рождался в боте, а в боте человек известен
+     * всегда. Оплата на сайте это разрывает — деньги приходят раньше,
+     * чем мы узнаём, кто платил: входа на сайте нет и не будет.
+     *
+     * Отсюда все четыре правки, и каждая закрывает своё.
+     *
+     * `tg_id` СТАНОВИТСЯ NULL-ЕВЫМ. Соблазн поставить вместо него
+     * ноль или «ничейного» человека велик и ошибочен: у заказов есть
+     * уникальный индекс `zakazy_odin_otkrytyy` по паре
+     * (`tg_id`, `plan_id`), и с общей заглушкой ВТОРОЙ человек,
+     * покупающий с сайта тот же уровень, не смог бы оплатить вовсе.
+     * У NULL в уникальном индексе SQLite другое поведение: пустые
+     * значения считаются различными, и ничейных заказов на один
+     * уровень бывает сколько угодно. Это ровно то, что нужно.
+     *
+     * `klyuch` — СЕКРЕТ, ПО КОТОРОМУ ЗАКАЗ ЗАБИРАЮТ. Он уезжает
+     * человеку ссылкой `t.me/…?start=zakaz_<klyuch>` и только ему:
+     * по номеру заказа забрать чужой заказ было бы можно перебором,
+     * по 128-битному ключу — нет.
+     *
+     * `popytka` — ЧТО ЧЕЛОВЕК НАЖАЛ ОДИН РАЗ, А НЕ ДВА. Её
+     * придумывает сайт и шлёт с запросом; уникальный индекс делает
+     * повторное нажатие тем же заказом. Без него двойное нажатие
+     * давало бы два заказа и, что хуже, ДВЕ потраченные активации
+     * промокода. Тот же закон, что у `zakazy_odin_otkrytyy`: гонку
+     * двух нажатий разнимает база, а не проверка в коде.
+     *
+     * `vid_akkaunta` ПОЛУЧАЕТ ТРЕТЬЕ ЗНАЧЕНИЕ. На сайте человека
+     * не спрашивают, новый у него аккаунт или свой: сайт — это выбор
+     * и деньги, а всё, что нужно для выдачи, спрашивает бот. Значит
+     * между оплатой и приходом в бот заказ живёт в состоянии «ещё
+     * не выбрано», и называть это состояние «новым аккаунтом»
+     * по умолчанию нельзя — помощник взял бы в работу заказ, у
+     * которого на самом деле чужой аккаунт и впереди ввод пароля.
+     *
+     * Пересборка — единственный способ снять NOT NULL и поменять
+     * CHECK, и идёт она с погашенными внешними ключами: у заказов
+     * есть дети с ON DELETE CASCADE, и `DROP TABLE` при включённых
+     * ключах унёс бы историю, доступы и платежи молча.
+     */
+    imya: '007-oplata-na-sayte',
+    bezVneshnihKlyuchey: true,
+    sql: `
+CREATE TABLE zakazy_novye (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- ПУСТО значит «заказ ничей»: оплачен на сайте, но ещё не забран
+  -- в боте. Ссылка на lyudi остаётся — просто она теперь необязательна.
+  tg_id          INTEGER REFERENCES lyudi(tg_id),
+  -- Откуда пришёл заказ. Нужен не для статистики (её видно по tg_id),
+  -- а для того, чтобы очередь панели могла честно сказать, чего ждёт
+  -- заказ: покупателя с сайта или денег от того, кто уже в боте.
+  istochnik      TEXT    NOT NULL DEFAULT 'bot' CHECK (istochnik IN ('bot','sayt')),
+  -- Секрет, по которому заказ забирают в боте. Только у заказов с сайта.
+  klyuch         TEXT    UNIQUE,
+  -- Ключ ОДНОГО нажатия на сайте: второй запрос с тем же значением
+  -- возвращает тот же заказ, а не заводит второй.
+  popytka        TEXT    UNIQUE,
+  -- Метка рекламного канала, с которой человек пришёл НА САЙТ.
+  -- Живёт на заказе, а не в payload ссылки: payload обрезается
+  -- до 64 знаков, и метка там соревновалась бы за место с секретным
+  -- ключом. Переезжает человеку в lyudi.metka, когда заказ
+  -- забирают, — и по прежнему правилу «первое касание выигрывает».
+  -- Без неё весь трафик, покупающий на сайте, стал бы «без метки».
+  metka          TEXT,
+  produkt_id     TEXT    NOT NULL,
+  plan_id        TEXT    NOT NULL,
+  nazvanie       TEXT    NOT NULL,
+  cena_kop       INTEGER NOT NULL,
+  mesyacev       INTEGER NOT NULL,
+  status         TEXT    NOT NULL
+                 CHECK (status IN ('zhdet_oplaty','oplachen','v_rabote',
+                                   'zhdem_kod','kod_poluchen','vydan','otmenen')),
+  -- 'ne_vybran' — заказ пришёл с сайта, и вид аккаунта ещё не спрашивали.
+  vid_akkaunta   TEXT    NOT NULL DEFAULT 'novy'
+                 CHECK (vid_akkaunta IN ('novy','svoy','ne_vybran')),
+  oplacheno_kop  INTEGER NOT NULL DEFAULT 0,
+  s_balansa_kop  INTEGER NOT NULL DEFAULT 0,
+  promo_kod      TEXT,
+  skidka_kop     INTEGER NOT NULL DEFAULT 0,
+  kod_zapros_v   TEXT,
+  kod_poluchen_v TEXT,
+  pismo_v        TEXT,
+  prichina_otmeny TEXT,
+  sozdan         TEXT    NOT NULL,
+  oplachen       TEXT,
+  vzyat          TEXT,
+  ispolnitel     INTEGER,
+  vydan          TEXT,
+  otmenen        TEXT,
+  srok_do        TEXT,
+  dostup_do      TEXT,
+  napominany_raz INTEGER NOT NULL DEFAULT 0,
+  napominanie_v  TEXT
+);
+
+INSERT INTO zakazy_novye (
+  id, tg_id, produkt_id, plan_id, nazvanie, cena_kop, mesyacev, status,
+  vid_akkaunta, oplacheno_kop, s_balansa_kop, promo_kod, skidka_kop,
+  kod_zapros_v, kod_poluchen_v, pismo_v, prichina_otmeny,
+  sozdan, oplachen, vzyat, ispolnitel, vydan, otmenen, srok_do, dostup_do,
+  napominany_raz, napominanie_v
+)
+SELECT
+  id, tg_id, produkt_id, plan_id, nazvanie, cena_kop, mesyacev, status,
+  vid_akkaunta, oplacheno_kop, s_balansa_kop, promo_kod, skidka_kop,
+  kod_zapros_v, kod_poluchen_v, pismo_v, prichina_otmeny,
+  sozdan, oplachen, vzyat, ispolnitel, vydan, otmenen, srok_do, dostup_do,
+  napominany_raz, napominanie_v
+FROM zakazy;
+
+DROP TABLE zakazy;
+ALTER TABLE zakazy_novye RENAME TO zakazy;
+
+CREATE INDEX zakazy_po_cheloveku ON zakazy(tg_id, id DESC);
+CREATE INDEX zakazy_po_statusu   ON zakazy(status, id);
+
+-- Тот же индекс, что был. С пустым tg_id он не мешает: NULL
+-- в уникальном индексе SQLite считается отличным от любого другого
+-- NULL, то есть ничейных заказов на один уровень бывает много.
+CREATE UNIQUE INDEX zakazy_odin_otkrytyy
+  ON zakazy(tg_id, plan_id)
+  WHERE status IN ('zhdet_oplaty','oplachen','v_rabote','zhdem_kod','kod_poluchen');
+
+-- Ничейные оплаченные заказы — то, что панель обязана показывать
+-- отдельно: деньги пришли, а человек до бота не дошёл.
+CREATE INDEX zakazy_nichi ON zakazy(status, id) WHERE tg_id IS NULL;
+
+-- У АКТИВАЦИИ ПРОМОКОДА ТОЖЕ МОЖЕТ НЕ БЫТЬ ЧЕЛОВЕКА. Она заводится
+-- одной транзакцией с заказом, а заказ с сайта ничей. Колонка
+-- заполняется, когда заказ забирают: «кем применялся» — это история,
+-- и терять её нельзя, но до прихода человека ответа просто нет.
+CREATE TABLE promo_aktivacii_novye (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  kod        TEXT    NOT NULL REFERENCES promokody(kod),
+  mesto      INTEGER NOT NULL,
+  zakaz_id   INTEGER NOT NULL REFERENCES zakazy(id) ON DELETE CASCADE,
+  tg_id      INTEGER,
+  skidka_kop INTEGER NOT NULL,
+  kogda      TEXT    NOT NULL,
+  snyata_v   TEXT
+);
+
+INSERT INTO promo_aktivacii_novye (id, kod, mesto, zakaz_id, tg_id, skidka_kop, kogda, snyata_v)
+SELECT id, kod, mesto, zakaz_id, tg_id, skidka_kop, kogda, snyata_v FROM promo_aktivacii;
+
+DROP TABLE promo_aktivacii;
+ALTER TABLE promo_aktivacii_novye RENAME TO promo_aktivacii;
+
+CREATE UNIQUE INDEX promo_mesto_zanyato
+  ON promo_aktivacii(kod, mesto) WHERE snyata_v IS NULL;
+CREATE INDEX promo_po_kodu   ON promo_aktivacii(kod, id);
+CREATE INDEX promo_po_zakazu ON promo_aktivacii(zakaz_id);
+`,
+  },
 ];

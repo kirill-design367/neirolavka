@@ -88,6 +88,22 @@ export function vyborAkkaunta(vyborId: string): InlineKeyboard {
  * Префикс `sv:` не сталкивается с `svoy:` — после `sv` там идёт `o`,
  * а не двоеточие, и регулярки разбирают их однозначно.
  */
+/**
+ * Вид аккаунта у заказа, КОТОРЫЙ УЖЕ ЕСТЬ.
+ *
+ * Отдельная пара кнопок, а не та же самая, потому что за ними стоит
+ * разное действие. У `nov:`/`svoy:` в данных лежит выбранный товар,
+ * и заказ ещё предстоит создать; здесь — номер уже оплаченного
+ * заказа с сайта, и создавать нечего. Свести их в одну пару значило
+ * бы разбирать «это id товара или номер заказа» по виду строки.
+ */
+export function vidAkkauntaZakaza(zakazId: number): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('Новый аккаунт', `zn:${zakazId}`)
+    .row()
+    .text('У меня уже есть аккаунт', `zs:${zakazId}`);
+}
+
 export function svereniyeAkkaunta(): InlineKeyboard {
   return new InlineKeyboard().text('Всё верно', 'sv:da').row().text('Исправить', 'sv:pr');
 }

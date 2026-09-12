@@ -273,11 +273,14 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     await ctx.answerCallbackQuery(itog.vernuli > 0 ? 'Отменил, деньги на балансе' : 'Отменил');
     const z = zakazy.po(l.db, id);
     if (!z) return;
-    await uvedom.cheloveku(
-      l,
-      z.tg_id,
-      t.zakazOtmenen(z, prichina, itog.vernuli, koshelek.balans(l.db, z.tg_id)),
-    );
+    // Ничейному заказу сказать некому: покупатель ещё не пришёл в бот.
+    if (z.tg_id !== null) {
+      await uvedom.cheloveku(
+        l,
+        z.tg_id,
+        t.zakazOtmenen(z, prichina, itog.vernuli, koshelek.balans(l.db, z.tg_id)),
+      );
+    }
     await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z), komanda.vladelec(l.db, ctx.from?.id ?? 0)));
   };
 
@@ -317,6 +320,14 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     if (!z) return void (await ctx.answerCallbackQuery('Заказа нет'));
     if (z.vid_akkaunta !== 'svoy') {
       return void (await ctx.answerCallbackQuery('У этого заказа новый аккаунт — код не нужен'));
+    }
+    /* Ничейный заказ сюда не доходит: `svoy` ставится только
+       забранному. Проверка стоит не «на всякий случай», а затем,
+       чтобы это утверждение было ПРОВЕРЯЕМЫМ: сломай его кто-нибудь
+       завтра — здесь будет честный отказ, а не разговор о коде,
+       заведённый неизвестно кому. */
+    if (z.tg_id === null) {
+      return void (await ctx.answerCallbackQuery('Заказ ещё не забран покупателем — спрашивать код некого'));
     }
     const drugoy = zakazy.zhdutKodaOt(l.db, z.tg_id).find((x) => x.id !== z.id);
     if (drugoy) {

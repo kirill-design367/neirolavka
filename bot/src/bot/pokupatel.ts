@@ -21,7 +21,7 @@ import * as kody from '../db/kody.js';
 import * as metki from '../db/metki.js';
 import * as promokody from '../db/promokody.js';
 import { vystavitSchet } from '../oplata/schet.js';
-import { metkaIzPayload, razobratPayload } from '../lib/metka.js';
+import { metkaIzPayload, razobratPayload, KLYUCH_ZAKAZA } from '../lib/metka.js';
 import { kodPromo, otkazSlovami, skidkaKop, KLYUCH_PROMO } from '../lib/promokod.js';
 import { raspisanie } from '../db/nastroyki.js';
 import { rol } from '../db/komanda.js';
@@ -79,8 +79,58 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
         zhurnal.vnimanie('метку или промокод из ссылки записать не вышло:', e);
       }
     }
+    /* ЗАКАЗ С САЙТА ЗАБИРАЕТСЯ ПЕРВЫМ ДЕЛОМ и отменяет витрину.
+       Человек уже заплатил и пришёл по своей ссылке за конкретным
+       заказом; показывать ему список товаров значило бы предложить
+       купить второй раз то, за что он только что отдал деньги. */
+    const klyuchZakaza = razobratPayload(typeof ctx.match === 'string' ? ctx.match : '')[KLYUCH_ZAKAZA];
+    if (klyuchZakaza && ctx.from) {
+      await zabratSSayta(l, ctx, klyuchZakaza);
+      return;
+    }
     await ctx.reply(t.privetstvie(imya, r()), { reply_markup: klav.nizhnyaya(rol(l.db, ctx.from?.id ?? 0)) });
     await ctx.reply(t.VYBOR_TOVARA, { reply_markup: klav.tovary(tovary(l.db)) });
+  });
+
+  /* Вид аккаунта у ОПЛАЧЕННОГО заказа с сайта. Кнопки живут
+     в переписке вечно, поэтому обе ветки сначала спрашивают базу:
+     «поставить вид можно только один раз» — это `postavitVidAkkaunta`
+     со своим условием в UPDATE, а не проверка здесь. */
+  bot.callbackQuery(/^zn:(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const id = Number(ctx.match![1]);
+    const z = zakazy.po(l.db, id);
+    if (!z || z.tg_id !== ctx.from.id) return pravit(ctx, t.SVERKA_USTARELA, klav.tovary(tovary(l.db)));
+    if (!zakazy.postavitVidAkkaunta(l.db, id, 'novy')) {
+      const svezhy = zakazy.po(l.db, id) ?? z;
+      return pravit(ctx, t.vidAkkauntaUzheVybran(svezhy), klav.poslePokupki(id, null));
+    }
+    zakazy.sobytie(l.db, id, 'покупатель выбрал новый аккаунт', ctx.from.id);
+    const svezhy = zakazy.po(l.db, id) ?? z;
+    await pravit(
+      ctx,
+      t.vidAkkauntaPrinyat(svezhy, srokVydachi(new Date(), r()), r()),
+      klav.poslePokupki(id, null),
+    );
+    await soobshchitOZakaze(l, svezhy);
+  });
+
+  bot.callbackQuery(/^zs:(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const id = Number(ctx.match![1]);
+    const z = zakazy.po(l.db, id);
+    if (!z || z.tg_id !== ctx.from.id || z.vid_akkaunta !== 'ne_vybran') {
+      const svezhy = z && z.tg_id === ctx.from.id ? z : null;
+      return svezhy
+        ? pravit(ctx, t.vidAkkauntaUzheVybran(svezhy), klav.poslePokupki(svezhy.id, null))
+        : pravit(ctx, t.SVERKA_USTARELA, klav.tovary(tovary(l.db)));
+    }
+    /* Вид аккаунта ставится НЕ ЗДЕСЬ, а после сверки введённого.
+       Поставь его сейчас — и человек, бросивший ввод на середине,
+       оставил бы заказ со «своим аккаунтом» и без единого данного:
+       помощник взял бы его в работу и упёрся в пустоту. */
+    dialogi.postavit(l.db, ctx.from.id, 'zhdem_pochtu', id, { zakaz: String(id) }, l.n.klyuchDostupov);
+    await pravit(ctx, t.PROSIM_POCHTU);
   });
 
   bot.command('pomoshch', async (ctx) => {
@@ -348,6 +398,66 @@ export type Oformlenie = {
   promo: zakazy.ItogPromoZakaza;
 };
 
+/**
+ * Забрать заказ, оплаченный на сайте.
+ *
+ * ЕДИНСТВЕННОЕ МЕСТО, ГДЕ ОПЛАТА СВЯЗЫВАЕТСЯ С ЧЕЛОВЕКОМ. До этого
+ * мгновения заказ ничей: деньги пришли, а кто платил — неизвестно,
+ * потому что на сайте нет входа и быть не должно.
+ *
+ * Кто забрал — решает БАЗА, а не проверка здесь: `zabrat` ставит
+ * хозяина одним UPDATE с условием «пока ничей». Ссылку могли
+ * переслать, два человека могли открыть её одновременно, — и между
+ * «прочитали, что заказ ничей» и «записали хозяина» помещается
+ * второй. Ноль изменённых строк значит ровно «опоздали».
+ *
+ * Метка канала переезжает человеку ЗДЕСЬ. Иначе весь трафик,
+ * который платит на сайте, оказался бы в статистике «без метки»:
+ * на сайте человека нет, писать метку некому, и единственный момент,
+ * когда обе половины известны, — этот.
+ */
+async function zabratSSayta(l: Lavka, ctx: Context, klyuch: string): Promise<void> {
+  const tgId = ctx.from!.id;
+  const est = zakazy.poKlyuchu(l.db, klyuch);
+  if (!est) {
+    await ctx.reply(t.ZAKAZ_NE_NAYDEN, { reply_markup: klav.nizhnyaya(rol(l.db, tgId)) });
+    return;
+  }
+  if (est.tg_id !== null && est.tg_id !== tgId) {
+    await ctx.reply(t.ZAKAZ_UZHE_ZABRALI, { reply_markup: klav.nizhnyaya(rol(l.db, tgId)) });
+    return;
+  }
+
+  const vzyali = est.tg_id === null && zakazy.zabrat(l.db, klyuch, tgId);
+  if (est.tg_id === null && !vzyali) {
+    // Кто-то забрал между чтением и записью. Подробностей не выдаём.
+    await ctx.reply(t.ZAKAZ_UZHE_ZABRALI, { reply_markup: klav.nizhnyaya(rol(l.db, tgId)) });
+    return;
+  }
+  if (vzyali) {
+    try {
+      if (est.metka) metki.zapisatCheloveku(l.db, tgId, est.metka);
+    } catch (e) {
+      // Метка — наше служебное дело. Сорвать из-за неё получение
+      // оплаченного заказа нельзя.
+      zhurnal.vnimanie('метку с заказа записать не вышло:', e);
+    }
+    void uvedom
+      .komande(l, `Заказ № ${est.id} забран покупателем: ${lyudi.podpis(lyudi.chelovek(l.db, tgId), tgId)}.`)
+      .catch(() => undefined);
+  }
+
+  const z = zakazy.po(l.db, est.id) ?? est;
+  await ctx.reply(t.privetstvie(ctx.from?.first_name ?? '', raspisanie(l.db, l.n)), {
+    reply_markup: klav.nizhnyaya(rol(l.db, tgId)),
+  });
+  if (z.vid_akkaunta === 'ne_vybran') {
+    await ctx.reply(t.zakazZabran(z), { reply_markup: klav.vidAkkauntaZakaza(z.id) });
+    return;
+  }
+  await ctx.reply(t.zakazUzheVash(z), { reply_markup: klav.poslePokupki(z.id, null) });
+}
+
 export function oformit(l: Lavka, tgId: number, v: Vybor, vid: zakazy.VidAkkaunta): Oformlenie {
   const { zakaz, novy, promo } = zakazy.sozdatIliVernut(l.db, {
     tgId,
@@ -454,26 +564,55 @@ export function promoDlyaPokaza(
  * и почта, и пароль, идём на сверку; чего нет — то и спрашиваем.
  * Второго расписания шагов не появилось.
  */
+/**
+ * О ЧЁМ ЭТОТ РАЗГОВОР: о товаре с витрины или об уже оплаченном
+ * заказе с сайта.
+ *
+ * Два входа в один и тот же ввод логина и пароля. В первом случае
+ * заказа ещё нет и он появится после сверки; во втором заказ уже
+ * есть и оплачен, а не хватает только вида аккаунта и данных.
+ * Различать их надо ОДНИМ местом: два похожих разговора разъехались
+ * бы на первой же правке текста.
+ *
+ * `null` значит «предмет пропал»: товар сняли с витрины, заказ отдали
+ * другому аккаунту или вид аккаунта уже выбран. Продолжать ввод
+ * в этом случае нельзя — данные легли бы в никуда.
+ */
+type Predmet =
+  | { vid: 'vybor'; nazvanie: string; v: Vybor }
+  | { vid: 'zakaz'; nazvanie: string; zakaz: zakazy.Zakaz };
+
+function predmetRazgovora(l: Lavka, tgId: number, ch: Record<string, string>): Predmet | null {
+  if (ch['zakaz']) {
+    const z = zakazy.po(l.db, Number(ch['zakaz']));
+    if (!z || z.tg_id !== tgId || z.vid_akkaunta !== 'ne_vybran') return null;
+    return { vid: 'zakaz', nazvanie: z.nazvanie, zakaz: z };
+  }
+  const v = ch['vybor'] ? vybor(l.db, ch['vybor']) : null;
+  return v ? { vid: 'vybor', nazvanie: nazvanieVybora(v), v } : null;
+}
+
 async function dalsheIliSverka(l: Lavka, ctx: Context, ch: Record<string, string>): Promise<void> {
   const tgId = ctx.from!.id;
-  const v = ch['vybor'] ? vybor(l.db, ch['vybor']) : null;
-  if (!v) {
+  const p = predmetRazgovora(l, tgId, ch);
+  if (!p) {
     dialogi.zabyt(l.db, tgId);
     await ctx.reply(t.TOVAR_PROPAL, { reply_markup: klav.tovary(tovary(l.db)) });
     return;
   }
+  const zakazId = p.vid === 'zakaz' ? p.zakaz.id : null;
   if (!ch['pochta']) {
-    dialogi.postavit(l.db, tgId, 'zhdem_pochtu', null, ch, l.n.klyuchDostupov);
+    dialogi.postavit(l.db, tgId, 'zhdem_pochtu', zakazId, ch, l.n.klyuchDostupov);
     await ctx.reply(t.PROSIM_POCHTU);
     return;
   }
   if (!ch['parol']) {
-    dialogi.postavit(l.db, tgId, 'zhdem_parol_akkaunta', null, ch, l.n.klyuchDostupov);
+    dialogi.postavit(l.db, tgId, 'zhdem_parol_akkaunta', zakazId, ch, l.n.klyuchDostupov);
     await ctx.reply(t.PROSIM_PAROL_AKKAUNTA);
     return;
   }
-  dialogi.postavit(l.db, tgId, 'zhdem_svereniya', null, ch, l.n.klyuchDostupov);
-  await ctx.reply(t.svereniyeAkkaunta(nazvanieVybora(v), ch['pochta'], true), {
+  dialogi.postavit(l.db, tgId, 'zhdem_svereniya', zakazId, ch, l.n.klyuchDostupov);
+  await ctx.reply(t.svereniyeAkkaunta(p.nazvanie, ch['pochta'], true), {
     reply_markup: klav.svereniyeAkkaunta(),
   });
 }
@@ -487,7 +626,7 @@ export async function prinyatPochtu(l: Lavka, ctx: Context, text: string): Promi
   const ch = { ...(d?.chernovik ?? {}) };
   const pochta = text.trim();
   await ubrat(ctx);
-  if (!ch['vybor'] || !vybor(l.db, ch['vybor'])) {
+  if (!predmetRazgovora(l, ctx.from!.id, ch)) {
     dialogi.zabyt(l.db, ctx.from!.id);
     await ctx.reply(t.TOVAR_PROPAL, { reply_markup: klav.tovary(tovary(l.db)) });
     return;
@@ -506,7 +645,7 @@ export async function prinyatParolAkkaunta(l: Lavka, ctx: Context, text: string)
   const ch = { ...(d?.chernovik ?? {}) };
   const parol = text.trim();
   await ubrat(ctx);
-  if (!ch['vybor'] || !vybor(l.db, ch['vybor'])) {
+  if (!predmetRazgovora(l, ctx.from!.id, ch)) {
     dialogi.zabyt(l.db, ctx.from!.id);
     await ctx.reply(t.TOVAR_PROPAL, { reply_markup: klav.tovary(tovary(l.db)) });
     return;
@@ -524,17 +663,36 @@ export async function podtverditAkkaunt(l: Lavka, ctx: Context): Promise<void> {
   const tgId = ctx.from!.id;
   const d = dialogi.vzyat(l.db, tgId, l.n.klyuchDostupov);
   const ch = d?.chernovik ?? {};
-  const vyborId = ch['vybor'] ?? '';
   const pochta = ch['pochta'] ?? '';
   const parol = ch['parol'] ?? '';
   dialogi.zabyt(l.db, tgId);
 
-  const v = vyborId ? vybor(l.db, vyborId) : null;
-  if (!v || !pochta || !parol) {
+  const p = predmetRazgovora(l, tgId, ch);
+  if (!p || !pochta || !parol) {
     await pravit(ctx, 'Что-то потерялось при вводе. Начните заново — кнопка «Купить доступ».', klav.tovary(tovary(l.db)));
     return;
   }
 
+  /* ЗАКАЗ С САЙТА УЖЕ СУЩЕСТВУЕТ И УЖЕ ОПЛАЧЕН. Оформлять нечего:
+     здесь только проставляется вид аккаунта и ложатся данные.
+     Порядок тот же, что и у пути из бота, — сначала вид, потом
+     данные: у заказа, где вид ещё не выбран, данным негде лежать
+     по смыслу, а помощник такой заказ в работу не берёт. */
+  if (p.vid === 'zakaz') {
+    if (!zakazy.postavitVidAkkaunta(l.db, p.zakaz.id, 'svoy')) {
+      await pravit(ctx, t.SVERKA_USTARELA, klav.tovary(tovary(l.db)));
+      return;
+    }
+    svoi.polozhit(l.db, p.zakaz.id, pochta, parol, l.n.klyuchDostupov);
+    zakazy.sobytie(l.db, p.zakaz.id, 'покупатель передал данные своего аккаунта', tgId);
+    const svezhy = zakazy.po(l.db, p.zakaz.id) ?? p.zakaz;
+    await pravit(ctx, t.AKKAUNT_PRINYAT);
+    await ctx.reply(t.zakazUzheEst(svezhy), { reply_markup: klav.poslePokupki(svezhy.id, null) });
+    await soobshchitOZakaze(l, svezhy);
+    return;
+  }
+
+  const v = p.v;
   const itog = oformit(l, tgId, v, 'svoy');
   if (!itog.novy) {
     const povtor = await vystavitSchet(l, itog.zakaz);

@@ -17,6 +17,9 @@ import * as promokody from './db/promokody.js';
 import { otkazSlovami } from './lib/promokod.js';
 import { prinyatUvedomlenie } from './oplata/schet.js';
 import { proveritVozvrat } from './oplata/robokassa.js';
+import { zakazSSayta, ssylkaVBot } from './oplata/zakaz-s-sayta.js';
+import * as zakazy from './db/zakazy.js';
+import { getCatalog } from './lib/katalog.js';
 
 /**
  * Сколько ждём обработчик, прежде чем ответить Telegram и доделать
@@ -201,6 +204,57 @@ export function sozdatServer(l: Lavka, vypusk: string, sostoyanie: Sostoyanie): 
       return;
     }
     /**
+     * ЗАКАЗ С САЙТА.
+     *
+     * Единственный путь, которым статический сайт заводит заказ.
+     * Сайт ничего не хранит и ничего не решает: он собирает выбор
+     * человека и спрашивает бота, а бот заводит заказ, тратит
+     * активацию промокода и выставляет счёт. То есть правило «сайт
+     * ничего не обрабатывает» цело — обрабатывает по-прежнему бот.
+     *
+     * ТОЛЬКО POST. Заведение заказа — действие, а не чтение: GET,
+     * который что-то создаёт, срабатывает от предзагрузки ссылки
+     * браузером, от антивируса и от чужого мессенджера, рисующего
+     * превью. Ответ при этом никогда не кешируется.
+     */
+    if (adres === '/api/zakaz') {
+      const zagolovki = {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store, no-cache, must-revalidate',
+        'x-content-type-options': 'nosniff',
+      };
+      if (req.method !== 'POST') {
+        res
+          .writeHead(405, zagolovki)
+          .end(JSON.stringify({ vyshlo: false, pochemu: 'ne_vyshlo', soobshchenie: 'Нужен POST.' }));
+        return;
+      }
+      void (async () => {
+        const pary = await paryZaprosa(req);
+        const itog = await zakazSSayta(l, {
+          tovar: pary['tovar'] ?? '',
+          oplata: pary['oplata'] ?? '',
+          promo: pary['promo'] ?? '',
+          metka: pary['metka'] ?? '',
+          popytka: pary['popytka'] ?? '',
+        });
+        res.writeHead(itog.vyshlo ? 200 : 400, zagolovki).end(JSON.stringify(itog));
+      })().catch((e) => {
+        zhurnal.oshibka('заказ с сайта не обработан:', e);
+        if (!res.headersSent) res.writeHead(500, zagolovki);
+        if (!res.writableEnded) {
+          res.end(
+            JSON.stringify({
+              vyshlo: false,
+              pochemu: 'ne_vyshlo',
+              soobshchenie: 'Не получилось завести заказ. Попробуйте ещё раз через минуту.',
+            }),
+          );
+        }
+      });
+      return;
+    }
+    /**
      * РОБОКАССА: уведомление и возврат человека.
      *
      * Три пути, и роли у них РАЗНЫЕ — путать их нельзя.
@@ -285,7 +339,13 @@ async function paryZaprosa(req: IncomingMessage): Promise<Record<string, string>
  * не обрабатывает и про платежи не знает. Скриптов на странице нет
  * вовсе — по той же причине, что и в панели.
  */
-function stranicaVozvrata(zagolovok: string, text: string, botUrl: string): string {
+function stranicaVozvrata(
+  zagolovok: string,
+  text: string,
+  botUrl: string,
+  /** Подпись на кнопке. Меняется, когда ведёт не «обратно», а «забрать». */
+  podpisKnopki = 'Вернуться в бот',
+): string {
   const ekr = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   return `<!doctype html>
@@ -312,8 +372,31 @@ function stranicaVozvrata(zagolovok: string, text: string, botUrl: string): stri
 <body><main>
 <h1>${ekr(zagolovok)}</h1>
 <p>${ekr(text)}</p>
-<a href="${ekr(botUrl)}">Вернуться в бот</a>
+<a href="${ekr(botUrl)}">${ekr(podpisKnopki)}</a>
 </main></body></html>`;
+}
+
+/**
+ * Заказ по номеру счёта из возврата Робокассы.
+ *
+ * Отдельной функцией, чтобы поломка базы не уронила страницу: человек
+ * только что заплатил, и худшее, что можно ему показать, — это 500.
+ * Не нашлось — покажем общий текст, он верен в любом случае.
+ */
+function zakazPoVozvratu(
+  l: Lavka,
+  nomerScheta: number,
+): { nomer: number; nazvanie: string; istochnik: string; klyuch: string | null; tg_id: number | null } | null {
+  try {
+    const p = zakazy.platezhPo(l.db, nomerScheta);
+    if (!p) return null;
+    const z = zakazy.po(l.db, p.zakaz_id);
+    if (!z) return null;
+    return { nomer: z.id, nazvanie: z.nazvanie, istochnik: z.istochnik, klyuch: z.klyuch, tg_id: z.tg_id };
+  } catch (e) {
+    zhurnal.vnimanie('страница возврата: заказ по счёту не нашёлся:', e);
+    return null;
+  }
 }
 
 /** Обработка трёх путей Робокассы. */
@@ -323,14 +406,16 @@ async function robokassa(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  const botUrl = 'https://t.me/neirolavka_ai_bot';
-  const html = (kod: number, zagolovok: string, text: string) => {
+  // Адрес бота — из общего каталога, а не строкой здесь: второй
+  // экземпляр адреса разъедется с первым в день, когда бот сменится.
+  const botUrl = getCatalog().botUrl;
+  const html = (kod: number, zagolovok: string, text: string, kuda = botUrl, podpis?: string) => {
     res.writeHead(kod, {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-store',
       'x-robots-tag': 'noindex, nofollow',
     });
-    res.end(stranicaVozvrata(zagolovok, text, botUrl));
+    res.end(stranicaVozvrata(zagolovok, text, kuda, podpis));
   };
 
   if (adres === '/robokassa/result') {
@@ -355,6 +440,39 @@ async function robokassa(
         'Проверьте заказ в боте',
         'Мы не смогли подтвердить возврат с платёжной страницы. ' +
           'Откройте «Мои заказы» — там видно, оплачен ли заказ.',
+      );
+      return;
+    }
+
+    /* ЗАКАЗ С САЙТА ЗАБИРАЮТ ИМЕННО ЗДЕСЬ, и это самое важное место
+       всей затеи. Человек заплатил, не заходя в Telegram, — значит
+       мы до сих пор не знаем, кто он. Ссылка с секретом заказа —
+       единственная ниточка между оплатой и человеком, и отдать её
+       можно ровно один раз: на этой странице.
+
+       Секрет показывается ТОЛЬКО при сошедшейся подписи возврата.
+       Это не доказательство оплаты (пароль № 1 человек уже видел),
+       но это доказательство того, что человек пришёл со страницы
+       Робокассы по НАШЕМУ счёту, а не подобрал номер заказа. */
+    const zakaz = zakazPoVozvratu(l, ok.nomer);
+    if (zakaz && zakaz.istochnik === 'sayt' && zakaz.klyuch && zakaz.tg_id === null) {
+      html(
+        200,
+        'Оплата принята',
+        `Спасибо, деньги получены. Заказ № ${zakaz.nomer} — ${zakaz.nazvanie}. ` +
+          'Остался один шаг: откройте бот по кнопке ниже, и заказ станет вашим. ' +
+          'Там же спросят, нужен вам новый аккаунт или подключить существующий.',
+        ssylkaVBot(zakaz.klyuch) || botUrl,
+        'Забрать заказ в боте',
+      );
+      return;
+    }
+    if (zakaz && zakaz.istochnik === 'sayt') {
+      html(
+        200,
+        'Оплата принята',
+        `Спасибо, деньги получены. Заказ № ${zakaz.nomer} уже у вас в боте — ` +
+          'откройте «Мои заказы».',
       );
       return;
     }

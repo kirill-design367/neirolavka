@@ -641,3 +641,68 @@
     display: none;
   }
 }
+
+
+/* ─────────────────────────────────────────────────────────────────
+   ОПЛАТА НА САЙТЕ: отказ и квитанция.
+   ───────────────────────────────────────────────────────────────── */
+
+/* Отказ стоит ПОД кнопкой, а не вместо неё: человек должен видеть
+   и что не вышло, и куда нажать ещё раз. Цвет — акцентный текст,
+   тот же, что у отказа промокода: красного на сайте нет вовсе,
+   и заводить его ради одной строки значило бы завести шестой цвет. */
+.order__otkaz,
+.bar__otkaz {
+  margin-top: var(--sp-2);
+  font-size: var(--t-micro);
+  color: var(--c-accent-text);
+}
+
+.bar__otkaz {
+  margin: 0 0 var(--sp-2);
+}
+
+/* Напоминание о начатой оплате.
+   Стоит на бумаге чека, но своей подложкой: это не строка заказа,
+   а сообщение о ДРУГОМ заказе — том, что человек начал раньше. */
+.kvit {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-top: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--c-paper-2);
+}
+
+.kvit__text {
+  flex: 1 1 8rem;
+  margin: 0;
+  font-size: var(--t-micro);
+  color: var(--c-text);
+}
+
+.kvit__cta {
+  font-size: var(--t-micro);
+  font-weight: 600;
+  color: var(--c-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+/* Крестик — предмет, по которому попадают пальцем. Своей коробки
+   у него нет, поэтому область нажатия задаётся полем. */
+.kvit__skryt {
+  padding: 0 var(--sp-2);
+  font-size: var(--t-body);
+  line-height: 1;
+  color: var(--c-muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.kvit__skryt:hover {
+  color: var(--c-text);
+}

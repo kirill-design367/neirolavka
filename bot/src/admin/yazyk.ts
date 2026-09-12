@@ -97,6 +97,11 @@ export type Slova = {
   otmenaNetKoda: string;
   otmenaParol: string;
   nuzhnoPismo: string;
+  /** Шаг и группа: заказ с сайта ждёт, пока покупатель откроет ссылку. */
+  zhdemPokupatelya: string;
+  gruppaZhdemPokupatelya: string;
+  /** Отмена ничейного оплаченного заказа: возвращать некому. */
+  nichey: string;
   vydan: string;
   otmenen: string;
   sobytiya: string;
@@ -339,6 +344,11 @@ const RU: Slova = {
   otmenaNetKoda: 'Превышено время ожидания кода двухфакторной аутентификации',
   otmenaParol: 'Неправильный логин или пароль',
   nuzhnoPismo: 'Сначала отправьте письмо восстановления и отметьте это',
+  zhdemPokupatelya: 'Ждём покупателя с сайта',
+  gruppaZhdemPokupatelya: 'Оплачены на сайте, покупатель ещё не пришёл в бот',
+  nichey:
+    'Заказ оплачен на сайте и ещё не забран в боте. Возврат идёт на баланс покупателя, ' +
+    'а покупателя у этого заказа пока нет — отменить его нельзя, пока человек не откроет свою ссылку.',
   vydan: 'Выдан',
   otmenen: 'Отменён',
   sobytiya: 'Что происходило',
@@ -584,6 +594,11 @@ const EN: Slova = {
   otmenaNetKoda: 'Two-factor code timed out',
   otmenaParol: 'Wrong login or password',
   nuzhnoPismo: 'Send the password reset email and mark it first',
+  zhdemPokupatelya: 'Waiting for the website buyer',
+  gruppaZhdemPokupatelya: 'Paid on the website, buyer has not opened the bot yet',
+  nichey:
+    'Paid on the website and not yet claimed in the bot. A refund goes to the buyer balance, ' +
+    'and this order has no buyer yet — it cannot be cancelled until the person opens their link.',
   vydan: 'Delivered',
   otmenen: 'Cancelled',
   sobytiya: 'History',

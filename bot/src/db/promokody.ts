@@ -201,7 +201,8 @@ export function zanyat(
   db: Baza,
   kod: string,
   zakazId: number,
-  tgId: number,
+  /** Чей заказ. `null` — заказ с сайта: хозяин появится, когда заберут. */
+  tgId: number | null,
   cenaKop: number,
   seychas = new Date(),
 ): { zanyali: true; skidkaKop: number; skidkaProc: number } | { zanyali: false; pochemu: ItogPromo } {
@@ -244,6 +245,20 @@ export function vernut(db: Baza, zakazId: number, kogda = new Date()): number {
   return db
     .prepare('UPDATE promo_aktivacii SET snyata_v = ? WHERE zakaz_id = ? AND snyata_v IS NULL')
     .run(kogda.toISOString(), zakazId).changes;
+}
+
+/**
+ * Проставить хозяина активациям заказа.
+ *
+ * Зовётся, когда ничейный заказ с сайта забирают в боте. «Кем
+ * применялся» — это история, и до прихода человека ответа на неё
+ * просто нет; выдумывать его нулём было бы враньём в таблице,
+ * по которой владелец разбирает, кому досталась скидка.
+ */
+export function proustavitCheloveka(db: Baza, zakazId: number, tgId: number): number {
+  return db
+    .prepare('UPDATE promo_aktivacii SET tg_id = ? WHERE zakaz_id = ? AND tg_id IS NULL')
+    .run(tgId, zakazId).changes;
 }
 
 // ── промокод, принесённый человеком по ссылке ───────────────────────

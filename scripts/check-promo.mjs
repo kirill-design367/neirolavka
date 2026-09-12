@@ -91,6 +91,29 @@ for (const [w, theme, imya] of [
     });
   });
 
+  /* ЗАКАЗ ТОЖЕ ПОДСТАВНОЙ. Промокод с сайта теперь уезжает НЕ
+     в ссылку на бота, а в запрос, которым сайт заводит заказ, —
+     поэтому проверять его надо в теле этого запроса. Гонять живой
+     бот нельзя вдвойне: проба про сайт, и настоящие заказы она
+     заводить не должна. */
+  let zakazTelo = null;
+  await ctx.route('**/api/zakaz', async (route) => {
+    zakazTelo = route.request().postData() ?? '';
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json; charset=utf-8',
+      /* АДРЕС — ЯКОРЬ НА ЭТОЙ ЖЕ СТРАНИЦЕ, и это не мелочь пробы.
+         Сайт после ответа делает `location.href = адрес`; любой
+         настоящий адрес увёл бы браузер со страницы, и все
+         следующие пробы искали бы чек там, где его больше нет
+         (первая редакция так и упала — «.promo__ubrat» не нашёлся
+         за тридцать секунд). Переход по якорю страницу не
+         перезагружает. Что переход ВООБЩЕ происходит, проверяет
+         check-bot-links — там для этого свой подставной адрес. */
+      body: JSON.stringify({ vyshlo: true, nomer: 1, adres: '#proba-oplaty', vBot: 'https://t.me/x?start=zakaz_a' }),
+    });
+  });
+
   const page = await ctx.newPage();
   // Метка в адресе — чтобы заодно проверить, что промокод её
   // не вытеснил и не подменил.
@@ -271,16 +294,28 @@ for (const [w, theme, imya] of [
     await page.waitForTimeout(400);
   }
 
-  // ── 2. код едет в бот рядом с меткой ──────────────────────────────
-  const href = await page.locator(telefon ? '.bar__cta' : '.order__cta').first().getAttribute('href');
-  if (!href) no('кнопка в бот не стала ссылкой');
+  // ── 2. код едет в ЗАКАЗ рядом с меткой ────────────────────────────
+  //
+  // Раньше и код, и метка ехали в адресе ссылки на бота, и читать их
+  // можно было из `href`. С появлением оплаты на сайте они едут
+  // запросом: адрес Робокассы известен только после ответа бота,
+  // и ссылкой кнопка быть не может.
+  const platit = async () => {
+    zakazTelo = null;
+    await page.locator(telefon ? '.bar__cta' : '.order__cta').first().click({ force: true });
+    await page.waitForTimeout(700);
+    return zakazTelo === null ? null : new URLSearchParams(zakazTelo);
+  };
+
+  const zapros = await platit();
+  if (!zapros) no('нажатие «Оплатить» не отправило заказ');
   else {
-    const start = new URL(href).searchParams.get('start') ?? '';
-    if (!start.includes('promo_LETO25')) no(`в start нет промокода: «${start}»`);
-    else ok(`промокод едет в бот: start=${start}`);
-    if (!start.includes('metka_vk-posty')) no(`промокод вытеснил метку канала: «${start}»`);
+    const kod = zapros.get('promo') ?? '';
+    const metka = zapros.get('metka') ?? '';
+    if (kod !== 'LETO25') no(`в заказ не уехал промокод: «${kod || 'ничего'}»`);
+    else ok(`промокод едет в заказ: promo=${kod}`);
+    if (metka !== 'vk-posty') no(`промокод вытеснил метку канала: «${metka || 'ничего'}»`);
     else ok('метка канала на месте рядом с ним');
-    if (start.length > 64) no(`payload длиннее 64 знаков: ${start.length}`);
   }
 
   // ── 3. код снимается ──────────────────────────────────────────────
@@ -293,12 +328,10 @@ for (const [w, theme, imya] of [
     : chislo(await page.locator('.order__total-value').first().innerText());
   if (Math.abs(posleSnyatiya - cenaDo) > 0.01) no(`после снятия кода итог ${posleSnyatiya} вместо ${cenaDo}`);
   else ok('снятый код возвращает полную цену');
-  const startBez = await page
-    .locator(telefon ? '.bar__cta' : '.order__cta')
-    .first()
-    .getAttribute('href');
-  if (startBez && startBez.includes('promo_')) no('снятый код всё равно уехал в ссылку');
-  else ok('снятый код из ссылки исчез');
+  const bezKoda = await platit();
+  if (!bezKoda) no('после снятия кода нажатие «Оплатить» не отправило заказ');
+  else if (bezKoda.get('promo')) no(`снятый код всё равно уехал в заказ: «${bezKoda.get('promo')}»`);
+  else ok('снятый код в заказ не едет');
 
   // ── 4. отказы объясняются, и по-разному ───────────────────────────
   const otvety = [];
@@ -338,14 +371,11 @@ for (const [w, theme, imya] of [
   else if (!tihiy) no('на молчание бота сайт не сказал ничего');
   else ok(`молчание бота названо своим именем: «${tihiy}»`);
   // И код при этом ВСЁ РАВНО едет в бот: настоящее решение за ним.
-  const hrefTihiy = await page
-    .locator(telefon ? '.bar__cta' : '.order__cta')
-    .first()
-    .getAttribute('href');
-  if (!hrefTihiy || !hrefTihiy.includes('promo_MOLCHOK')) {
-    no('непроверенный код не уехал в бот — а решать должен он');
+  const tihiyZapros = await platit();
+  if (!tihiyZapros || tihiyZapros.get('promo') !== 'MOLCHOK') {
+    no(`непроверенный код не уехал в заказ — а решать должен бот: «${tihiyZapros?.get('promo') ?? 'запроса не было'}»`);
   } else {
-    ok('непроверенный код всё равно уехал в бот');
+    ok('непроверенный код всё равно уехал в заказ');
   }
 
   await ctx.close();

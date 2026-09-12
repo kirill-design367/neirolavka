@@ -178,10 +178,60 @@ function PromoOtvet() {
  * содержимое не помещается в экран. Нижняя с итогом и кнопкой
  * закреплена и остаётся видимой при любой высоте окна.
  */
+/**
+ * Напоминание о начатой оплате.
+ *
+ * Нужно ровно одному человеку — тому, кто закрыл вкладку после
+ * оплаты и не нажал «забрать в боте». Для него это единственная
+ * дорога к своим деньгам: входа на сайте нет, и опознать его нечем.
+ * Всем остальным его не видно.
+ */
+function Kvitanciya() {
+  const { kvitanciya, zabytKvitanciyu } = useOrder();
+  if (!kvitanciya) return null;
+  return (
+    <div className="kvit" role="status">
+      <p className="kvit__text">
+        Вы начали оплату заказа № {kvitanciya.nomer}.
+      </p>
+      <a className="kvit__cta" href={kvitanciya.vBot} target="_blank" rel="noopener noreferrer">
+        Открыть заказ в боте
+      </a>
+      <button type="button" className="kvit__skryt" onClick={zabytKvitanciyu} aria-label="Скрыть напоминание">
+        ×
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Что написать на кнопке оплаты.
+ *
+ * Кнопка обязана объяснять, ПОЧЕМУ она не нажимается: «Оплатить»
+ * серым цветом заставляет человека искать, чего он не сделал.
+ */
+function podpisKnopki(
+  vybrano: boolean,
+  gotovo: boolean,
+  cenaIzvestna: boolean,
+  idem: boolean,
+  summa: string,
+): string {
+  if (idem) return 'Уводим на оплату…';
+  if (!vybrano) return 'Выберите подписку';
+  if (!cenaIzvestna) return 'Цена уточняется';
+  if (!gotovo) return 'Выберите способ оплаты';
+  return `Оплатить ${summa}`;
+}
+
 export function OrderPanel() {
   const catalog = getCatalog();
-  const { selection, payment, paymentId, total, priceKnown, ready, botReady, botHref, choosePayment,
-          promo, skidka, kOplate } = useOrder();
+  const { selection, payment, paymentId, total, priceKnown, ready, botReady, choosePayment,
+          promo, skidka, kOplate, oplata, oplatit } = useOrder();
+  // Платить можно, когда выбрано всё И цена объявлена: вести человека
+  // на страницу оплаты с неизвестной суммой нечестно и невозможно —
+  // Робокасса такой счёт не примет.
+  const mozhnoPlatit = ready && priceKnown;
   const totalRef = useCountUp(kOplate, useCallback(formatRub, []));
   const restRef = useExpand<HTMLDivElement>(Boolean(selection));
 
@@ -297,26 +347,39 @@ export function OrderPanel() {
             </div>
           )}
 
-          {/* Пока бот не заведён, кнопка остаётся кнопкой, но никуда
-              не ведёт и прямо говорит почему: ссылка в никуда хуже,
-              чем честная надпись. Сейчас бот работает, и эта ветка
-              остаётся на случай, если адрес когда-нибудь снова
-              опустеет. */}
-          {ready && botReady ? (
-            <a className="order__cta" href={botHref} target="_blank" rel="noopener noreferrer">
-              Перейти в бот
-            </a>
-          ) : (
-            <button type="button" className="order__cta order__cta--off" disabled>
-              {!selection ? 'Выберите подписку' : !ready ? 'Выберите способ оплаты' : 'Бот скоро откроется'}
-            </button>
+          <Kvitanciya />
+
+          {/* ОПЛАТА ПРЯМО ОТСЮДА. Кнопка не ссылка: до ухода
+              на страницу Робокассы надо завести заказ, и адрес
+              оплаты известен только после ответа бота. Пока ответа
+              нет, кнопка занята — второе нажатие не заведёт второй
+              заказ ни здесь, ни в базе. */}
+          <button
+            type="button"
+            className={`order__cta${mozhnoPlatit ? '' : ' order__cta--off'}`}
+            disabled={!mozhnoPlatit || oplata.vid === 'idem'}
+            onClick={oplatit}
+          >
+            {podpisKnopki(Boolean(selection), ready, priceKnown, oplata.vid === 'idem', formatRub(kOplate))}
+          </button>
+          {oplata.vid === 'otkaz' && (
+            <p className="order__otkaz" role="alert">
+              {oplata.soobshchenie}
+            </p>
           )}
 
           <p className="order__fineprint">
-            {/* Про оплату сказано ровно то, что есть. В боте она пока
-                не автоматическая: заказ записывается, а как заплатить —
-                администратор пишет в тот же чат. Обещать здесь кнопку
-                оплаты значит обещать то, чего в боте нет. */}
+            {/* Текст владельца ДОСЛОВНО и НЕ ТРОНУТ. «Оплачиваете
+                выбранный тариф на сайте» больше не расходится
+                с делом: кнопка выше ведёт на страницу оплаты.
+
+                Про шаг «после оплаты откройте бот» здесь НЕТ
+                намеренно, и это не забывчивость. Добавленное сюда
+                предложение стоило чеку двух строк, и на 1366×768 он
+                упёрся в собственную прокрутку — ввод кода перестал
+                быть виден вместе с итогом, ровно то, из-за чего поле
+                промокода когда-то переехало в ряд с чипами. Шаг
+                живёт там, где его ищут: в блоке «Как это работает». */}
             {botReady
               ? 'Оплачиваете выбранный тариф на сайте. Логин и пароль приходят в Telegram. В рабочее время (8:00–22:00 МСК) это занимает 5–30 минут. Если заказываете ночью — с утра обработаем первым делом. Если что-то не работает — пишите в чат поддержки в Telegram, решим проблему или вернём деньги.'
               : 'Регистрация, заказ и выдача доступа будут в Telegram-боте. Он готовится к запуску, на сайте вводить ничего не нужно.'}
@@ -330,12 +393,23 @@ export function OrderPanel() {
 /** Нижняя полоса для телефона. Та же логика, другая раскладка. */
 export function OrderBar() {
   const catalog = getCatalog();
-  const { selection, total, priceKnown, ready, botReady, botHref, paymentId, choosePayment,
-          promo, skidka, kOplate } = useOrder();
+  const { selection, total, priceKnown, ready, paymentId, choosePayment,
+          promo, skidka, kOplate, oplata, oplatit } = useOrder();
+  const mozhnoPlatit = ready && priceKnown;
   const totalRef = useCountUp<HTMLSpanElement>(kOplate, useCallback(formatRub, []));
 
   return (
     <div className="bar" aria-label="Заказ">
+      {/* Квитанция и отказ стоят НАД полосой, а не в ней: полоса
+          и так занимает низ экрана, и растить её третьим рядом
+          ради того, что видно редко, значит отнимать строку
+          у страницы у всех остальных. */}
+      <Kvitanciya />
+      {oplata.vid === 'otkaz' && (
+        <p className="bar__otkaz" role="alert">
+          {oplata.soobshchenie}
+        </p>
+      )}
       {/* Поле промокода есть и на телефоне: панель чека там
           не показывается вовсе, и без него половина покупателей
           не смогла бы применить код. Стоит в ТОМ ЖЕ ряду, что
@@ -392,15 +466,14 @@ export function OrderBar() {
           )}
         </div>
 
-        {ready && botReady ? (
-          <a className="bar__cta" href={botHref} target="_blank" rel="noopener noreferrer">
-            В бот
-          </a>
-        ) : (
-          <button type="button" className="bar__cta bar__cta--off" disabled>
-            {ready && !botReady ? 'Скоро' : 'В бот'}
-          </button>
-        )}
+        <button
+          type="button"
+          className={`bar__cta${mozhnoPlatit ? '' : ' bar__cta--off'}`}
+          disabled={!mozhnoPlatit || oplata.vid === 'idem'}
+          onClick={oplatit}
+        >
+          {oplata.vid === 'idem' ? '…' : 'Оплатить'}
+        </button>
       </div>
     </div>
   );

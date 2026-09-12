@@ -53,6 +53,8 @@ export function momentPaneli(d: Date, poyas: string, yazyk: Yazyk): string {
 export type Pod = { estDostup: boolean; estKod: boolean; estAkkaunt: boolean };
 
 export type Shag =
+  /** Оплачен на сайте, но покупатель ещё не открыл ссылку в боте. */
+  | 'zhdem_pokupatelya'
   | 'oplata'
   | 'vzyat'
   | 'kod'
@@ -69,10 +71,21 @@ export type Shag =
  * предлагалось другое.
  */
 export function sleduyushchiyShag(z: zakazy.Zakaz, pod: Pod): Shag {
+  if (z.status === 'vydan' || z.status === 'otmenen') return 'nichego';
+  /* ЖДЁМ ПОКУПАТЕЛЯ — это ожидание, а не работа, и стоит оно ПЕРЕД
+     всем остальным. Заказ оплачен на сайте; пока человек не открыл
+     свою ссылку, мы не знаем ни кто он, ни какой ему нужен аккаунт.
+     Взять такой заказ в работу нельзя: у него впереди может быть
+     ввод чужого пароля, а может не быть ничего.
+
+     Второе состояние здесь — заказ уже забран, а вид аккаунта человек
+     ещё не выбрал: делать нам по-прежнему нечего, и группа та же. */
+  if (z.tg_id === null || z.vid_akkaunta === 'ne_vybran') {
+    if (z.status !== 'zhdet_oplaty' || z.istochnik === 'sayt') return 'zhdem_pokupatelya';
+  }
   if (z.status === 'zhdet_oplaty') return 'oplata';
   if (z.status === 'oplachen') return 'vzyat';
   if (z.status === 'zhdem_kod') return 'zhdem_kod';
-  if (z.status === 'vydan' || z.status === 'otmenen') return 'nichego';
   // Заказ у помощника. Доступ записан — осталось отправить.
   if (pod.estDostup) return 'otpravit';
   // Свой аккаунт, кода ещё нет — сначала код.
@@ -90,6 +103,8 @@ export function shagSlovami(shag: Shag, s: Slova): string {
       return s.zaprositKod;
     case 'zhdem_kod':
       return `${s.kodZaproshen} — ${s.zhdet.toLowerCase()}`;
+    case 'zhdem_pokupatelya':
+      return s.zhdemPokupatelya;
     case 'dostup':
       return s.vvestiDostup;
     case 'otpravit':
@@ -161,7 +176,22 @@ export function pod(db: Baza, z: zakazy.Zakaz, klyuch: Buffer): Pod {
  * `sleduyushchiyShag`, что и раньше, и второго правила «что дальше»
  * в проекте не появилось.
  */
-export const GRUPPY: Shag[] = ['otpravit', 'dostup', 'kod', 'vzyat', 'oplata', 'zhdem_kod'];
+/**
+ * Порядок групп: от работы к ожиданию.
+ *
+ * Сверху то, что можно доделать сейчас, и первым — самое близкое
+ * к концу. Внизу три ожидания, в которых от нас не зависит ничего:
+ * оплата придёт извне, код и покупателя с сайта присылает человек.
+ */
+export const GRUPPY: Shag[] = [
+  'otpravit',
+  'dostup',
+  'kod',
+  'vzyat',
+  'oplata',
+  'zhdem_kod',
+  'zhdem_pokupatelya',
+];
 
 export function gruppaSlovami(shag: Shag, s: Slova): string {
   switch (shag) {
@@ -177,6 +207,8 @@ export function gruppaSlovami(shag: Shag, s: Slova): string {
       return s.gruppaOplata;
     case 'zhdem_kod':
       return s.gruppaZhdemKod;
+    case 'zhdem_pokupatelya':
+      return s.gruppaZhdemPokupatelya;
     case 'nichego':
       return '—';
   }

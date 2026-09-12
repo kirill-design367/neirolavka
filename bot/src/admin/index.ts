@@ -644,6 +644,12 @@ async function deystvieZakaza(
 
   if (chto === 'kod') {
     if (z.vid_akkaunta !== 'svoy') return { oshibka: 'kodNeNuzhen' };
+    /* Ничейный заказ сюда не доходит: `svoy` ставится только
+       забранному. Проверка стоит не «на всякий случай», а затем,
+       чтобы это утверждение было ПРОВЕРЯЕМЫМ: сломай его кто-нибудь
+       завтра — здесь будет честный отказ, а не разговор о коде,
+       заведённый неизвестно кому. */
+    if (z.tg_id === null) return { oshibka: 'kodNeNuzhen' };
     // Разговор о коде ОДИН на человека: второй запрос затёр бы
     // первый, код пришёл бы не к тому заказу, а час на ответ шёл бы
     // у обоих.
@@ -719,14 +725,18 @@ async function deystvieZakaza(
     if (!prichina) return { oshibka: 'nelzyaSeychas' };
     const itog = zakazy.otmenit(db, id, kto, prichina);
     if (!itog.otmenen) {
+      if (itog.pochemu === 'nichey') return { oshibka: 'nichey' };
       return { oshibka: itog.pochemu === 'net_pisma' ? 'nuzhnoPismo' : 'zakazZakryt' };
     }
     const svezhy = zakazy.po(db, id) as zakazy.Zakaz;
-    await uvedom.cheloveku(
-      l,
-      z.tg_id,
-      t.zakazOtmenen(svezhy, prichina, itog.vernuli, koshelek.balans(db, z.tg_id)),
-    );
+    // Ничейному заказу сказать некому: покупатель ещё не пришёл в бот.
+    if (z.tg_id !== null) {
+      await uvedom.cheloveku(
+        l,
+        z.tg_id,
+        t.zakazOtmenen(svezhy, prichina, itog.vernuli, koshelek.balans(db, z.tg_id)),
+      );
+    }
     return { ok: itog.vernuli > 0 ? 'otmenilDengi' : 'otmenil' };
   }
 

@@ -33,7 +33,8 @@ export function zapomnit(db: Baza, tgId: number, imya: string, username: string 
   ).run(tgId, imya, username, seychasISO(), seychasISO());
 }
 
-export function chelovek(db: Baza, tgId: number): Chelovek | null {
+export function chelovek(db: Baza, tgId: number | null): Chelovek | null {
+  if (tgId === null) return null;
   return (db.prepare('SELECT * FROM lyudi WHERE tg_id = ?').get(tgId) as Chelovek | undefined) ?? null;
 }
 
@@ -118,7 +119,19 @@ export function skolkoVsego(db: Baza): number {
 }
 
 /** Как называть человека в служебных сообщениях. */
-export function podpis(c: Chelovek | null, tgId: number): string {
+/**
+ * Как назвать покупателя на экране.
+ *
+ * ПУСТОЙ `tgId` — это не «неизвестный человек», а «человека ещё нет»:
+ * заказ оплачен на сайте и не забран в боте. Назвать его «id null»
+ * значило бы показать команде поломку там, где всё идёт по плану;
+ * назвать «неизвестный» — скрыть, что заказ ждёт действия покупателя,
+ * а не нашего.
+ */
+export const NET_HOZYAINA = 'с сайта, заказ ещё не забран';
+
+export function podpis(c: Chelovek | null, tgId: number | null): string {
+  if (tgId === null) return NET_HOZYAINA;
   if (!c) return `id ${tgId}`;
   const hvost = c.username ? ` (@${c.username})` : '';
   return `${c.imya || `id ${tgId}`}${hvost}`;

@@ -26,6 +26,9 @@ import type { OtkazPromo } from '../lib/promokod.js';
  * Из любого открытого состояния заказ можно отменить, и тогда деньги
  * возвращаются на баланс покупателя.
  */
+/** Откуда заказ. */
+export type Istochnik = 'bot' | 'sayt';
+
 export type StatusZakaza =
   | 'zhdet_oplaty'
   | 'oplachen'
@@ -36,7 +39,17 @@ export type StatusZakaza =
   | 'otmenen';
 
 /** Чей аккаунт: заводим новый или входим в тот, что принёс покупатель. */
-export type VidAkkaunta = 'novy' | 'svoy';
+/**
+ * Какой аккаунт у покупателя.
+ *
+ * `ne_vybran` бывает только у заказа С САЙТА и только до прихода
+ * человека в бот: на сайте про аккаунт не спрашивают вовсе — там
+ * выбор и деньги, а всё, что нужно для выдачи, спрашивает бот.
+ * Считать такой заказ «новым аккаунтом» по умолчанию нельзя:
+ * помощник взял бы в работу заказ, у которого на самом деле чужой
+ * аккаунт и впереди ввод пароля.
+ */
+export type VidAkkaunta = 'novy' | 'svoy' | 'ne_vybran';
 
 /**
  * Почему отменён. Хранится кодом, а не фразой: по причине считается
@@ -65,7 +78,27 @@ export function razobratPrichinu(syroe: string | null | undefined): PrichinaVybo
 
 export type Zakaz = {
   id: number;
-  tg_id: number;
+  /**
+   * Чей заказ. ПУСТО — ничей: оплачен на сайте и ещё не забран
+   * в боте. До оплаты на сайте такого состояния не существовало.
+   */
+  tg_id: number | null;
+  /** Откуда пришёл: из бота или с сайта. */
+  istochnik: Istochnik;
+  /**
+   * Секрет, по которому заказ забирают в боте. Есть только
+   * у заказов с сайта и уезжает человеку ссылкой — по номеру
+   * заказа чужой заказ подобрали бы перебором, по ключу нет.
+   */
+  klyuch: string | null;
+  /** Ключ одного нажатия на сайте: второй запрос не заводит второй заказ. */
+  popytka: string | null;
+  /**
+   * Метка канала, с которой человек пришёл на сайт. Переезжает
+   * человеку при получении заказа: без неё весь трафик, покупающий
+   * на сайте, считался бы «без метки».
+   */
+  metka: string | null;
   produkt_id: string;
   plan_id: string;
   nazvanie: string;
@@ -150,7 +183,20 @@ export function sobytiya(db: Baza, zakazId: number): { kogda: string; chto: stri
 }
 
 export type Novy = {
-  tgId: number;
+  /** Чей заказ. `null` — заказ с сайта, хозяин появится позже. */
+  tgId: number | null;
+  istochnik?: Istochnik;
+  /** Секрет для «забрать в боте». Обязателен у заказа с сайта. */
+  klyuch?: string;
+  /**
+   * Ключ нажатия, придуманный сайтом. Повторный запрос с тем же
+   * значением ВЕРНЁТ тот же заказ, а не заведёт второй: держит это
+   * уникальный индекс, а не проверка в коде. Без него двойное
+   * нажатие давало бы два заказа и две потраченные активации.
+   */
+  popytka?: string;
+  /** Метка канала с сайта. Ложится человеку, когда заказ заберут. */
+  metka?: string;
   produktId: string;
   planId: string;
   nazvanie: string;
@@ -187,10 +233,20 @@ export type Sozdanie = { zakaz: Zakaz; novy: boolean; promo: ItogPromoZakaza };
  * и мы честно возвращаем первый, пометив, что он не новый.
  */
 export function sozdatIliVernut(db: Baza, n: Novy): Sozdanie {
+  /* ПОВТОР УЗНАЁТСЯ ПО-РАЗНОМУ, и это не мелочь. У заказа из бота
+     хозяин известен, и повтором считается второй открытый заказ того
+     же человека на тот же уровень. У заказа с сайта хозяина нет:
+     двое разных людей, покупающих один уровень, — это два разных
+     заказа, и путать их нельзя. Там повтор узнаётся по ключу
+     нажатия, который придумал сайт. */
   const nayti = () =>
-    db
-      .prepare(`SELECT * FROM zakazy WHERE tg_id = ? AND plan_id = ? AND status IN (${V_SPISKE(OTKRYTYE)})`)
-      .get(n.tgId, n.planId) as Zakaz | undefined;
+    (n.tgId === null
+      ? n.popytka
+        ? (db.prepare('SELECT * FROM zakazy WHERE popytka = ?').get(n.popytka) as Zakaz | undefined)
+        : undefined
+      : (db
+          .prepare(`SELECT * FROM zakazy WHERE tg_id = ? AND plan_id = ? AND status IN (${V_SPISKE(OTKRYTYE)})`)
+          .get(n.tgId, n.planId) as Zakaz | undefined));
 
   const est = nayti();
   if (est) return { zakaz: est, novy: false, promo: { vid: 'net' } };
@@ -204,10 +260,24 @@ export function sozdatIliVernut(db: Baza, n: Novy): Sozdanie {
     return db.transaction((): Sozdanie => {
       const r = db
         .prepare(
-          `INSERT INTO zakazy (tg_id, produkt_id, plan_id, nazvanie, cena_kop, mesyacev, vid_akkaunta, status, sozdan)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'zhdet_oplaty', ?)`,
+          `INSERT INTO zakazy (tg_id, istochnik, klyuch, popytka, metka, produkt_id, plan_id, nazvanie,
+                               cena_kop, mesyacev, vid_akkaunta, status, sozdan)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'zhdet_oplaty', ?)`,
         )
-        .run(n.tgId, n.produktId, n.planId, n.nazvanie, n.cenaKop, n.mesyacev, n.vidAkkaunta, seychasISO());
+        .run(
+          n.tgId,
+          n.istochnik ?? 'bot',
+          n.klyuch ?? null,
+          n.popytka ?? null,
+          n.metka ?? null,
+          n.produktId,
+          n.planId,
+          n.nazvanie,
+          n.cenaKop,
+          n.mesyacev,
+          n.vidAkkaunta,
+          seychasISO(),
+        );
       const id = Number(r.lastInsertRowid);
       sobytie(db, id, 'заказ создан', n.tgId);
 
@@ -330,6 +400,81 @@ export function otmetitPlatezhOplachennym(db: Baza, id: number): boolean {
   return r.changes > 0;
 }
 
+/**
+ * Заказ по секретному ключу. Только для заказов с сайта.
+ *
+ * Возвращается ЛЮБОЙ заказ с таким ключом, в том числе уже забранный:
+ * человеку, открывшему свою же ссылку второй раз, надо сказать «это
+ * ваш заказ», а не «ссылка не годится». Кто забрал — видно по `tg_id`.
+ */
+export function poKlyuchu(db: Baza, klyuch: string): Zakaz | null {
+  if (!klyuch) return null;
+  return (db.prepare('SELECT * FROM zakazy WHERE klyuch = ?').get(klyuch) as Zakaz | undefined) ?? null;
+}
+
+/**
+ * Забрать ничейный заказ себе.
+ *
+ * ДВОИХ НА ОДНУ ССЫЛКУ РАЗНИМАЕТ БАЗА, а не проверка в коде: условие
+ * `tg_id IS NULL` стоит прямо в UPDATE. Между «прочитали, что заказ
+ * ничей» и «записали хозяина» помещается второй человек — ссылку
+ * могли переслать, — и тогда заказ достался бы обоим по очереди,
+ * а последний записанный стёр бы первого. Ноль изменённых строк
+ * значит ровно «заказ уже не ничей».
+ *
+ * Активации промокода получают того же хозяина той же транзакцией:
+ * раздельно бывает состояние «заказ забран, а скидка числится
+ * ничьей», и заметить его можно только руками.
+ */
+export function zabrat(db: Baza, klyuch: string, tgId: number): boolean {
+  if (!klyuch) return false;
+  return db.transaction(() => {
+    const r = db
+      .prepare('UPDATE zakazy SET tg_id = ? WHERE klyuch = ? AND tg_id IS NULL')
+      .run(tgId, klyuch);
+    if (r.changes === 0) return false;
+    const z = poKlyuchu(db, klyuch) as Zakaz;
+    promokody.proustavitCheloveka(db, z.id, tgId);
+    sobytie(db, z.id, 'покупатель забрал заказ с сайта', tgId);
+    return true;
+  })();
+}
+
+/**
+ * Ничейные заказы: оплачены на сайте, но человек до бота не дошёл.
+ *
+ * Их обязана видеть команда. Деньги настоящие, доступ не выдан,
+ * и написать человеку первыми мы не можем — Telegram не знает, кому
+ * писать. Поэтому единственное, что тут работает, — чтобы такой
+ * заказ было ВИДНО, а не чтобы он тихо лежал в общей очереди.
+ */
+export function nichi(db: Baza): Zakaz[] {
+  return db
+    .prepare(
+      `SELECT * FROM zakazy
+        WHERE tg_id IS NULL AND status IN (${V_SPISKE(OTKRYTYE)})
+        ORDER BY id DESC`,
+    )
+    .all() as Zakaz[];
+}
+
+/**
+ * Выбрать вид аккаунта у заказа, который уже существует.
+ *
+ * Нужно ровно для заказов с сайта: там заказ создаётся до того, как
+ * человека спросили про аккаунт. Ставится один раз — перезаписывать
+ * уже выбранное нельзя, иначе нажатие из старого сообщения переводило
+ * бы заказ со «своего» аккаунта на «новый», а введённый пароль
+ * оставался бы висеть.
+ */
+export function postavitVidAkkaunta(db: Baza, id: number, vid: VidAkkaunta): boolean {
+  return (
+    db
+      .prepare("UPDATE zakazy SET vid_akkaunta = ? WHERE id = ? AND vid_akkaunta = 'ne_vybran'")
+      .run(vid, id).changes > 0
+  );
+}
+
 export function po(db: Baza, id: number): Zakaz | null {
   return (db.prepare('SELECT * FROM zakazy WHERE id = ?').get(id) as Zakaz | undefined) ?? null;
 }
@@ -424,6 +569,10 @@ export function oplatitSBalansa(
   return db.transaction(() => {
     const z = po(db, id);
     if (!z || z.status !== 'zhdet_oplaty' || z.cena_kop <= 0) return { spisano: 0, hvatilo: false };
+    /* У НИЧЕЙНОГО ЗАКАЗА БАЛАНСА НЕТ. Заказ с сайта оплачивается
+       деньгами и только ими: входа на сайте нет, и чей это баланс —
+       неизвестно. Списывать «с кого-нибудь» тут нечего и не с кого. */
+    if (z.tg_id === null) return { spisano: 0, hvatilo: false };
     const nuzhno = kOplate(z) - z.oplacheno_kop;
     /* СКИДКА ЗАКРЫЛА ВЕСЬ ЗАКАЗ. Такое бывает при ста процентах,
        и оставлять заказ висеть в «ждёт оплаты» нельзя: платить
@@ -563,6 +712,14 @@ export function otmetitVydannym(db: Baza, id: number, dostupDo: Date | null, kto
  *
  * Причина «неверный пароль» под замком: без отметки об отправленном
  * письме она не проходит — см. `otmetitPismo`.
+ *
+ * НИЧЕЙНЫЙ ОПЛАЧЕННЫЙ ЗАКАЗ НЕ ОТМЕНЯЕТСЯ, и это тоже замок в базе.
+ * Возврат идёт НА БАЛАНС покупателя, а у заказа, оплаченного на сайте
+ * и ещё не забранного в боте, покупателя нет: отмена вернула бы
+ * настоящие деньги в никуда и стёрла бы единственный след того, что
+ * их кто-то платил. Сначала человек забирает заказ по своей ссылке —
+ * потом отмена работает как обычно. Неоплаченный ничейный заказ
+ * отменяется свободно: возвращать нечего.
  */
 export function otmenit(
   db: Baza,
@@ -570,18 +727,21 @@ export function otmenit(
   kto: number | null,
   prichina: PrichinaOtmeny,
   podrobnosti?: string,
-): { otmenen: boolean; vernuli: number; pochemu?: 'net_pisma' | 'zakryt' } {
+): { otmenen: boolean; vernuli: number; pochemu?: 'net_pisma' | 'zakryt' | 'nichey' } {
   return db.transaction(() => {
     const z = po(db, id);
     if (!z || !OTKRYTYE.includes(z.status)) return { otmenen: false, vernuli: 0, pochemu: 'zakryt' as const };
     if (prichina === 'nevernyy_parol' && !z.pismo_v) {
       return { otmenen: false, vernuli: 0, pochemu: 'net_pisma' as const };
     }
+    if (z.tg_id === null && z.oplacheno_kop > 0) {
+      return { otmenen: false, vernuli: 0, pochemu: 'nichey' as const };
+    }
     db.prepare(
       `UPDATE zakazy SET status = 'otmenen', otmenen = ?, prichina_otmeny = ?, oplacheno_kop = 0 WHERE id = ?`,
     ).run(seychasISO(), prichina, id);
     const vernuli = z.oplacheno_kop;
-    if (vernuli > 0) {
+    if (vernuli > 0 && z.tg_id !== null) {
       koshelek.vernut(db, z.tg_id, vernuli, z.id, `возврат по заказу № ${z.id} · ${z.nazvanie}`);
     }
     /* АКТИВАЦИЯ ПРОМОКОДА ВОЗВРАЩАЕТСЯ ТОЙ ЖЕ ТРАНЗАКЦИЕЙ, что
