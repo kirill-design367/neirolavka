@@ -620,20 +620,77 @@ test('номер ошибки вынимается из страницы, а HTT
     '<html><body><div class="err">Ошибка: 838. Тестовые параметры не заполнены</div></body></html>';
   const o = nomerOshibki(stranica);
   assert.equal(o.nomer, '838');
+  assert.ok(o.oshibochnaya);
   assert.ok(o.tekst.includes('Тестовые параметры'), 'текст ответа обязан сохраниться целиком');
+});
+
+test('ЧИСЛО ИЗ ТЕЛА СКРИПТА — НЕ НОМЕР ОШИБКИ', () => {
+  /* Настоящий ответ открывшейся страницы оплаты. Вырезание тегов
+     убирает теги и ОСТАВЛЯЕТ всё между ними, то есть весь JavaScript
+     страницы; `"currencySymbolCode":8381` — код символа рубля,
+     и проба объявляла его «ошибкой 8381» на успешном платеже. */
+  const stranica =
+    '<html><head><script>window.cfg={"currencySymbolCode":8381,"sum":100};<' +
+    '/script></head><body><div>Оплата заказа</div></body></html>';
+  const o = nomerOshibki(stranica);
+  assert.equal(o.nomer, null);
+  assert.equal(o.oshibochnaya, false, 'открывшаяся страница оплаты не ругается');
+});
+
+test('слово «Error» ВНУТРИ скрипта — не ошибка страницы', () => {
+  /* Здесь спасает только вырезание скриптов: `Error` тут стоит
+     целым словом, и границы слова его не отсекают. Без этой пробы
+     вырезание скриптов ничем не проверено — его роль на странице
+     оплаты перекрывает суженный признак, и снятое вырезание
+     остаётся зелёным. */
+  const stranica =
+    '<html><head><script>if (!ok) throw new Error(500);<' +
+    '/script></head><body><div>Оплата заказа</div></body></html>';
+  const o = nomerOshibki(stranica);
+  assert.equal(o.oshibochnaya, false, 'скрипт не текст страницы');
+  assert.equal(o.nomer, null);
+});
+
+test('слово-признак ищется ЦЕЛЫМ словом, а не хвостом чужого имени', () => {
+  /* Вторая защита, независимая от вырезания скриптов: скрипт может
+     прийти незакрытым, и тогда вырезать его по паре тегов нечем. */
+  assert.equal(nomerOshibki('<body>currencySymbolCode: 8381</body>').oshibochnaya, false);
+  assert.equal(nomerOshibki('<body>new ErrorBoundary(404)</body>').oshibochnaya, false);
+});
+
+test('«код» признаком ошибки НЕ считается — он живёт на исправной странице', () => {
+  /* «Введите код из SMS» и «промокод» — обычный текст страницы
+     оплаты. Признак, срабатывающий на успехе, хуже отсутствующего:
+     он краснеет ровно тогда, когда всё хорошо. */
+  const o = nomerOshibki('<body>Введите код из SMS: 4 цифры. Промокод LETO25</body>');
+  assert.equal(o.oshibochnaya, false);
+  assert.equal(o.nomer, null);
+  // А в «Error code: 29» признаком работает error, и номер читается.
+  assert.equal(nomerOshibki('<body>Error code: 29</body>').nomer, '29');
+});
+
+test('страница РУГАЕТСЯ без номера — это «не знаю», а не «всё хорошо»', () => {
+  /* Строгость разбора не имеет права превращаться в ложный успех
+     на ошибке, которую мы не научились читать. */
+  const o = nomerOshibki('<body><h1>Ошибка</h1><p>Магазин не найден</p></body>');
+  assert.equal(o.nomer, null);
+  assert.equal(o.oshibochnaya, true);
+  assert.ok(o.tekst.startsWith('Ошибка'), 'текст обязан начинаться с места, где страница ругается');
 });
 
 test('трёхзначный номер не обрезается до двух', () => {
   /* Первая редакция искала \d{1,3} и на 838 сработала по везению:
      номер мог оказаться и четырёхзначным, а обрезанный номер —
      это неверное толкование, а не отсутствие толкования. */
-  assert.equal(nomerOshibki('код 29').nomer, '29');
+  assert.equal(nomerOshibki('Ошибка, код 29').nomer, '29');
   assert.equal(nomerOshibki('Error code: 838').nomer, '838');
   assert.equal(nomerOshibki('ошибка 1024').nomer, '1024');
 });
 
 test('страница без номера — это отсутствие номера, а не выдуманный ноль', () => {
-  assert.equal(nomerOshibki('<html><body>Оплата заказа</body></html>').nomer, null);
+  const o = nomerOshibki('<html><body>Оплата заказа</body></html>');
+  assert.equal(o.nomer, null);
+  assert.equal(o.oshibochnaya, false);
 });
 
 test('838 истолковано словами и названо НЕ подписью', () => {

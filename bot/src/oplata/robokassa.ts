@@ -93,14 +93,57 @@ export const OSHIBKI: Record<string, string> = {
  * обязан объяснить себя сам, иначе следующий заход начнётся с того же
  * вопроса «а что такое 838».
  *
+ * ТЕЛО `<script>` — НЕ ТЕКСТ СТРАНИЦЫ, и это не мелочь разбора.
+ * Вырезание тегов (`<[^>]+>`) убирает сами теги и ОСТАВЛЯЕТ всё,
+ * что между ними, — то есть весь JSON и весь JavaScript страницы
+ * оплаты. На исправной странице там лежит
+ * `"currencySymbolCode":8381` — код символа рубля, — и проба
+ * объявила его «ошибкой 8381» на успешно открывшейся оплате.
+ * Скрипты и стили вырезаются ВМЕСТЕ С СОДЕРЖИМЫМ, до тегов.
+ *
+ * ПРИЗНАК — ТОЛЬКО «ошибка» И «error», и «код» в него не входит.
+ * Это вторая половина той же беды: `Code` в `currencySymbolCode`
+ * читалось словом «код». Но и починенное границами слово «код»
+ * сюда не годится — оно живёт на исправной странице оплаты
+ * («код из SMS», «промокод»), и проба ругалась бы на успехе.
+ * В «Error code: 29» признаком работает `error`, а `code` попадает
+ * в зазор перед номером.
+ *
+ * ГРАНИЦЫ СЛОВА при этом оставлены: `Error` внутри `ErrorBoundary`
+ * в скрипте — тоже не слово. Две защиты нарочно независимы:
+ * скрипт может прийти незакрытым, и вырезать его парой тегов
+ * не получится.
+ *
+ * `oshibochnaya` отвечает на ОТДЕЛЬНЫЙ вопрос: ругается ли страница
+ * вообще. Без него «номера не нашлось» значило бы сразу «всё
+ * хорошо» — то есть строгость разбора превращалась бы в ложный
+ * успех на любой ошибке, которую мы не научились читать.
+ *
  * Живёт здесь, а не в пробе, по той же причине, что и подписи: это
  * знание о чужом протоколе, и проверять его надо отдельно от того,
  * кто им пользуется.
  */
-export function nomerOshibki(telo: string): { nomer: string | null; tekst: string } {
-  const bezTegov = telo.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  const m = /(?:код|code|ошибк\w*)\D{0,20}(\d{1,4})/i.exec(bezTegov);
-  return { nomer: m ? m[1]! : null, tekst: bezTegov.slice(0, 300) };
+export function nomerOshibki(telo: string): {
+  nomer: string | null;
+  oshibochnaya: boolean;
+  tekst: string;
+} {
+  const vidimoe = telo
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const slovo = /(?<![A-Za-zА-Яа-яЁё])(?:ошибк[а-яё]*|error)(?![A-Za-zА-Яа-яЁё])/iu.exec(vidimoe);
+  if (!slovo) return { nomer: null, oshibochnaya: false, tekst: vidimoe.slice(0, 300) };
+
+  const posle = vidimoe.slice(slovo.index + slovo[0].length);
+  const nomer = /^\D{0,20}(\d{1,4})/.exec(posle);
+  return {
+    nomer: nomer ? nomer[1]! : null,
+    oshibochnaya: true,
+    tekst: vidimoe.slice(slovo.index, slovo.index + 300),
+  };
 }
 
 export type NastroykiRobokassy = {

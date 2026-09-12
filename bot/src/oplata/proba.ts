@@ -10,12 +10,21 @@
  *
  * ВЕРДИКТ СТАВИТСЯ ПО ТОМУ, ЧТО ОТВЕТ ИЗМЕНИЛСЯ, а не по тому, что
  * всё хорошо. Это и есть главный урок первого захода. Проба искала
- * «страницу оплаты без ошибки» — а её не бывает, пока магазин
- * не активирован: там, где подпись принята, Робокасса отвечает
+ * «страницу оплаты без ошибки» — а её не бывало, пока магазин
+ * не был настроен: там, где подпись принята, Робокасса отвечала
  * ДРУГОЙ ошибкой (838, про тестовые параметры). Одиннадцать
  * сочетаний из двенадцати дали 29, одно — 838, и именно оно
  * правильное. Мера, у которой «хорошо» недостижимо, ничего
- * не различает.
+ * не различает. (Сейчас кабинет настроен, и страница оплаты
+ * на `md5` + сыром чеке открывается по-настоящему.)
+ *
+ * И ВТОРОЙ УРОК, ровно обратный: строгость разбора не имеет права
+ * превращаться в ложный успех. Проба один раз объявила «ошибку
+ * 8381» на открывшейся странице оплаты — это был код символа рубля
+ * из её же JavaScript. Поэтому теперь отдельно спрашивается,
+ * РУГАЕТСЯ ли страница вообще: «номера не нашлось» само по себе
+ * не значит «всё хорошо», и ошибка, которую мы не научились
+ * читать, останавливает пробу, а не засчитывается успехом.
  *
  * ПРОБА НЕ СОЗДАЁТ ЗАКАЗОВ И НЕ ТРОГАЕТ БАЗУ. Она собирает ссылку
  * тем же кодом, что и бот, и спрашивает Робокассу, годится ли такая.
@@ -52,15 +61,23 @@ const OBRAZEC = {
 } as unknown as Zakaz;
 
 /** Что ответила Робокасса. */
-type Otvet = { kod: number; oshibka: string | null; kusok: string; dostuchalis: boolean };
+type Otvet = {
+  kod: number;
+  /** Номер ошибки, если страница его назвала. */
+  oshibka: string | null;
+  /** Страница ругается вообще? Это ДРУГОЙ вопрос, чем «есть ли номер». */
+  rugaetsya: boolean;
+  kusok: string;
+  dostuchalis: boolean;
+};
 
 async function sprosit(url: string): Promise<Otvet> {
   try {
     const r = await fetch(url, { redirect: 'follow' });
     const o = nomerOshibki(await r.text());
-    return { kod: r.status, oshibka: o.nomer, kusok: o.tekst, dostuchalis: true };
+    return { kod: r.status, oshibka: o.nomer, rugaetsya: o.oshibochnaya, kusok: o.tekst, dostuchalis: true };
   } catch (e) {
-    return { kod: 0, oshibka: null, kusok: (e as Error).message, dostuchalis: false };
+    return { kod: 0, oshibka: null, rugaetsya: false, kusok: (e as Error).message, dostuchalis: false };
   }
 }
 
@@ -156,11 +173,24 @@ async function glavnoe(): Promise<number> {
       }
       const proshla = podpisProshla(o);
       const vyvod = !proshla
-        ? `подпись НЕ принята${o.oshibka ? ` (${o.oshibka})` : ''}`
-        : o.oshibka
-          ? `ПОДПИСЬ ПРИНЯТА, дальше ошибка ${o.oshibka}`
+        ? `подпись НЕ принята (${o.oshibka})`
+        : o.rugaetsya
+          ? `ПОДПИСЬ ПРИНЯТА, дальше ошибка ${o.oshibka ?? 'без номера'}`
           : 'ПОДПИСЬ ПРИНЯТА, страница оплаты открылась';
       console.log(`${algoritm.padEnd(10)} чек ${vid.padEnd(12)} → HTTP ${o.kod}, ${vyvod}`);
+
+      if (o.rugaetsya && !o.oshibka) {
+        /* СТРАНИЦА РУГАЕТСЯ, А НОМЕРА В НЕЙ НЕТ — это «не знаю»,
+           а не «всё хорошо». Назвать такое успехом значило бы
+           объявить оплату настроенной на любой ошибке, которую мы
+           не научились читать; перебирать дальше — повторять тот же
+           непрочитанный ответ. Печатаем, что увидели, и умолкаем. */
+        console.log('');
+        console.log('ПЛОХО: страница ругается, но номера в ней нет. Что она сказала:');
+        console.log(`  ${o.kusok}`);
+        return 1;
+      }
+
       if (proshla && !horoshee) horoshee = { vid, algoritm, otvet: o, url };
       if (horoshee) break;
     }
@@ -187,15 +217,19 @@ async function glavnoe(): Promise<number> {
     console.log(`Подпись сходится на объявленных настройках (${algoritm}, чек ${vid}).`);
   }
 
-  if (!otvet.oshibka) {
+  if (!otvet.rugaetsya) {
     console.log('Страница оплаты открылась — приём платежей настроен.');
     console.log(`  ${korotko(horoshee.url)}`);
+    /* Печатаем, ЧТО на странице. Признак ошибки — слово в тексте,
+       а слово можно и не узнать: пусть человек видит ответ сам,
+       а не верит вердикту на слово. */
+    console.log(`  страница говорит: ${otvet.kusok.slice(0, 160)}`);
     return vid === n.chekVPodpisi && algoritm === n.algoritm ? 0 : 1;
   }
 
   console.log('');
   console.log(`Дальше Робокасса ответила ошибкой ${otvet.oshibka}. Это уже НЕ про подпись:`);
-  const tolkovanie = OSHIBKI[otvet.oshibka];
+  const tolkovanie = OSHIBKI[otvet.oshibka!];
   if (tolkovanie) {
     for (const s of tolkovanie.match(/.{1,72}(\s|$)/g) ?? [tolkovanie]) console.log(`  ${s.trim()}`);
   } else {
