@@ -232,6 +232,28 @@ if (process.env.SET_DO_TELEGRAM !== '1') {
     else ok('промокод уехал в заказ вместе с выбором');
   }
 
+  /* КВИТАНЦИЯ НЕ УВОДИТ ИЗ ВКЛАДКИ.
+     Человек вернулся на сайт после оплаты, и квитанция — его копия
+     ссылки с секретом заказа. Уведи она из этой же вкладки, и второй
+     попытки открыть Telegram у него не будет: страница с ссылкой
+     пропала. Проверяется АТРИБУТ, а не вид кнопки — глазами это
+     не отличить вовсе. */
+  const kvit = page.locator('.order__paper .kvit__cta');
+  if ((await kvit.count()) === 0) {
+    no('квитанции после оплаты нет — человеку нечем вернуться к заказу');
+  } else {
+    const href = await kvit.getAttribute('href');
+    const target = await kvit.getAttribute('target');
+    const rel = (await kvit.getAttribute('rel')) ?? '';
+    if (!href || !href.startsWith(BOT)) no(`квитанция ведёт не в бот: «${href ?? 'ничего'}»`);
+    else ok(`квитанция держит ссылку с секретом: ${href}`);
+    if (target !== '_blank') no(`квитанция уводит из этой же вкладки: target «${target ?? 'ничего'}»`);
+    else ok('квитанция открывает бот в новой вкладке');
+    if (!rel.includes('noopener') || !rel.includes('noreferrer')) {
+      no(`у квитанции нет noopener/noreferrer при target=_blank: rel «${rel || 'ничего'}»`);
+    } else ok('у квитанции noopener и noreferrer на месте');
+  }
+
   await ctx.close();
 }
 

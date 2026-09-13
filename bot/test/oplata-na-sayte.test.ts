@@ -38,7 +38,7 @@ import * as koshelek from '../src/db/koshelek.js';
 import * as metki from '../src/db/metki.js';
 import { zakazSSayta, ssylkaVBot } from '../src/oplata/zakaz-s-sayta.js';
 import { prinyatUvedomlenie } from '../src/oplata/schet.js';
-import { rubliStrokoy } from '../src/oplata/robokassa.js';
+import { rubliStrokoy, podpisVozvrata } from '../src/oplata/robokassa.js';
 import { sleduyushchiyShag } from '../src/admin/stranicy.js';
 
 const LOGIN = 'Neirolavka';
@@ -503,6 +503,66 @@ test('ссылка в бот несёт ключ и умещается в 64 з�
 
 test('пустой ключ ссылки не собирается вовсе', () => {
   assert.equal(ssylkaVBot(''), '');
+});
+
+/* ── страница возврата отдаёт ссылку и НЕ ТЕРЯЕТСЯ ─────────────── */
+
+/**
+ * Кнопка «Забрать заказ в боте» открывает НОВУЮ вкладку.
+ *
+ * Эта страница — единственное место, где отдаётся секрет заказа.
+ * Уведи кнопка из той же вкладки — и у человека, у которого Telegram
+ * не открылся с первого раза, не остаётся ничего: ни ссылки,
+ * ни объяснения, куда делись деньги. Проверяется именно АТРИБУТ,
+ * а не вид кнопки: глазами это не отличить вовсе.
+ */
+test('страница возврата: ссылка в бот открывается в новой вкладке', async () => {
+  const s = await lavka();
+  try {
+    const itog = await zakazSSayta(s.l, { tovar: ZHIVOY_PLAN, oplata: 'card', promo: '', metka: '', popytka: popytka() });
+    assert.ok(itog.vyshlo);
+    const nomer = schetZakaza(s, itog.nomer);
+    const summa = rubliStrokoy(itog.kOplateKop);
+    const q = new URLSearchParams({
+      OutSum: summa,
+      InvId: String(nomer),
+      SignatureValue: podpisVozvrata(s.l.n.robokassa, summa, String(nomer)),
+    }).toString();
+
+    const r = await fetch(`${s.koren}/robokassa/uspeh?${q}`);
+    assert.equal(r.status, 200);
+    const html = await r.text();
+
+    const klyuch = (zakazy.po(s.l.db, itog.nomer) as zakazy.Zakaz).klyuch as string;
+    assert.ok(html.includes(ssylkaVBot(klyuch)), `ссылки с секретом на странице нет: ${html}`);
+    assert.match(html, /Забрать заказ в боте/);
+
+    // Сама ссылка, целиком: атрибуты должны стоять НА НЕЙ, а не где-то
+    // рядом на странице — иначе проба зеленела бы от чужого тега.
+    const ssylka = /<a\b[^>]*>/.exec(html)?.[0] ?? '';
+    assert.ok(ssylka, `ссылки на странице нет вовсе: ${html}`);
+    assert.match(ssylka, /target="_blank"/, `ссылка уводит из этой же вкладки: ${ssylka}`);
+    assert.match(ssylka, /rel="[^"]*noopener/, `нет noopener при target=_blank: ${ssylka}`);
+    assert.match(ssylka, /rel="[^"]*noreferrer/, `нет noreferrer при target=_blank: ${ssylka}`);
+
+    // И заказ по-прежнему ничей: страница возврата ничего не меняет.
+    assert.equal((zakazy.po(s.l.db, itog.nomer) as zakazy.Zakaz).tg_id, null);
+  } finally {
+    await s.zakryt();
+  }
+});
+
+/** То же у страницы неудачи: там нет секрета, но есть объяснение. */
+test('страница неудачи тоже не уводит из вкладки', async () => {
+  const s = await lavka();
+  try {
+    const r = await fetch(`${s.koren}/robokassa/neudacha`);
+    const ssylka = /<a\b[^>]*>/.exec(await r.text())?.[0] ?? '';
+    assert.match(ssylka, /target="_blank"/, `ссылка уводит из этой же вкладки: ${ssylka}`);
+    assert.match(ssylka, /rel="[^"]*noopener/, `нет noopener при target=_blank: ${ssylka}`);
+  } finally {
+    await s.zakryt();
+  }
 });
 
 /* ── путь целиком, настоящим вебхуком ──────────────────────────── */
