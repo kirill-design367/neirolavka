@@ -1,10 +1,12 @@
 /**
- * Перепроверка введённого: «Всё верно?» и «Исправить».
+ * Перепроверка введённого: «Всё верно» и «Исправить».
  *
  * Главное, что здесь проверяется, — НЕ то, что кнопки нарисовались,
  * а то, ради чего они существуют:
  *   • до подтверждения не создаётся заказ и не записывается код;
- *   • пароль на экране не раскрыт;
+ *   • пароль на экране ПОКАЗАН (решение владельца: человек должен
+ *     увидеть, что ввёл верно) — а сообщение с ним удаляется
+ *     из переписки после подтверждения;
  *   • «Исправить» правит ОДНО поле, а второе остаётся набранным —
  *     иначе человек, ошибшийся в пароле, набирал бы заново и почту;
  *   • кнопка из старого сообщения, нажатая позже, ничего не ломает.
@@ -60,10 +62,10 @@ test('«исправить почту»: пароль остаётся набр�
 
     await poslat(s.adres, SEKRET, soobshchenie(POCHTA));
     const snova = poslednee(s.tg.vyzovy);
-    assert.ok(snova.includes('Всё верно?'), `после правки не вернулись на сверку: ${snova}`);
+    assert.ok(snova.includes('правильность данных'), `после правки не вернулись на сверку: ${snova}`);
     assert.ok(snova.includes(POCHTA), 'на сверке старая почта');
     assert.ok(!snova.includes(OPECHATKA), 'опечатка осталась');
-    assert.ok(!snova.includes(PAROL), 'пароль показан открытым');
+    assert.ok(snova.includes(PAROL), 'пароля на сверке не видно — проверить нечего');
 
     await poslat(s.adres, SEKRET, nazhatie('sv:da'));
     const z = zakazy.cheloveka(s.l.db, POKUPATEL)[0];
@@ -91,7 +93,7 @@ test('«исправить пароль»: почта остаётся набр�
     assert.equal(d?.chernovik['pochta'], POCHTA, 'почта потеряна при исправлении пароля');
 
     await poslat(s.adres, SEKRET, soobshchenie(PAROL));
-    assert.ok(poslednee(s.tg.vyzovy).includes('Всё верно?'), 'не вернулись на сверку');
+    assert.ok(poslednee(s.tg.vyzovy).includes('правильность данных'), 'не вернулись на сверку');
 
     await poslat(s.adres, SEKRET, nazhatie('sv:da'));
     const z = zakazy.cheloveka(s.l.db, POKUPATEL)[0]!;
@@ -109,7 +111,7 @@ test('«назад» с выбора поля возвращает на свер
     await poslat(s.adres, SEKRET, nazhatie('sv:pr'));
     await poslat(s.adres, SEKRET, nazhatie('sv:naz'));
     const ekran = poslednee(s.tg.vyzovy);
-    assert.ok(ekran.includes('Всё верно?'), 'не вернулись на сверку');
+    assert.ok(ekran.includes('правильность данных'), 'не вернулись на сверку');
     assert.ok(ekran.includes(POCHTA));
     const d = dialogi.vzyat(s.l.db, POKUPATEL, s.l.n.klyuchDostupov);
     assert.equal(d?.shag, 'zhdem_svereniya');

@@ -11,6 +11,8 @@ import type { Baza } from './index.js';
 import { seychasISO } from './index.js';
 import * as koshelek from './koshelek.js';
 import * as promokody from './promokody.js';
+import * as svoi from './svoi.js';
+import * as kody from './kody.js';
 import type { OtkazPromo } from '../lib/promokod.js';
 
 /**
@@ -698,8 +700,30 @@ export function otmetitVydannym(db: Baza, id: number, dostupDo: Date | null, kto
     )
     .run(seychasISO(), dostupDo ? dostupDo.toISOString() : null, kto, id);
   if (r.changes === 0) return false;
+  zabytSekrety(db, id);
   sobytie(db, id, 'доступ выдан', kto);
   return true;
+}
+
+/**
+ * Стереть чужие секреты закрытого заказа.
+ *
+ * ЭТО ОБЕЩАНИЕ, ДАННОЕ ЧЕЛОВЕКУ СЛОВАМИ: «сразу после выполнения
+ * заказа данные удалятся автоматически» — так написано в просьбе
+ * прислать пароль. Пока функции не было, обещание было неправдой:
+ * логин, пароль и код лежали в базе вечно, а ключ к ним — в /etc
+ * на том же сервере. Обещать меньше, чем берёшь, — худший вид
+ * неправды на витрине, где платят вперёд незнакомцу.
+ *
+ * Зовётся при ЛЮБОМ закрытии заказа, и выданный, и отменённый —
+ * одинаково: после отмены эти данные не нужны тем более.
+ *
+ * Выдаваемый доступ (`dostupy`) этим НЕ трогается: он принадлежит
+ * покупателю и лежит в «Моих заказах» — за ним он и вернётся.
+ */
+function zabytSekrety(db: Baza, id: number): void {
+  svoi.zabyt(db, id);
+  kody.zabytKody(db, id);
 }
 
 /**
@@ -751,6 +775,7 @@ export function otmenit(
     if (promokody.vernut(db, id) > 0) {
       sobytie(db, id, 'активация промокода возвращена', kto, z.promo_kod ?? undefined);
     }
+    zabytSekrety(db, id);
     sobytie(db, id, 'заказ отменён', kto, podrobnosti ?? prichina);
     return { otmenen: true, vernuli };
   })();

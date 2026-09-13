@@ -4,7 +4,7 @@
  * Путь короткий и без развилок: что берём → какой уровень подписки →
  * проверьте заказ → оформлено. У продукта, где уровень один-единственный,
  * средний шаг пропадает: карточка сразу и есть подтверждение.
- * Всё остальное — «Мои заказы» и «Помощь».
+ * Всё остальное — «Мои заказы», «О нас» и «Поддержка».
  */
 
 import type { Bot, Context, InlineKeyboard } from 'grammy';
@@ -55,7 +55,6 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
   const r = () => raspisanie(l.db, l.n);
 
   bot.command('start', async (ctx) => {
-    const imya = ctx.from?.first_name ?? '';
     /* Метка канала приезжает в параметре `start` и ложится человеку
        ПРИ ПЕРВОМ касании: `zapisatCheloveku` не трогает того, у кого
        метка уже есть. Строка в `lyudi` к этому моменту уже вставлена —
@@ -88,7 +87,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
       await zabratSSayta(l, ctx, klyuchZakaza);
       return;
     }
-    await ctx.reply(t.privetstvie(imya, r()), { reply_markup: klav.nizhnyaya(rol(l.db, ctx.from?.id ?? 0)) });
+    await ctx.reply(t.privetstvie(r()), { reply_markup: klav.nizhnyaya(rol(l.db, ctx.from?.id ?? 0)) });
     await ctx.reply(t.VYBOR_TOVARA, { reply_markup: klav.tovary(tovary(l.db)) });
   });
 
@@ -134,7 +133,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
   });
 
   bot.command('pomoshch', async (ctx) => {
-    await ctx.reply(t.pomoshch(r(), l.n.adresSayta), { reply_markup: klav.pomoshch() });
+    await ctx.reply(t.oNas(r(), l.n.adresSayta), { reply_markup: klav.oNas() });
   });
 
   // ── покупка ────────────────────────────────────────────────────────
@@ -296,7 +295,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     const spisok = zakazy.cheloveka(l.db, ctx.from!.id);
     const pusto = spisok.length === 0;
     const text = pusto ? t.NET_ZAKAZOV : 'Ваши заказы. Откройте любой, чтобы посмотреть подробности.';
-    const k = pusto ? klav.tovary(tovary(l.db)) : klav.moiZakazy(spisok);
+    const k = pusto ? klav.tovary(tovary(l.db)) : klav.moiZakazy(spisok, r().poyas);
     if (pravkoy) await pravit(ctx, text, k);
     else await ctx.reply(text, { reply_markup: k });
   };
@@ -353,14 +352,14 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     }
   });
 
-  // ── помощь ─────────────────────────────────────────────────────────
+  // ── о нас ──────────────────────────────────────────────────────────
 
-  bot.hears(klav.KNOPKA_POMOSHCH, async (ctx) => {
-    await ctx.reply(t.pomoshch(r(), l.n.adresSayta), { reply_markup: klav.pomoshch() });
+  bot.hears(klav.KNOPKA_O_NAS, async (ctx) => {
+    await ctx.reply(t.oNas(r(), l.n.adresSayta), { reply_markup: klav.oNas() });
   });
 
-  // Поддержка — отдельная кнопка, а не строка внутри помощи.
-  // Помощь отвечает на частые вопросы, поддержка — это живой
+  // Поддержка — отдельная кнопка, а не строка внутри «О нас».
+  // Раздел отвечает на частые вопросы, поддержка — это живой
   // человек, и путь к нему должен быть в один нажим с любого
   // экрана, а не найтись в конце длинного текста.
   bot.hears(klav.KNOPKA_PODDERZHKA, async (ctx) => {
@@ -369,13 +368,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
 
   bot.callbackQuery('pom', async (ctx) => {
     await ctx.answerCallbackQuery();
-    await pravit(ctx, t.pomoshch(r(), l.n.adresSayta), klav.pomoshch());
-  });
-
-  bot.callbackQuery('vopros', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    dialogi.postavit(l.db, ctx.from.id, 'zhdem_vopros', null, {}, l.n.klyuchDostupov);
-    await ctx.reply(t.NAPISAT_ADMINU);
+    await pravit(ctx, t.oNas(r(), l.n.adresSayta), klav.oNas());
   });
 }
 
@@ -448,7 +441,7 @@ async function zabratSSayta(l: Lavka, ctx: Context, klyuch: string): Promise<voi
   }
 
   const z = zakazy.po(l.db, est.id) ?? est;
-  await ctx.reply(t.privetstvie(ctx.from?.first_name ?? '', raspisanie(l.db, l.n)), {
+  await ctx.reply(t.privetstvie(raspisanie(l.db, l.n)), {
     reply_markup: klav.nizhnyaya(rol(l.db, tgId)),
   });
   if (z.vid_akkaunta === 'ne_vybran') {
@@ -612,7 +605,7 @@ async function dalsheIliSverka(l: Lavka, ctx: Context, ch: Record<string, string
     return;
   }
   dialogi.postavit(l.db, tgId, 'zhdem_svereniya', zakazId, ch, l.n.klyuchDostupov);
-  await ctx.reply(t.svereniyeAkkaunta(p.nazvanie, ch['pochta'], true), {
+  await ctx.reply(t.svereniyeAkkaunta(p.nazvanie, ch['pochta'] ?? '', ch['parol'] ?? ''), {
     reply_markup: klav.svereniyeAkkaunta(),
   });
 }
@@ -686,8 +679,16 @@ export async function podtverditAkkaunt(l: Lavka, ctx: Context): Promise<void> {
     svoi.polozhit(l.db, p.zakaz.id, pochta, parol, l.n.klyuchDostupov);
     zakazy.sobytie(l.db, p.zakaz.id, 'покупатель передал данные своего аккаунта', tgId);
     const svezhy = zakazy.po(l.db, p.zakaz.id) ?? p.zakaz;
-    await pravit(ctx, t.AKKAUNT_PRINYAT);
-    await ctx.reply(t.zakazUzheEst(svezhy), { reply_markup: klav.poslePokupki(svezhy.id, null) });
+    await ubrat(ctx);
+    await ctx.reply(t.AKKAUNT_PRINYAT);
+    /* НЕ `zakazUzheEst`: тот говорит «второй такой же заводить не стал,
+       скорее всего кнопка нажалась дважды», а человек ничего
+       не оформлял повторно — он ответил на единственный оставшийся
+       вопрос по УЖЕ ОПЛАЧЕННОМУ заказу с сайта. Та же ошибка, что
+       когда-то была у кнопок `zn:`/`zs:`, и тот же ответ. */
+    await ctx.reply(t.vidAkkauntaPrinyat(svezhy, srokVydachi(new Date(), raspisanie(l.db, l.n)), raspisanie(l.db, l.n)), {
+      reply_markup: klav.poslePokupki(svezhy.id, null),
+    });
     await soobshchitOZakaze(l, svezhy);
     return;
   }
@@ -704,9 +705,13 @@ export async function podtverditAkkaunt(l: Lavka, ctx: Context): Promise<void> {
   svoi.polozhit(l.db, itog.zakaz.id, pochta, parol, l.n.klyuchDostupov);
   zakazy.sobytie(l.db, itog.zakaz.id, 'покупатель передал данные своего аккаунта', tgId);
 
-  // Экран сверки правится на месте: почта из переписки уходит вместе
-  // с ним, а на её месте остаётся ответ.
-  await pravit(ctx, t.AKKAUNT_PRINYAT);
+  /* ЭКРАН СВЕРКИ УДАЛЯЕТСЯ, А НЕ ПРАВИТСЯ, и это половина решения
+     владельца показывать пароль открыто. Пока на сверке стояли
+     точки, правки на месте хватало; теперь в этом сообщении лежит
+     настоящий пароль, и оставить его в переписке нельзя. Ответ
+     приходит новым сообщением. */
+  await ubrat(ctx);
+  await ctx.reply(t.AKKAUNT_PRINYAT);
   const schet = await vystavitSchet(l, itog.zakaz);
   await ctx.reply(sZametkoyOplaty(l, itog, schet), {
     reply_markup: klav.poslePokupki(itog.zakaz.id, schet.adres),
@@ -733,7 +738,11 @@ export async function ispravitAkkaunt(l: Lavka, ctx: Context, chto: 'pr' | 'po' 
     return;
   }
   if (chto === 'naz') {
-    await pravit(ctx, t.svereniyeAkkaunta(nazvanieVybora(v), ch['pochta'] ?? '', Boolean(ch['parol'])), klav.svereniyeAkkaunta());
+    await pravit(
+      ctx,
+      t.svereniyeAkkaunta(nazvanieVybora(v), ch['pochta'] ?? '', ch['parol'] ?? ''),
+      klav.svereniyeAkkaunta(),
+    );
     return;
   }
   const pole = chto === 'po' ? 'pochta' : 'parol';
@@ -767,7 +776,7 @@ export async function prinyatKod(l: Lavka, ctx: Context, text: string, zakazId: 
   }
 
   dialogi.postavit(l.db, tgId, 'zhdem_svereniya_koda', z.id, { kod }, l.n.klyuchDostupov);
-  await ctx.reply(t.svereniyeKoda(z.id, z.nazvanie, kod), { reply_markup: klav.svereniyeKoda() });
+  await ctx.reply(t.svereniyeKoda(z.nazvanie, kod), { reply_markup: klav.svereniyeKoda() });
 }
 
 /** «Всё верно» по коду: только теперь он попадает в базу и к помощнику. */

@@ -133,9 +133,16 @@ export function srokVydachi(seychas: Date, r: Raspisanie): Srok {
   return { do: new Date(otkrytie.getTime() + obeshchanie), utrom: true };
 }
 
-/** «08:00» из числа часов. Часы приходят из настроек, не из текста. */
+/** «08:00» из числа часов — с ведущим нулём. Само число приходит
+ *  из настроек, а не из текста: пример здесь про формат, не про
+ *  расписание лавки. */
 export function chasSlovami(chas: number): string {
   return `${String(chas % 24).padStart(2, '0')}:00`;
+}
+
+/** «1 сент.» — для кнопки, где место считанное. */
+export function denKratko(d: Date, poyas: string): string {
+  return new Intl.DateTimeFormat('ru-RU', { timeZone: poyas, day: 'numeric', month: 'short' }).format(d);
 }
 
 /** «1 сентября 2026» в нужном поясе. */

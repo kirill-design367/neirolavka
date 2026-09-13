@@ -58,6 +58,10 @@ input[type=text],input[type=password],input[type=number],input[type=date],textar
 textarea{min-height:60px;width:100%}
 button{font:inherit;padding:8px 14px;border:1px solid var(--a);background:var(--a);color:#fff;border-radius:3px;cursor:pointer}
 button.tihaya{background:var(--p);color:var(--t);border-color:var(--l)}
+/* Недоступная кнопка обязана выглядеть недоступной: у крайнего
+   отзыва «выше»/«ниже» стоит disabled, и без этой строки она
+   выглядела бы рабочей и не отвечала на нажатие. */
+button[disabled]{opacity:.45;cursor:default}
 button.opasnaya{background:var(--p);color:var(--o);border-color:var(--o)}
 .metka{display:inline-block;padding:1px 7px;border:1px solid var(--l);border-radius:10px;font-size:12px;color:var(--m);background:var(--z)}
 .zhdet{color:var(--o);font-variant-numeric:tabular-nums}
@@ -124,6 +128,7 @@ export function stranica(o: Obstanovka, zagolovok: string, telo: string, obnovly
           ? [
               `<a href="/admin/pokupateli">${ekr(o.s.pokupateli)}</a>`,
               `<a href="/admin/katalog">${ekr(o.s.katalog)}</a>`,
+              `<a href="/admin/otzyvy">${ekr(o.s.otzyvy)}</a>`,
               `<a href="/admin/promokody">${ekr(o.s.promokody)}</a>`,
               `<a href="/admin/statistika">${ekr(o.s.statistika)}</a>`,
               `<a href="/admin/vykladka">${ekr(o.s.vykladka)}</a>`,

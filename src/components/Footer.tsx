@@ -109,11 +109,18 @@ export function Footer() {
   return (
     <footer className="footer" id="otzyvy" ref={ref}>
       <div className="page">
-        <div className="footer__head" data-parallax="1.2">
-          <h2 className="footer__title" data-reveal>
-            Что пишут
-          </h2>
-        </div>
+        {/* ПУСТОЙ ЛЕНТЫ НЕ БЫВАЕТ. Отзывы правит владелец из панели,
+            и он может удалить последний; дорожка из нуля карточек —
+            это пустая полоса под заголовком «Что пишут», то есть
+            обещание, которого нет. Нет отзывов — нет и блока целиком,
+            вместе с заголовком. */}
+        {reviews.length > 0 && (
+          <div className="footer__head" data-parallax="1.2">
+            <h2 className="footer__title" data-reveal>
+              Что пишут
+            </h2>
+          </div>
+        )}
 
         {/* Окно ленты. Отзывы идут бегущей строкой, и лента набрана
             ДВАЖДЫ: пока первая копия уезжает влево, вторая занимает
@@ -126,16 +133,18 @@ export function Footer() {
             прокручиваемой полосой, и колесо над ней должно доставаться
             ей, а не странице. Атрибут prevent учитывался бы всегда,
             в том числе когда прокручивать нечего. */}
-        <div className="reviews" data-lenis-scrollable>
-          <ul className="reviews__track">
-            {reviews.map((review) => (
-              <ReviewCard key={review.id} review={review} />
-            ))}
-            {reviews.map((review) => (
-              <ReviewCard key={`${review.id}-2`} review={review} dubl />
-            ))}
-          </ul>
-        </div>
+        {reviews.length > 0 && (
+          <div className="reviews" data-lenis-scrollable>
+            <ul className="reviews__track">
+              {reviews.map((review) => (
+                <ReviewCard key={review.id} review={review} />
+              ))}
+              {reviews.map((review) => (
+                <ReviewCard key={`${review.id}-2`} review={review} dubl />
+              ))}
+            </ul>
+          </div>
+        )}
 
         <FooterBottom />
       </div>

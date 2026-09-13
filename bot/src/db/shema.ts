@@ -661,4 +661,31 @@ CREATE INDEX promo_po_kodu   ON promo_aktivacii(kod, id);
 CREATE INDEX promo_po_zakazu ON promo_aktivacii(zakaz_id);
 `,
   },
+  {
+    imya: '008-otzyvy',
+    sql: `
+-- Отзывы на сайте.
+--
+-- Переезжают в базу по той же причине, что и прайс: правит их живой
+-- человек из панели, а сайт статический и базы не видит. Файл
+-- src/lib/catalog.ts остаётся ЗАСЕВОМ (кусок между метками «НАЧАЛО
+-- ОТЗЫВОВ ПАНЕЛИ»), и он же — то, что панель обратно выкладывает.
+--
+-- Внешних ключей нет и быть не может: отзыв ни на что не ссылается
+-- и на него не ссылается никто. Поэтому его можно УДАЛЯТЬ по-
+-- настоящему — в отличие от продукта, у которого есть «скрыть»:
+-- на продукт ссылаются заказы, и стереть его значило бы переписать
+-- их историю. У отзыва такой истории нет.
+CREATE TABLE otzyvy (
+  id       TEXT    PRIMARY KEY,
+  avtor    TEXT    NOT NULL,
+  tovar    TEXT    NOT NULL,
+  text     TEXT    NOT NULL,
+  poryadok INTEGER NOT NULL,
+  izmenen  TEXT    NOT NULL
+);
+
+CREATE INDEX otzyvy_po_poryadku ON otzyvy(poryadok, id);
+`,
+  },
 ];

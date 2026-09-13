@@ -230,7 +230,14 @@ export function robokassa(env: NodeJS.ProcessEnv): NastroykiRobokassy {
 }
 
 export function prochitat(env: NodeJS.ProcessEnv): Nastroyki {
-  const rabotaS = chislo(env, 'NEIROLAVKA_RABOTA_S', 8);
+  /* ЧАСЫ ЗДЕСЬ — САМОЕ МЛАДШЕЕ ИЗ ТРЁХ ЗНАЧЕНИЙ, и это важно при
+     правке. Умолчание действует, только если часы не заданы
+     в `/etc/neirolavka-bot/okruzhenie`; окружение, в свою очередь,
+     перекрывается строкой `rabota_s`/`rabota_do` в таблице
+     `nastroyki`, куда пишет бот из «Служебное → Настройки».
+     То есть правка этой строки НЕ ДОГОНЯЕТ сервер, где часы уже
+     пришпилены одним из двух старших способов. */
+  const rabotaS = chislo(env, 'NEIROLAVKA_RABOTA_S', 10);
   const rabotaDo = chislo(env, 'NEIROLAVKA_RABOTA_DO', 22);
   if (!Number.isInteger(rabotaS) || !Number.isInteger(rabotaDo) || rabotaS < 0 || rabotaDo > 24 || rabotaS >= rabotaDo) {
     throw new OshibkaNastroyek(

@@ -28,6 +28,7 @@ import * as svoi from '../db/svoi.js';
 import * as kody from '../db/kody.js';
 import * as dialogi from '../db/dialogi.js';
 import * as bdKatalog from '../db/katalog.js';
+import * as bdOtzyvy from '../db/otzyvy.js';
 import * as bdVykladki from '../db/vykladki.js';
 import * as vyk from './vykladka.js';
 import { raspisanie } from '../db/nastroyki.js';
@@ -360,6 +361,13 @@ export function sozdatPanel(l: Lavka): Panel {
         if (!vladelec) return otdat(res, 403, ocheredStranica());
         return otdat(res, 200, str.katalog(o, db));
       }
+      if (put === `${KOREN}/otzyvy`) {
+        /* ПРАВА ПРОВЕРЯЮТСЯ И ЗДЕСЬ, И НА ДЕЙСТВИИ. Отзыв на витрине
+           говорит от лица покупателей — кто его пишет, решает хозяин
+           лавки, а не помощник, которому поручены логин и пароль. */
+        if (!vladelec) return otdat(res, 403, ocheredStranica());
+        return otdat(res, 200, str.otzyvy(o, db, pokaz));
+      }
       if (put === `${KOREN}/vykladka`) {
         if (!vladelec) return otdat(res, 403, ocheredStranica());
         // Спрашиваем хранилище не чаще раза в восемь секунд: страница
@@ -589,6 +597,14 @@ export function sozdatPanel(l: Lavka): Panel {
       return otdat(res, 200, str.vykladka(o, db, poyas, l.n.adresSayta, { oshibka: itog.pochemu }));
     }
 
+    // ── отзывы: только владельцу ────────────────────────────────────
+
+    if (put === `${KOREN}/otzyv-novyy` || put.startsWith(`${KOREN}/otzyv/`)) {
+      if (!vladelec) return kuda(res, sSoobshcheniem(`${KOREN}/ochered`, { oshibka: 'netPrav' }));
+      const itog = deystvieOtzyva(db, put, f);
+      return kuda(res, sSoobshcheniem(`${KOREN}/otzyvy`, itog));
+    }
+
     // ── каталог: только владельцу ────────────────────────────────────
 
     if (put.startsWith(`${KOREN}/katalog/`)) {
@@ -633,7 +649,7 @@ async function deystvieZakaza(
 
   if (chto === 'vzyat') {
     if (!zakazy.vzyat(db, id, kto)) return { oshibka: 'nelzyaSeychas' };
-    await uvedom.cheloveku(l, z.tg_id, t.vzyatVRabotu(z));
+    await uvedom.cheloveku(l, z.tg_id, t.vzyatVRabotu(z, srokVydachi(new Date(), raspisanie(db, l.n)), raspisanie(db, l.n)));
     return { ok: 'vzyalVRabotu' };
   }
 
@@ -753,6 +769,51 @@ function cenaIzFormy(f: URLSearchParams, imya = 'cena'): number | null {
   const rublei = Number(syroe);
   if (!Number.isFinite(rublei) || rublei < 0) return null;
   return Math.round(rublei * 100);
+}
+
+/**
+ * Отзывы: завести, поправить, переставить, удалить.
+ *
+ * Удаление здесь НАСТОЯЩЕЕ, в отличие от продукта: на отзыв
+ * не ссылается ничто, и «скрытый навсегда» отзыв был бы мусором,
+ * а не историей.
+ */
+function deystvieOtzyva(db: Lavka['db'], put: string, f: URLSearchParams): Itog {
+  const polya = () => ({
+    avtor: f.get('avtor') ?? '',
+    tovar: f.get('tovar') ?? '',
+    text: f.get('text') ?? '',
+  });
+
+  if (put === `${KOREN}/otzyv-novyy`) {
+    const itog = bdOtzyvy.zavesti(db, polya());
+    if ('oshibka' in itog) return { oshibka: itog.oshibka === 'pusto' ? 'otzyvPusto' : 'nelzyaSeychas' };
+    return { ok: 'otzyvDobavlen' };
+  }
+
+  const mesto = put.match(/^\/admin\/otzyv\/([A-Za-z0-9-]+)\/mesto$/);
+  if (mesto) {
+    const kuda = f.get('kuda') === 'vverh' ? 'vverh' : 'vniz';
+    /* Крайний отзыв двигать некуда, и это не отказ: кнопка у него
+       и так `disabled`, а нажатие из старой вкладки не повод ругаться. */
+    bdOtzyvy.peredvinut(db, mesto[1] as string, kuda);
+    return { ok: 'sohraneno' };
+  }
+
+  const udal = put.match(/^\/admin\/otzyv\/([A-Za-z0-9-]+)\/udalit$/);
+  if (udal) {
+    if (!bdOtzyvy.udalit(db, udal[1] as string)) return { oshibka: 'nelzyaSeychas' };
+    return { ok: 'otzyvUdalen' };
+  }
+
+  const pravka = put.match(/^\/admin\/otzyv\/([A-Za-z0-9-]+)$/);
+  if (pravka) {
+    const itog = bdOtzyvy.pravit(db, pravka[1] as string, polya());
+    if ('oshibka' in itog) return { oshibka: itog.oshibka === 'pusto' ? 'otzyvPusto' : 'nelzyaSeychas' };
+    return { ok: 'sohraneno' };
+  }
+
+  return { oshibka: 'nelzyaSeychas' };
 }
 
 function deystvieKataloga(db: Lavka['db'], put: string, f: URLSearchParams): Itog {

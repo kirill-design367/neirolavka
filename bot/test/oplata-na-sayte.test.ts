@@ -669,7 +669,7 @@ test('свою ссылку можно открыть второй раз: за�
     s.tg.vyzovy.length = 0;
     await poslat(s.adres, SEKRET, start(`zakaz_${klyuch}`));
     const text = skazal(s);
-    assert.ok(text.includes('уже ваш'), `человеку не сказали, что заказ его: ${text}`);
+    assert.ok(text.includes('уже Ваш'), `человеку не сказали, что заказ его: ${text}`);
     assert.equal(zakazy.cheloveka(s.l.db, POKUPATEL).length, 1, 'завёлся второй заказ');
   } finally {
     await s.zakryt();

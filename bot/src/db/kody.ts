@@ -62,3 +62,16 @@ export function vzyat(db: Baza, zakazId: number, klyuch: Buffer): { kod: string;
   if (!r) return null;
   return { kod: rasshifrovat(r.kod_sh, klyuch), kogda: r.poluchen_v };
 }
+
+/**
+ * Забыть коды закрытого заказа.
+ *
+ * Стирается ТОЛЬКО шифротекст, а строки запросов остаются: по ним
+ * видно, сколько раз код просили и когда он пришёл, — а это и есть
+ * то, ради чего коды лежат отдельной таблицей. Сам код после выдачи
+ * не нужен никому и не имеет права пережить заказ: он открывает вход
+ * в чужой аккаунт.
+ */
+export function zabytKody(db: Baza, zakazId: number): void {
+  db.prepare("UPDATE kody SET kod_sh = NULL WHERE zakaz_id = ? AND kod_sh IS NOT NULL").run(zakazId);
+}

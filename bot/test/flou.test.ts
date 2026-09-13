@@ -60,10 +60,16 @@ test('свой аккаунт: ввод, код, выдача — и кажда�
 
     // ── сверка: показали записанное и ждём подтверждения ──
     const sverka = poslednee(s.tg.vyzovy);
-    assert.ok(sverka.includes('Всё верно?'), `нет вопроса о сверке: ${sverka}`);
+    assert.ok(sverka.includes('правильность данных'), `нет вопроса о сверке: ${sverka}`);
     assert.ok(sverka.includes(POCHTA), 'на сверке не показана почта');
-    assert.ok(!sverka.includes(PAROL), 'ПАРОЛЬ ПОКАЗАН ОТКРЫТЫМ на сверке');
-    assert.ok(sverka.includes('••••'), 'не видно, что пароль записан');
+    /* ПАРОЛЬ НА СВЕРКЕ ПОКАЗЫВАЕТСЯ ОТКРЫТО — решение владельца,
+       отменяющее прежние восемь точек: «человек должен увидеть, что
+       ввёл верно». Проверка здесь стояла ЗЕРКАЛЬНОЙ («ПАРОЛЬ ПОКАЗАН
+       ОТКРЫТЫМ на сверке») и теперь требует обратного — вместе
+       с тем, что даёт право так поступить: сообщение со сверкой
+       УДАЛЯЕТСЯ из переписки после подтверждения, см. ниже. Одно без
+       другого — это пароль, оставшийся в чате навсегда. */
+    assert.ok(sverka.includes(PAROL), 'пароля на сверке не видно — проверить нечего');
     assert.equal(
       zakazy.cheloveka(s.l.db, POKUPATEL).length,
       0,
@@ -76,6 +82,14 @@ test('свой аккаунт: ввод, код, выдача — и кажда�
     assert.ok(!doPodtverzhdeniya.includes(POCHTA), 'почта лежит в черновике открытой');
 
     await poslat(s.adres, SEKRET, nazhatie('sv:da'));
+
+    /* ВТОРАЯ ПОЛОВИНА ТОГО ЖЕ РЕШЕНИЯ: экран сверки с открытым паролем
+       не правится на месте, а удаляется. Правка оставила бы пароль
+       в истории сообщения — Telegram её хранит. */
+    assert.ok(
+      s.tg.vyzovy.some((v) => v.metod === 'deleteMessage'),
+      'сообщение сверки с паролем не удалено из переписки',
+    );
 
     const zakaz = zakazy.cheloveka(s.l.db, POKUPATEL)[0];
     assert.ok(zakaz, 'заказ создан после подтверждения');
@@ -102,7 +116,7 @@ test('свой аккаунт: ввод, код, выдача — и кажда�
     await poslat(s.adres, SEKRET, nazhatie(`avz:${zakaz!.id}`, VLADELEC));
     assert.equal(zakazy.po(s.l.db, zakaz!.id)!.status, 'v_rabote');
     assert.ok(
-      komu(s.tg.vyzovy, POKUPATEL).some((x) => x.includes('взяли в работу')),
+      komu(s.tg.vyzovy, POKUPATEL).some((x) => x.includes('взят в работу')),
       'покупателю не сказали, что заказ взяли',
     );
 
@@ -111,7 +125,12 @@ test('свой аккаунт: ввод, код, выдача — и кажда�
     assert.equal(zakazy.po(s.l.db, zakaz!.id)!.status, 'zhdem_kod');
     const prosba = komu(s.tg.vyzovy, POKUPATEL).find((x) => x.includes('двухфакторной'));
     assert.ok(prosba, 'просьбы о коде не было');
-    assert.ok(prosba!.includes(`№ ${zakaz!.id}`), 'в просьбе нет номера заказа');
+    /* НОМЕРА ЗАКАЗА У ПОКУПАТЕЛЯ НЕТ НИГДЕ — решение владельца;
+       вместо него название подписки, чтобы человек с двумя заказами
+       понял, к какому просят код. А у ПОМОЩНИКА номер остаётся: им
+       он привязывает код к заказу (проверка ниже по тексту). */
+    assert.ok(prosba!.includes(zakaz!.nazvanie), 'в просьбе нет названия подписки');
+    assert.ok(!prosba!.includes(`№ ${zakaz!.id}`), 'покупателю показали номер заказа');
 
     await poslat(s.adres, SEKRET, soobshchenie(KOD));
     const sverkaKoda = poslednee(s.tg.vyzovy);

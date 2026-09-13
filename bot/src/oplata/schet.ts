@@ -15,7 +15,7 @@ import { srokVydachi } from '../lib/vremya.js';
 import { zhurnal } from '../lib/zhurnal.js';
 import * as uved from '../bot/uvedomleniya.js';
 import { rubli } from '../lib/katalog.js';
-import { kogdaPridet } from '../lib/texty.js';
+import * as t from '../lib/texty.js';
 
 /** Что показать человеку у неоплаченного заказа. */
 export type Predlozhenie = {
@@ -228,11 +228,8 @@ async function soobshchitObOplate(l: Lavka, zakazId: number): Promise<void> {
   if (!z) return;
   const r = raspisanie(l.db, l.n);
   const srok = srokVydachi(new Date(), r);
-  await uved.cheloveku(
-    l,
-    z.tg_id,
-    `Оплата по заказу № ${z.id} получена. Спасибо.\n\n` +
-      `${z.nazvanie}\n\nПомощник возьмёт заказ в работу — доступ придёт ${kogdaPridet(srok, r)}.`,
-  );
+  /* НОМЕРА ЗАКАЗА У ПОКУПАТЕЛЯ НЕТ — решение владельца. Команде
+     ниже он, наоборот, нужен: помощник ведёт несколько заказов. */
+  await uved.cheloveku(l, z.tg_id, t.oplataPodtverzhdena(z, srok, r));
   await uved.komande(l, `Заказ № ${z.id} оплачен: ${z.nazvanie}. Можно брать в работу.`);
 }

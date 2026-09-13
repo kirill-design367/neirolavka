@@ -12,7 +12,7 @@ const BAZOVOE = {
 
 test('значения по умолчанию — часы работы лавки', () => {
   const n = prochitat({ ...BAZOVOE });
-  assert.equal(n.rabotaS, 8);
+  assert.equal(n.rabotaS, 10);
   assert.equal(n.rabotaDo, 22);
   assert.equal(n.poyas, 'Europe/Moscow');
   assert.equal(n.obeshchanieMinut, 60);

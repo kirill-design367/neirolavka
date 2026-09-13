@@ -17,6 +17,7 @@ import * as dostupy from '../db/dostupy.js';
 import * as svoi from '../db/svoi.js';
 import * as kody from '../db/kody.js';
 import * as bdKatalog from '../db/katalog.js';
+import * as bdOtzyvy from '../db/otzyvy.js';
 import * as metki from '../db/metki.js';
 import * as promo from '../db/promokody.js';
 import * as bdVykladki from '../db/vykladki.js';
@@ -730,6 +731,71 @@ ${produkty}
 <div><label>${ekr(s.imya)}</label><input type="text" name="imya" required placeholder="Midjourney"></div>
 <button>${ekr(s.dobavitProdukt)}</button></form></div>`;
   return stranica(o, s.katalog, telo);
+}
+
+// ── отзывы ───────────────────────────────────────────────────────────
+
+/**
+ * Отзывы: завести, поправить, переставить, удалить.
+ *
+ * Раздел только для владельца — и на СТРАНИЦЕ, и на ДЕЙСТВИИ (см.
+ * `admin/index.ts`). Спрятанный пункт меню — это удобство, а не
+ * защита: отзыв на витрине говорит от лица покупателей, и кто его
+ * пишет, решает хозяин лавки.
+ *
+ * УДАЛЕНИЕ ЗДЕСЬ НАСТОЯЩЕЕ, а не «скрыть», как у продукта. Разница
+ * не в строгости, а в том, ссылается ли на строку что-нибудь: на
+ * продукт ссылаются заказы, на отзыв — ничто.
+ *
+ * Порядок правится соседями «выше/ниже», а не полем с номером: номер
+ * пришлось бы держать в голове и сверять с соседями, а «выше» —
+ * это ровно то действие, которое человек хочет сделать.
+ */
+export function otzyvy(o: Obstanovka, db: Baza, pokaz: { oshibka?: string; horosho?: string } = {}): string {
+  const s = o.s;
+  const spisok = bdOtzyvy.vse(db);
+
+  const karty = spisok
+    .map(
+      (z, i) => `<div class="karta">
+<form method="post" action="/admin/otzyv/${ekr(z.id)}">${pole(o)}
+<label>${ekr(s.imyaPokupatelya)}</label><input type="text" name="avtor" required value="${ekr(z.author)}">
+<label>${ekr(s.tovarOtzyva)}</label><input type="text" name="tovar" value="${ekr(z.bought)}" style="width:100%">
+<label>${ekr(s.tekstOtzyva)}</label><textarea name="text" required rows="3" style="width:100%">${ekr(z.text)}</textarea>
+<p><button>${ekr(s.sohranit)}</button></p></form>
+<form method="post" action="/admin/otzyv/${ekr(z.id)}/mesto" class="ryad">${pole(o)}
+<button name="kuda" value="vverh" class="tihaya"${i === 0 ? ' disabled' : ''}>↑ ${ekr(s.vyshe)}</button>
+<button name="kuda" value="vniz" class="tihaya"${i === spisok.length - 1 ? ' disabled' : ''}>↓ ${ekr(s.nizhe)}</button>
+</form>
+<form method="post" action="/admin/otzyv/${ekr(z.id)}/udalit" style="margin-top:8px">${pole(o)}
+<button class="tihaya">${ekr(s.udalitOtzyv)}</button></form>
+</div>`,
+    )
+    .join('');
+
+  // Та же подсказка, что на странице каталога, и по той же причине:
+  // отзыв правят здесь, и узнать, что он ещё не на витрине, человек
+  // должен на том же экране, где его написал.
+  const r = vyk.rashozhdenie(db);
+  const podskazka = r.est
+    ? `<div class="karta shag"><b>${ekr(r.nikogda ? s.nikogdaNeVykladyvali : s.cenyRazoshlis)}</b>
+<p class="tiho" style="margin:6px 0 10px">${ekr(s.vykladkaPoyasnenie)}</p>
+<a href="/admin/vykladka">${ekr(s.vylozhitNaSayt)} →</a></div>`
+    : `<div class="karta"><span class="tiho">${ekr(s.cenySovpadayut)}</span></div>`;
+
+  const telo = `<h1>${ekr(s.otzyvy)}</h1>
+${pokaz.oshibka ? `<div class="oshibka">${ekr(pokaz.oshibka)}</div>` : ''}
+${pokaz.horosho ? `<div class="horosho">${ekr(pokaz.horosho)}</div>` : ''}
+<div class="karta"><p class="tiho" style="margin:0">${ekr(s.otzyvyPoyasnenie)}</p></div>
+${podskazka}
+${karty || `<p class="tiho">${ekr(s.otzyvovNet)}</p>`}
+<div class="karta"><h2>${ekr(s.dobavitOtzyv)}</h2>
+<form method="post" action="/admin/otzyv-novyy">${pole(o)}
+<label>${ekr(s.imyaPokupatelya)}</label><input type="text" name="avtor" required placeholder="Никита">
+<label>${ekr(s.tovarOtzyva)}</label><input type="text" name="tovar" style="width:100%" placeholder="ChatGPT, Plus">
+<label>${ekr(s.tekstOtzyva)}</label><textarea name="text" required rows="3" style="width:100%"></textarea>
+<p><button>${ekr(s.dobavitOtzyv)}</button></p></form></div>`;
+  return stranica(o, s.otzyvy, telo);
 }
 
 // ── статистика ───────────────────────────────────────────────────────

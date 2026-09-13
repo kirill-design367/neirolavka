@@ -13,11 +13,12 @@ import type { Product } from '../lib/katalog.js';
 import { kopeyki, rubliIli } from '../lib/katalog.js';
 import type { Zakaz } from '../db/zakazy.js';
 import type { Rol } from '../db/komanda.js';
+import { denKratko } from '../lib/vremya.js';
 
 export const KNOPKA_KUPIT = 'Купить доступ';
 export const KNOPKA_ZAKAZY = 'Мои заказы';
 export const KNOPKA_BALANS = 'Баланс';
-export const KNOPKA_POMOSHCH = 'Помощь';
+export const KNOPKA_O_NAS = 'О нас';
 export const KNOPKA_PODDERZHKA = 'Поддержка';
 export const KNOPKA_LAVKA = 'Заказы лавки';
 
@@ -32,7 +33,7 @@ export function nizhnyaya(rol: Rol | null): Keyboard {
     .text(KNOPKA_ZAKAZY)
     .text(KNOPKA_BALANS)
     .row()
-    .text(KNOPKA_POMOSHCH)
+    .text(KNOPKA_O_NAS)
     .text(KNOPKA_PODDERZHKA);
   if (rol) k.row().text(KNOPKA_LAVKA);
   return k.resized().persistent();
@@ -140,9 +141,21 @@ export function poslePokupki(zakazId: number, oplataUrl?: string | null): Inline
   return k.text('Мои заказы', 'zak').row().text('Заказ целиком', `z:${zakazId}`);
 }
 
-export function moiZakazy(spisok: Zakaz[]): InlineKeyboard {
+/**
+ * Список заказов покупателя.
+ *
+ * НОМЕРА В ПОДПИСИ НЕТ — решение владельца: покупатель номера
+ * не видит нигде. Вместо него дата оформления, и она тут не для
+ * красоты: у одного человека бывает два выданных заказа на один
+ * и тот же уровень, и без даты кнопки были бы неотличимы. Сам
+ * номер по-прежнему едет в данных кнопки (`z:12`) — он нужен боту,
+ * а не глазу.
+ */
+export function moiZakazy(spisok: Zakaz[], poyas: string): InlineKeyboard {
   const k = new InlineKeyboard();
-  for (const z of spisok) k.text(`№ ${z.id} · ${z.nazvanie}`, `z:${z.id}`).row();
+  for (const z of spisok) {
+    k.text(`${z.nazvanie} · ${denKratko(new Date(z.sozdan), poyas)}`, `z:${z.id}`).row();
+  }
   return k;
 }
 
@@ -161,12 +174,14 @@ export function zakazCheloveka(z: Zakaz, estDostup: boolean, oplataUrl?: string 
 /* Ссылка НА КНОПКЕ, а не строкой в тексте: нижняя клавиатура
    URL не носит вовсе — Telegram разрешает ей только текст, —
    поэтому «Поддержка» внизу открывает сообщение, а ссылка живёт
-   в кнопке под ним. */
-export const pomoshch = (): InlineKeyboard =>
-  new InlineKeyboard()
-    .text('Написать администратору', 'vopros')
-    .row()
-    .url(KNOPKA_PODDERZHKA, PODDERZHKA);
+   в кнопке под ним.
+
+   КНОПКИ «НАПИСАТЬ АДМИНИСТРАТОРУ» ЗДЕСЬ БОЛЬШЕ НЕТ: владелец снял
+   её вместе с переименованием раздела в «О нас». Частный случай
+   разбирает живой человек в поддержке, а не пересланный ботом
+   вопрос, и текст раздела четырежды говорит об этом словами. */
+export const oNas = (): InlineKeyboard =>
+  new InlineKeyboard().url(KNOPKA_PODDERZHKA, PODDERZHKA);
 
 export const poddershka = (): InlineKeyboard =>
   new InlineKeyboard().url('Написать в поддержку', PODDERZHKA);

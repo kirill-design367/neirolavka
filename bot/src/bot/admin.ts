@@ -236,7 +236,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     // Покупателю сообщаем о КАЖДОЙ смене состояния, которая его
     // касается: молчание между оплатой и выдачей — это ровно то время,
     // когда человек начинает думать, что его обманули.
-    if (vzyal) await uvedom.cheloveku(l, z.tg_id, t.vzyatVRabotu(z));
+    if (vzyal) await uvedom.cheloveku(l, z.tg_id, t.vzyatVRabotu(z, srokVydachi(new Date(), r()), r()));
     await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z), komanda.vladelec(l.db, ctx.from.id)));
   });
 

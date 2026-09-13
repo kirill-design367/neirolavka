@@ -200,6 +200,19 @@ export type Slova = {
   promoSrokNeveren: string;
   promoAktivaciiNeverny: string;
   promoVozvrashchena: string;
+  otzyvy: string;
+  otzyvyPoyasnenie: string;
+  imyaPokupatelya: string;
+  tovarOtzyva: string;
+  tekstOtzyva: string;
+  dobavitOtzyv: string;
+  otzyvDobavlen: string;
+  otzyvUdalen: string;
+  otzyvPusto: string;
+  otzyvovNet: string;
+  udalitOtzyv: string;
+  vyshe: string;
+  nizhe: string;
   vykladka: string;
   vylozhitNaSayt: string;
   vykladkaPoyasnenie: string;
@@ -448,12 +461,26 @@ const RU: Slova = {
   promoSrokNeveren: 'Укажите дату, до которой код работает',
   promoAktivaciiNeverny: 'Активаций бывает от одной до десяти тысяч',
   promoVozvrashchena: 'активация промокода вернулась',
+  otzyvy: 'Отзывы',
+  otzyvyPoyasnenie:
+    'Отзывы показываются бегущей строкой в подвале сайта. Порядок здесь — порядок на витрине. На сайт они попадают выкладкой, вместе с ценами.',
+  imyaPokupatelya: 'Имя покупателя',
+  tovarOtzyva: 'Товар',
+  tekstOtzyva: 'Текст отзыва',
+  dobavitOtzyv: 'Добавить отзыв',
+  otzyvDobavlen: 'Отзыв добавлен',
+  otzyvUdalen: 'Отзыв удалён',
+  otzyvPusto: 'Нужны имя и текст отзыва',
+  otzyvovNet: 'Отзывов пока нет. На сайте строка отзывов не показывается вовсе.',
+  udalitOtzyv: 'Удалить',
+  vyshe: 'Выше',
+  nizhe: 'Ниже',
   vykladka: 'Выкладка на сайт',
   vylozhitNaSayt: 'Выложить на сайт',
   vykladkaPoyasnenie:
-    'Цены, которые вы поставили в каталоге, работают в боте сразу. На витрине сайта они появляются после выкладки: сайт собирается заново, это занимает две-три минуты.',
-  cenySovpadayut: 'На сайте те же цены, что в панели',
-  cenyRazoshlis: 'Цены в панели новее, чем на сайте',
+    'Цены из каталога и отзывы работают в боте сразу. На витрине сайта они появляются после выкладки: сайт собирается заново, это занимает две-три минуты. Выкладка одна на всё — цены и отзывы уезжают вместе.',
+  cenySovpadayut: 'На сайте то же, что в панели',
+  cenyRazoshlis: 'В панели новее, чем на сайте',
   nikogdaNeVykladyvali: 'Из панели ещё ни разу не выкладывали',
   vykladkaIdet: 'Выкладка идёт',
   vykladkaIdetPoyasnenie: 'Сайт пересобирается. Обычно это две-три минуты — страница обновляется сама.',
@@ -698,12 +725,26 @@ const EN: Slova = {
   promoSrokNeveren: 'Set the date the code works until',
   promoAktivaciiNeverny: 'Activations range from one to ten thousand',
   promoVozvrashchena: 'promo code activation returned',
+  otzyvy: 'Reviews',
+  otzyvyPoyasnenie:
+    'Reviews run as a marquee in the site footer. The order here is the order on the site. They reach the site with a publish, together with prices.',
+  imyaPokupatelya: 'Customer name',
+  tovarOtzyva: 'Product',
+  tekstOtzyva: 'Review text',
+  dobavitOtzyv: 'Add review',
+  otzyvDobavlen: 'Review added',
+  otzyvUdalen: 'Review deleted',
+  otzyvPusto: 'A name and a review text are required',
+  otzyvovNet: 'No reviews yet. The site shows no review strip at all.',
+  udalitOtzyv: 'Delete',
+  vyshe: 'Up',
+  nizhe: 'Down',
   vykladka: 'Publish to the site',
   vylozhitNaSayt: 'Publish to the site',
   vykladkaPoyasnenie:
-    'Prices you set in the catalogue work in the bot at once. They reach the website only after a publish: the site is rebuilt, which takes two or three minutes.',
-  cenySovpadayut: 'The site shows the same prices as the panel',
-  cenyRazoshlis: 'Prices here are newer than on the site',
+    'Catalogue prices and reviews work in the bot at once. They reach the website only after a publish: the site is rebuilt, which takes two or three minutes. One publish covers both.',
+  cenySovpadayut: 'The site matches the panel',
+  cenyRazoshlis: 'The panel is newer than the site',
   nikogdaNeVykladyvali: 'Nothing has been published from the panel yet',
   vykladkaIdet: 'Publishing in progress',
   vykladkaIdetPoyasnenie: 'The site is being rebuilt. It usually takes two or three minutes — this page refreshes itself.',

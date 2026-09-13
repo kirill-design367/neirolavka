@@ -13,7 +13,7 @@ import * as vykladki from '../src/db/vykladki.js';
 import * as bdKatalog from '../src/db/katalog.js';
 import * as komanda from '../src/db/komanda.js';
 import * as adminy from '../src/db/adminy.js';
-import { podstavit, rashozhdenie, telo, zapustit, proverit } from '../src/admin/vykladka.js';
+import { podstavit, rashozhdenie, telo, teloCen, zapustit, proverit } from '../src/admin/vykladka.js';
 import { tarif } from '../src/lib/katalog.js';
 import { podnyat } from './podstavnoe-hranilishche.js';
 import type { PodstavnoeHranilishche } from './podstavnoe-hranilishche.js';
@@ -42,7 +42,7 @@ test('панель пишет ДАННЫЕ: круг «прочитать — с
     // не изменился ни на байт. Значит «выложить, ничего не поменяв»
     // честно ответит «на сайте уже такие же», а не отправит пустую
     // правку.
-    assert.equal(podstavit(KATALOG, telo(s.l.db)), KATALOG);
+    assert.equal(podstavit(KATALOG, s.l.db), KATALOG);
   } finally {
     await s.zakryt();
   }
@@ -53,12 +53,12 @@ test('кусок каталога — это JSON, и апостроф в име
   try {
     const kogo = bdKatalog.produkty(s.l.db)[0]!.id;
     bdKatalog.pravitProdukt(s.l.db, kogo, { imya: "L'Oréal \"Про\"" });
-    const kusok = telo(s.l.db);
+    const kusok = teloCen(s.l.db);
     // Строка экранирована по правилам JSON: кавычки внутри имени
     // не закрывают строку. Прежняя выгрузка складывала имя в одинарные
     // кавычки без экранирования — и такое имя роняло сборку сайта.
     assert.ok(kusok.includes('"L\'Oréal \\"Про\\""'), 'имя не экранировано');
-    const novyy = podstavit(KATALOG, kusok);
+    const novyy = podstavit(KATALOG, s.l.db);
     // Разбираем получившееся как выражение: JSON.parse на самом теле.
     // Режем ровно между метками. Искать первое «products: » нельзя:
     // так называется и поле в объявлении типа, оно стоит выше.
@@ -76,7 +76,7 @@ test('файл без меток не переписывается вслепу�
   const s = await stend();
   try {
     assert.throws(
-      () => podstavit('файл, который правили руками', telo(s.l.db)),
+      () => podstavit('файл, который правили руками', s.l.db),
       (e: Error) => /мет/i.test(e.message),
       'подстановка в файл без меток обязана отказать',
     );
