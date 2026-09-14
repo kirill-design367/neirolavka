@@ -52,7 +52,7 @@
 import { createHash } from 'node:crypto';
 
 import { robokassa } from '../config.js';
-import { ALGORITMY, podpisiSovpali, shpHvost } from './robokassa.js';
+import { ALGORITMY, kopeykiIzSummy, podpisiSovpali, shpHvost } from './robokassa.js';
 import type { Algoritm, NastroykiRobokassy } from './robokassa.js';
 import { prochitatFayl, tolkoS, FAYL_OKRUZHENIYA } from '../lib/okruzhenie.js';
 import Database from 'better-sqlite3';
@@ -204,58 +204,93 @@ function glavnoe(): number {
   }
 
   const p = posledniy.pary;
-  const outSum = (p['OutSum'] ?? p['outSum'] ?? '').trim();
-  const invId = (p['InvId'] ?? p['invId'] ?? '').trim();
-  const prishla = (p['SignatureValue'] ?? p['signatureValue'] ?? '').trim();
+  const shp = shpHvost(p);
+
+  /* ДВА НАБОРА ИМЁН, И ПРОБА ОБЯЗАНА ЗНАТЬ ОБА. Робокасса шлёт
+     на ResultURL и современный `OutSum`/`InvId`/`SignatureValue`,
+     и старый `out_summ`/`inv_id`/`crc` — в настоящем уведомлении
+     видны все шесть полей. Подпись считается от ОДНОГО из них,
+     и какого — заранее неизвестно. */
+  const nabory = [
+    {
+      imya: 'OutSum/InvId/SignatureValue',
+      outSum: (p['OutSum'] ?? p['outSum'] ?? '').trim(),
+      invId: (p['InvId'] ?? p['invId'] ?? '').trim(),
+      podpis: (p['SignatureValue'] ?? p['signatureValue'] ?? '').trim(),
+    },
+    {
+      imya: 'out_summ/inv_id/crc',
+      outSum: (p['out_summ'] ?? p['OutSumm'] ?? '').trim(),
+      invId: (p['inv_id'] ?? '').trim(),
+      podpis: (p['crc'] ?? p['CRC'] ?? '').trim(),
+    },
+  ].filter((x) => x.outSum && x.invId && x.podpis);
 
   console.log('\n── ПОСЛЕДНИЙ ОТКАЗ ──────────────────────────────────');
   console.log(`  когда:               ${posledniy.vpervye} → ${posledniy.poslednee}`);
   console.log(`  повторов:            ${posledniy.povtorov}`);
   console.log(`  почему отклонили:    ${posledniy.pochemu}`);
-  console.log(`  сумма (OutSum):      ${outSum || '—'}`);
-  console.log(`  счёт (InvId):        ${invId || '—'}`);
-  console.log(`  подпись пришла:      ${prishla || '—'}`);
   console.log(`  поля уведомления:    ${posledniy.imena.join(', ') || '—'}`);
-
-  const shp = shpHvost(p);
+  for (const nb of nabory) {
+    console.log(`  набор ${nb.imya}:`);
+    console.log(`      сумма ${nb.outSum} · счёт ${nb.invId} · подпись ${nb.podpis}`);
+  }
   if (shp.length) console.log(`  Shp_-параметры:      ${shp.join(', ')}`);
 
-  if (posledniy.pochemu !== 'podpis_ne_soshlas') {
+  if (nabory.length === 0) {
     console.log(
-      '\nДЕЛО НЕ В ПОДПИСИ. Отказ случился раньше, чем до неё дошло: ' +
-        `${posledniy.pochemu}.\n` +
-        'Смотреть надо на поля уведомления выше, а не на пароли.',
+      '\nПОЛЕЙ ПОДПИСИ В УВЕДОМЛЕНИИ НЕТ ВОВСЕ. Ни OutSum/InvId/SignatureValue,\n' +
+        'ни out_summ/inv_id/crc. Разбирать нечего: смотрите список полей выше —\n' +
+        'скорее всего, на этот адрес постучался не тот, кого мы ждали.',
     );
     return 1;
   }
 
-  if (!outSum || !invId || !prishla) {
-    console.log('\nПЛОХО: в записанном отказе нет полей, из которых строится подпись.');
-    return 1;
-  }
-
-  /* ЖДАЛИ — это подпись при НЫНЕШНИХ настройках, ровно та, которую
-     считал бот. Печатается целиком: владелец просил сравнить
-     пришедшую с ожидаемой, и сравнивать по половинке нельзя. */
-  const parolSeychas = n.test ? n.testParol2 : n.parol2;
-  const zhdali = podpis(n.algoritmResult, outSum, invId, parolSeychas, shp);
-  console.log(`  подпись ждали:       ${zhdali}`);
-  console.log(
-    `  (${n.algoritmResult}, ${n.test ? 'тестовый' : 'боевой'} пароль № 2, ` +
-      `${shp.length ? 'с Shp_-хвостом' : 'без Shp_'})`,
-  );
+  /* ВИДЫ СТРОКИ СУММЫ. Подпись считается ОТ СТРОКИ: `1.000000`
+     и `1.00` дают разные хеши. Если Робокасса подписала не то,
+     что прислала (а такое бывает: в уведомлении одно поле, а
+     подписано другое), узнать это можно только перебором. */
+  const vidySummy = (outSum: string): { imya: string; znachenie: string }[] => {
+    const kop = kopeykiIzSummy(outSum);
+    const spisok = [{ imya: 'как пришла', znachenie: outSum }];
+    if (kop !== null) {
+      const dvaZnaka = (kop / 100).toFixed(2);
+      const bezHvosta = String(kop / 100);
+      const celoe = String(Math.round(kop / 100));
+      for (const [imya, znachenie] of [
+        ['два знака', dvaZnaka],
+        ['без нулей на конце', bezHvosta],
+        ['целые рубли', celoe],
+      ] as const) {
+        if (!spisok.some((x) => x.znachenie === znachenie)) spisok.push({ imya, znachenie });
+      }
+    }
+    return spisok;
+  };
 
   console.log('\n── ПЕРЕБОР: ЧЕМ ЭТО МОГЛИ ПОДПИСАТЬ ──────────────────');
-  const nashlos: string[] = [];
-  for (const k of kandidaty(n)) {
-    if (!k.parol) continue;
-    for (const a of ALGORITMY) {
-      for (const sHvostom of shp.length ? [true, false] : [false]) {
-        const nash = podpis(a, outSum, invId, k.parol, sHvostom ? shp : []);
-        if (!podpisiSovpali(prishla, nash)) continue;
-        const kak = `${a}, ${k.imya}${shp.length ? (sHvostom ? ', с Shp_' : ', без Shp_') : ''}`;
-        nashlos.push(kak);
-        console.log(`  СОШЛОСЬ: ${kak}`);
+  const nashlos: { nabor: string; algoritm: string; parol: string; summa: string; shp: boolean }[] = [];
+  for (const nb of nabory) {
+    for (const k of kandidaty(n)) {
+      if (!k.parol) continue;
+      for (const a of ALGORITMY) {
+        for (const vid of vidySummy(nb.outSum)) {
+          for (const sHvostom of shp.length ? [true, false] : [false]) {
+            const nash = podpis(a, vid.znachenie, nb.invId, k.parol, sHvostom ? shp : []);
+            if (!podpisiSovpali(nb.podpis, nash)) continue;
+            nashlos.push({
+              nabor: nb.imya,
+              algoritm: a,
+              parol: k.imya,
+              summa: vid.imya,
+              shp: sHvostom,
+            });
+            console.log(
+              `  СОШЛОСЬ: набор ${nb.imya}, ${a}, ${k.imya}, сумма «${vid.imya}»` +
+                `${shp.length ? (sHvostom ? ', с Shp_' : ', без Shp_') : ''}`,
+            );
+          }
+        }
       }
     }
   }
@@ -264,8 +299,9 @@ function glavnoe(): number {
     console.log('  ни одно из сочетаний не сошлось.');
     console.log(
       '\nВЫВОД: ПАРОЛЬ № 2 НЕ ТОТ. Ни один из четырёх паролей файла ни при каком\n' +
-        'из шести алгоритмов не даёт присланную подпись — значит Робокасса\n' +
-        'подписала уведомление паролем, которого у нас нет.\n' +
+        'из шести алгоритмов, ни на одном из наборов полей и ни при одном виде\n' +
+        'записи суммы не даёт присланную подпись — значит Робокасса подписала\n' +
+        'уведомление паролем, которого у нас нет.\n' +
         'Что делать: Робокасса → Мои магазины → Технические настройки →\n' +
         'взять пароль № 2 заново и положить в NEIROLAVKA_ROBOKASSA_PAROL2.\n' +
         'Проверьте заодно, не съехало ли значение на свою строку при вставке\n' +
@@ -275,40 +311,61 @@ function glavnoe(): number {
   }
 
   console.log('\n── ЧТО ЭТО ЗНАЧИТ ────────────────────────────────────');
-  const odno = nashlos[0]!;
-  if (odno.includes('боевой № 1') || odno.includes('тестовый № 1')) {
-    console.log(
-      'Уведомление подписано ПАРОЛЕМ № 1, а мы проверяем его паролем № 2.\n' +
-        'Либо в файле окружения пароли стоят наоборот, либо в кабинете\n' +
-        'у Result URL прописан не тот пароль. Менять надо ФАЙЛ, а не код:\n' +
-        'формула ResultURL с паролем № 2 — это и есть то, на чём держится\n' +
-        'доверие к слову «оплачено».',
+  const it = nashlos[0]!;
+  const bedy: string[] = [];
+
+  if (it.parol !== 'боевой № 2' && it.parol !== 'тестовый № 2') {
+    bedy.push(
+      'ПОДПИСАНО ПАРОЛЕМ № 1, а проверяем мы паролем № 2. Либо в файле окружения\n' +
+        'пароли стоят наоборот, либо в кабинете у Result URL прописан не тот.\n' +
+        'Менять надо ФАЙЛ, а не код: формула ResultURL с паролем № 2 — это то,\n' +
+        'на чём держится доверие к слову «оплачено».',
     );
-  } else if (odno.includes('тестовый')) {
+  } else if (it.parol.startsWith('тестовый') !== n.test) {
+    bedy.push(
+      `ПОДПИСАНО ${it.parol.toUpperCase()} паролем, а платёж мы считаем ` +
+        `${n.test ? 'тестовым' : 'боевым'}.\n` +
+        'Смотреть NEIROLAVKA_ROBOKASSA_TEST и то, активирован ли магазин:\n' +
+        'неактивированный умеет только тестовые платежи.',
+    );
+  }
+
+  if (it.algoritm !== n.algoritmResult) {
+    bedy.push(
+      `АЛГОРИТМ НЕ ТОТ: подписано «${it.algoritm}», а мы считаем «${n.algoritmResult}».\n` +
+        'В кабинете Робокассы алгоритм хеша выбирается РЯДОМ С КАЖДЫМ адресом,\n' +
+        'и у Result URL он свой — с алгоритмом ссылки совпадать не обязан.\n' +
+        'Лечится одной строкой в /etc/neirolavka-bot/okruzhenie:\n' +
+        `  NEIROLAVKA_ROBOKASSA_ALGORITM_RESULT=${it.algoritm}\n` +
+        'и перезапуском службы: sudo systemctl restart neirolavka-bot',
+    );
+  }
+
+  if (it.summa !== 'как пришла') {
+    bedy.push(
+      `СУММА ПОДПИСАНА НЕ В ТОМ ВИДЕ, В КАКОМ ПРИСЛАНА: подпись сходится\n` +
+        `на записи «${it.summa}», а не на строке из поля. Это уже не настройка,\n` +
+        'а расхождение протокола — покажите этот вывод тому, кто будет править\n' +
+        'разбор: сейчас он подписывает строку ровно как пришла.',
+    );
+  }
+
+  if (bedy.length === 0) {
     console.log(
-      'Уведомление подписано ТЕСТОВЫМ паролем, а мы считаем платёж боевым\n' +
-        '(или наоборот). Смотреть NEIROLAVKA_ROBOKASSA_TEST и то, активирован ли\n' +
-        'магазин: неактивированный магазин умеет только тестовые платежи.',
+      'Сочетание совпало с нынешними настройками — значит подпись СХОДИТСЯ,\n' +
+        `и беда была не в ней, а в том, что записано выше: ${posledniy.pochemu}.\n` +
+        (posledniy.pochemu === 'summa_ne_chislo'
+          ? 'Сумму прочесть не удалось при верной подписи — покажите этот вывод\n' +
+            'тому, кто правит разбор: уведомление настоящее.\n'
+          : '') +
+        'Если бот с последней правкой уже выложен, дождитесь следующего повтора:\n' +
+        'Робокасса шлёт уведомление раз в минуту, пока не получит «OK».',
     );
   } else {
-    const a = odno.split(',')[0]!.trim();
-    if (a === n.algoritmResult) {
-      console.log(
-        'Сочетание совпало с нынешними настройками — значит на момент отказа\n' +
-          'настройки были ДРУГИЕ, и сейчас всё уже верно. Дождитесь следующего\n' +
-          'уведомления: Робокасса повторяет их, пока не получит «OK».',
-      );
-    } else {
-      console.log(
-        `АЛГОРИТМ НЕ ТОТ: уведомление подписано «${a}», а мы считаем «${n.algoritmResult}».\n` +
-          'В кабинете Робокассы алгоритм хеша выбирается РЯДОМ С КАЖДЫМ адресом,\n' +
-          'и у Result URL он свой — с алгоритмом ссылки совпадать не обязан.\n' +
-          'Лечится одной строкой в /etc/neirolavka-bot/okruzhenie:\n' +
-          `  NEIROLAVKA_ROBOKASSA_ALGORITM_RESULT=${a}\n` +
-          'и перезапуском службы: sudo systemctl restart neirolavka-bot',
-      );
-    }
+    for (const b of bedy) console.log(b + '\n');
   }
+
+  console.log(`Набор полей, от которого сошлась подпись: ${it.nabor}`);
   return 0;
 }
 

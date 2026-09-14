@@ -377,34 +377,114 @@ function opisanie(z: ZaprosScheta): string {
 }
 
 /**
- * Разбор уведомления.
+ * ДВА НАБОРА ИМЁН, И ЭТО НЕ НАШ ВЫБОР.
  *
- * Возвращает `null` на всём, что не сошлось: нет полей, не та
- * подпись, сумма не похожа на сумму. Вызывающий код на `null`
- * обязан ответить отказом и НИЧЕГО не менять.
+ * Робокасса присылает на ResultURL ОБА разом: современный
+ * `OutSum` / `InvId` / `SignatureValue` и старый
+ * `out_summ` / `inv_id` / `crc`. В настоящем уведомлении видны все
+ * шесть полей сразу.
+ *
+ * Брать надо ОДИН набор ЦЕЛИКОМ — тот, от которого сходится подпись.
+ * Смешивать нельзя ни при каких обстоятельствах: проверить подпись
+ * по значениям одного набора, а номер счёта и сумму взять из другого,
+ * значит засчитать оплату по непроверенным числам. Формат у них может
+ * отличаться (`1.000000` против `1.00`), и тогда это не придирка,
+ * а выданный доступ за другие деньги.
+ *
+ * Старый набор здесь не «на всякий случай»: разбор читал
+ * `pary['outSum']` — то есть тот же современный ключ в другом
+ * регистре, — и до `out_summ` не добирался вовсе.
  */
+type Nabor = {
+  imya: string;
+  outSum: string;
+  invId: string;
+  podpis: string;
+};
+
+function nabory(pary: Record<string, string>): Nabor[] {
+  const vzyat = (...klyuchi: string[]): string => {
+    for (const k of klyuchi) {
+      const v = pary[k];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return '';
+  };
+  return [
+    {
+      imya: 'OutSum/InvId/SignatureValue',
+      outSum: vzyat('OutSum', 'outSum'),
+      invId: vzyat('InvId', 'invId'),
+      podpis: vzyat('SignatureValue', 'signatureValue'),
+    },
+    {
+      imya: 'out_summ/inv_id/crc',
+      outSum: vzyat('out_summ', 'OutSumm'),
+      invId: vzyat('inv_id'),
+      podpis: vzyat('crc', 'CRC'),
+    },
+  ];
+}
+
 /**
  * Поля уведомления, ИЗ КОТОРЫХ СТРОИТСЯ ПОДПИСЬ.
  *
  * Белый список, а не «всё, что пришло», и это про персональные
  * данные. Робокасса кладёт в уведомление и почту плательщика
  * (`EMail`), и способ оплаты, а лавка персональных данных
- * не собирает нигде — ни в базе, ни в журнале. Для разбора подписи
- * нужны ровно эти поля плюс пользовательские `Shp_`, и больше
- * ничего.
+ * не собирает нигде — ни в базе, ни в журнале.
+ *
+ * ОБА НАБОРА ИМЁН, И ЭТО КУПЛЕНО БОЕВЫМ ДНЁМ. Сначала в списке
+ * стоял только современный, и записанный отказ не показал ни одного
+ * значения из старого — при том что именно они могли оказаться теми,
+ * от которых считается подпись. Разбирать беду по записи, в которой
+ * половины материала нет, нельзя.
  */
 export function podpisnyePolya(pary: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const k of Object.keys(pary)) {
-    if (/^(outsum|invid|signaturevalue|istest)$/i.test(k) || /^shp_/i.test(k)) out[k] = pary[k]!;
+    const nizhe = k.toLowerCase();
+    const svoy =
+      ['outsum', 'invid', 'signaturevalue', 'istest', 'out_summ', 'outsumm', 'inv_id', 'crc'].includes(
+        nizhe,
+      ) || nizhe.startsWith('shp_');
+    if (svoy) out[k] = pary[k]!;
   }
   return out;
 }
 
+/**
+ * Сумма из уведомления в копейки. `null` — прочесть не удалось.
+ *
+ * ЧИСЛО ЗНАКОВ ПОСЛЕ ТОЧКИ НЕ НАШЕ ДЕЛО, и это та самая беда.
+ * Здесь стояло `^\d+(\.\d{1,2})?$` — «рубли и не больше двух
+ * знаков», и на боевом Робокасса прислала `1.000000`. Разбор
+ * отказал, заказ остался неоплаченным при списанных деньгах,
+ * а в журнал ушло «несошедшаяся подпись» — при том что до подписи
+ * дело не дошло вовсе.
+ *
+ *Формат суммы придумывает Робокасса, а не мы: гадать, сколько знаков
+ * она поставит, — это ставить СВОЁ предположение впереди чужого
+ * протокола. Принимаем любое число знаков; сколько там копеек,
+ * решает округление, а сошлась ли сумма с выставленным счётом —
+ * отдельная проверка этажом выше, и она строгая.
+ */
+export function kopeykiIzSummy(outSum: string): number | null {
+  // Потолок длины: подпись ещё не проверена, и строка пришла снаружи.
+  if (!outSum || outSum.length > 32) return null;
+  if (!/^\d+(\.\d+)?$/.test(outSum)) return null;
+  const rubli = Number(outSum);
+  if (!Number.isFinite(rubli)) return null;
+  const kop = Math.round(rubli * 100);
+  return Number.isSafeInteger(kop) ? kop : null;
+}
+
 const SLOVAMI: Record<PochemuNeVzyali, string> = {
-  net_poley: 'в уведомлении нет OutSum, InvId или самой подписи',
+  net_poley: 'в уведомлении нет суммы, номера счёта или самой подписи',
   nomer_ne_chislo: 'номер счёта (InvId) не число',
-  summa_ne_chislo: 'сумма (OutSum) не похожа на сумму',
+  summa_ne_chislo:
+    'ПОДПИСЬ СОШЛАСЬ, а сумму прочесть не удалось — уведомление настоящее, ' +
+    'и разбирать это надо руками',
   podpis_ne_soshlas:
     'поля на месте, а подпись не сошлась — это про пароль № 2, алгоритм ' +
     'или формулу; запустите пробу подписи',
@@ -413,36 +493,64 @@ const SLOVAMI: Record<PochemuNeVzyali, string> = {
 /**
  * Разбор уведомления: чем именно он кончился.
  *
- * ПРИЧИНА НАЗЫВАЕТСЯ СВОИМ ИМЕНЕМ, и это не педантизм. Раньше здесь
- * стоял `null` на всех четырёх бедах разом, а журнал печатал
- * «уведомление с несошедшейся подписью» — то есть на отсутствующее
- * поле и на кривой номер счёта отвечал «проверьте пароли». Человек
- * шёл искать поломку туда, где её не было.
+ * ПОРЯДОК ПРОВЕРОК ЗДЕСЬ ПЕРЕСТАВЛЕН, и это главное в этой функции.
+ * Раньше формат суммы проверялся ДО подписи: наше предположение
+ * о том, как Робокасса пишет число, стояло впереди её же подписи —
+ * то есть впереди единственного доказательства, что уведомление
+ * настоящее. Робокасса прислала `1.000000`, предположение не сошлось,
+ * и настоящий платёж был отвергнут как поддельный.
+ *
+ * Теперь подпись идёт первой. Сошлась — уведомление настоящее,
+ * и всё, что в нём написано, написано Робокассой; не сошлась —
+ * не смотрим дальше вовсе. Сумма разбирается ПОСЛЕ, и её нечитаемость
+ * при верной подписи — это отдельная, громкая беда: значит формат
+ * изменился, а не значит «подделка».
+ *
+ * ПРИЧИНА НАЗЫВАЕТСЯ СВОИМ ИМЕНЕМ: раньше здесь стоял `null` на всех
+ * бедах разом, а журнал печатал «несошедшаяся подпись» — то есть
+ * на шесть знаков после точки отвечал «проверьте пароли».
  */
 export function razbor(n: NastroykiRobokassy, pary: Record<string, string>): RazborUvedomleniya {
-  const outSum = (pary['OutSum'] ?? pary['outSum'] ?? '').trim();
-  const invId = (pary['InvId'] ?? pary['invId'] ?? '').trim();
-  const podpis = (pary['SignatureValue'] ?? pary['signatureValue'] ?? '').trim();
-  const otkaz = (pochemu: PochemuNeVzyali): RazborUvedomleniya => ({
+  const vse = nabory(pary);
+  const polnye = vse.filter((x) => x.outSum && x.invId && x.podpis);
+  const otkaz = (pochemu: PochemuNeVzyali, nabor?: Nabor): RazborUvedomleniya => ({
     vzyali: false,
     pochemu,
     slovami: SLOVAMI[pochemu],
     podpisnye: podpisnyePolya(pary),
     imena: Object.keys(pary).sort(),
-    podpisPrishla: podpis,
+    podpisPrishla: (nabor ?? polnye[0] ?? vse[0]!).podpis,
   });
 
-  if (!outSum || !invId || !podpis) return otkaz('net_poley');
-  if (!/^\d+$/.test(invId)) return otkaz('nomer_ne_chislo');
-  if (!/^\d+(\.\d{1,2})?$/.test(outSum)) return otkaz('summa_ne_chislo');
-  if (!podpisiSovpali(podpis, podpisUvedomleniya(n, outSum, invId, pary))) {
+  if (polnye.length === 0) return otkaz('net_poley');
+
+  /* Набор берётся ЦЕЛИКОМ и ровно тот, от которого сошлась подпись.
+     Значения при этом идут в строку подписи КАК ПРИШЛИ: подпись
+     считается от строки, и `1.000000` против `1.00` — это разные
+     хеши. Любая «нормализация» суммы перед подписью ломает её
+     гарантированно. */
+  const nashe = polnye.find(
+    (x) =>
+      /^\d+$/.test(x.invId) &&
+      podpisiSovpali(x.podpis, podpisUvedomleniya(n, x.outSum, x.invId, pary)),
+  );
+
+  if (!nashe) {
+    const krivoyNomer = polnye.find((x) => !/^\d+$/.test(x.invId));
+    if (krivoyNomer && polnye.every((x) => !/^\d+$/.test(x.invId))) {
+      return otkaz('nomer_ne_chislo', krivoyNomer);
+    }
     return otkaz('podpis_ne_soshlas');
   }
+
+  const summaKop = kopeykiIzSummy(nashe.outSum);
+  if (summaKop === null) return otkaz('summa_ne_chislo', nashe);
+
   return {
     vzyali: true,
     uvedomlenie: {
-      nomer: Number(invId),
-      summaKop: Math.round(Number(outSum) * 100),
+      nomer: Number(nashe.invId),
+      summaKop,
       oplachen: true,
     },
   };

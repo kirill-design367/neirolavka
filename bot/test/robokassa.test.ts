@@ -33,6 +33,7 @@ import {
   nomerOshibki,
   OSHIBKI,
   podpisUvedomleniya,
+  kopeykiIzSummy,
   razbor,
   podpisVozvrata,
   rubliStrokoy,
@@ -732,8 +733,24 @@ test('разбор уведомления называет ПРИЧИНУ, а н
   const krivoyNomer = razbor(n, { OutSum: '10.00', InvId: 'sem', SignatureValue: 'abc' });
   assert.equal(krivoyNomer.vzyali === false && krivoyNomer.pochemu, 'nomer_ne_chislo');
 
-  const krivayaSumma = razbor(n, { OutSum: 'мильон', InvId: '7', SignatureValue: 'abc' });
+  /* СУММА РАЗБИРАЕТСЯ ПОСЛЕ ПОДПИСИ, и порядок здесь — часть смысла.
+     У неподписанного уведомления про сумму сказать нечего вовсе:
+     ответ «сумма не похожа на сумму» означал бы, что мы поверили
+     содержимому раньше, чем проверили, кто его прислал. */
+  const krivayaBezPodpisi = razbor(n, { OutSum: 'мильон', InvId: '7', SignatureValue: 'abc' });
+  assert.equal(
+    krivayaBezPodpisi.vzyali === false && krivayaBezPodpisi.pochemu,
+    'podpis_ne_soshlas',
+    'о сумме неподписанного уведомления мы ничего не утверждаем',
+  );
+
+  // А вот ПОДПИСАННАЯ нечитаемая сумма — отдельная и громкая беда.
+  const krivayaSumma = razbor(n, verno({ OutSum: 'мильон', InvId: '7' }));
   assert.equal(krivayaSumma.vzyali === false && krivayaSumma.pochemu, 'summa_ne_chislo');
+  assert.ok(
+    krivayaSumma.vzyali === false && krivayaSumma.slovami.includes('ПОДПИСЬ СОШЛАСЬ'),
+    'человеку надо сказать, что уведомление настоящее, а не «подделка»',
+  );
 
   const chuzhaya = razbor(n, { OutSum: '10.00', InvId: '7', SignatureValue: 'f'.repeat(32) });
   assert.equal(chuzhaya.vzyali === false && chuzhaya.pochemu, 'podpis_ne_soshlas');
@@ -793,4 +810,165 @@ test('алгоритм ResultURL отдельный: ссылку он не тр
   const pary = { OutSum: '10.00', InvId: '7', SignatureValue: b };
   assert.equal(razbor(drugoy, pary).vzyali, true);
   assert.equal(razbor(obshchiy, pary).vzyali, false);
+});
+
+/* ── НАСТОЯЩЕЕ УВЕДОМЛЕНИЕ С БОЕВОГО ───────────────────────────────
+ *
+ * Робокасса прислала сумму как `1.000000` — шесть знаков после точки,
+ * — и разбор её не принял: в нём стояло «рубли и не больше двух
+ * знаков». Заказ остался неоплаченным при списанных деньгах.
+ *
+ * Ниже — то самое уведомление по составу полей: оба набора имён
+ * сразу (современный и старый), почта плательщика, комиссия.
+ */
+
+const BOEVOE_UVEDOMLENIE = (podpis: string, staryPodpis = 'ffffffffffffffffffffffffffffffff') => ({
+  OutSum: '1.000000',
+  InvId: '17',
+  SignatureValue: podpis,
+  out_summ: '1.00',
+  inv_id: '17',
+  crc: staryPodpis,
+  EMail: 'pokupatel@example.com',
+  Fee: '0.00',
+  IncCurrLabel: 'BankCard',
+  IncSum: '1.00',
+  PaymentMethod: 'BankCard',
+});
+
+test('СУММА С ШЕСТЬЮ ЗНАКАМИ ПОСЛЕ ТОЧКИ принимается', () => {
+  const n = nastroyki({ test: false });
+  const podpis = podpisUvedomleniya(n, '1.000000', '17');
+  const itog = razbor(n, BOEVOE_UVEDOMLENIE(podpis));
+  assert.equal(itog.vzyali, true, 'настоящее уведомление с боевого отвергнуто');
+  assert.equal(itog.vzyali === true && itog.uvedomlenie.nomer, 17);
+  assert.equal(itog.vzyali === true && itog.uvedomlenie.summaKop, 100, '1.000000 рубля — это 100 копеек');
+});
+
+test('в подпись уходит сумма КАК ПРИШЛА, а не приведённая к копейкам', () => {
+  const n = nastroyki({ test: false });
+  /* Подпись считается ОТ СТРОКИ. `1.000000` и `1.00` — это разные
+     хеши, и «причесать» сумму перед подписью значит сломать её
+     гарантированно. Проверяется это так: уведомление подписано
+     строкой `1.000000`, и подпись от `1.00` к нему не подходит. */
+  const kakPrishla = podpisUvedomleniya(n, '1.000000', '17');
+  const prichesannaya = podpisUvedomleniya(n, '1.00', '17');
+  assert.notEqual(kakPrishla, prichesannaya, 'проба ни о чём: обе строки дали один хеш');
+
+  assert.equal(razbor(n, BOEVOE_UVEDOMLENIE(kakPrishla)).vzyali, true);
+  assert.equal(
+    razbor(n, BOEVOE_UVEDOMLENIE(prichesannaya)).vzyali,
+    false,
+    'подпись считается не от той строки, что пришла',
+  );
+});
+
+test('берётся ТОТ набор полей, от которого сходится подпись', () => {
+  const n = nastroyki({ test: false });
+
+  // Магазин подписал СТАРЫЙ набор: out_summ=2.00, inv_id=42.
+  const staraya = podpisUvedomleniya(n, '2.00', '42');
+  const pary = {
+    OutSum: '1.000000',
+    InvId: '17',
+    SignatureValue: 'a'.repeat(32),
+    out_summ: '2.00',
+    inv_id: '42',
+    crc: staraya,
+  };
+  const itog = razbor(n, pary);
+  assert.equal(itog.vzyali, true, 'старый набор имён не читается вовсе');
+  /* И ЦЕЛИКОМ, а не вперемешку: проверили подпись по одному набору,
+     а номер счёта взяли из другого — это оплата по непроверенным
+     числам, то есть выданный доступ за другие деньги. */
+  assert.equal(itog.vzyali === true && itog.uvedomlenie.nomer, 42, 'номер взят из ЧУЖОГО набора');
+  assert.equal(itog.vzyali === true && itog.uvedomlenie.summaKop, 200, 'сумма взята из ЧУЖОГО набора');
+});
+
+test('подделка одного набора не проходит за счёт другого', () => {
+  const n = nastroyki({ test: false });
+  const chestnaya = podpisUvedomleniya(n, '1.000000', '17');
+  // Современный набор честный, старый — выдуман целиком.
+  const itog = razbor(n, {
+    OutSum: '1.000000',
+    InvId: '17',
+    SignatureValue: chestnaya,
+    out_summ: '100000.00',
+    inv_id: '17',
+    crc: 'b'.repeat(32),
+  });
+  assert.equal(itog.vzyali, true);
+  assert.equal(
+    itog.vzyali === true && itog.uvedomlenie.summaKop,
+    100,
+    'взята сумма из НЕПОДПИСАННОГО набора — так выдают доступ за чужие деньги',
+  );
+});
+
+test('копейки из суммы: любое число знаков, но не мусор', () => {
+  assert.equal(kopeykiIzSummy('1.000000'), 100);
+  assert.equal(kopeykiIzSummy('1259.10'), 125910);
+  assert.equal(kopeykiIzSummy('1259.100000'), 125910);
+  assert.equal(kopeykiIzSummy('7'), 700);
+  assert.equal(kopeykiIzSummy('0.01'), 1);
+  assert.equal(kopeykiIzSummy(''), null);
+  assert.equal(kopeykiIzSummy('мильон'), null);
+  assert.equal(kopeykiIzSummy('1,00'), null, 'запятую Робокасса не шлёт — принимать её значит гадать');
+  assert.equal(kopeykiIzSummy('-1.00'), null);
+  assert.equal(kopeykiIzSummy('1e9'), null);
+  assert.equal(kopeykiIzSummy('9'.repeat(40)), null, 'потолок длины: строка пришла снаружи');
+});
+
+test('ПУТЬ ЦЕЛИКОМ: уведомление с суммой 1.000000 оплачивает заказ', async () => {
+  /* То самое уведомление с боевого. Заказ на рубль — владелец
+     проверяет копеечными суммами, — и Робокасса присылает сумму
+     шестью знаками после точки. Раньше разбор её не принимал:
+     деньги списаны, заказ не оплачен, в журнале «несошедшаяся
+     подпись». Проверяется весь путь настоящим кодом, до статуса
+     заказа включительно. */
+  const s = await lavka();
+  try {
+    const z = zakaz(s, 100);
+    const nomer = nomerScheta(await vystavitSchet(s.l, z));
+    const n = s.l.n.robokassa;
+    const itog = await prinyatUvedomlenie(s.l, {
+      OutSum: '1.000000',
+      InvId: String(nomer),
+      SignatureValue: podpisUvedomleniya(n, '1.000000', String(nomer)),
+      out_summ: '1.00',
+      inv_id: String(nomer),
+      crc: 'ffffffffffffffffffffffffffffffff',
+      EMail: 'pokupatel@example.com',
+      Fee: '0.00',
+      IncSum: '1.00',
+      PaymentMethod: 'BankCard',
+    });
+    assert.equal(itog.chto, 'oplachen', 'настоящий платёж на рубль снова не засчитан');
+    assert.equal(itog.otvet, `OK${nomer}`, 'без OK Робокасса будет повторять вечно');
+    assert.equal(zakazy.po(s.l.db, z.id)!.status, 'oplachen');
+    assert.equal(zakazy.po(s.l.db, z.id)!.oplacheno_kop, 100);
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('сумма, не сошедшаяся со счётом, по-прежнему НЕ засчитывается', async () => {
+  /* Разбор суммы стал мягче — проверка суммы обязана остаться
+     строгой. Пришло не столько, сколько выставляли, — это повод
+     звать людей, а не выдавать доступ за другие деньги. */
+  const s = await lavka();
+  try {
+    const z = zakaz(s, 100);
+    const nomer = nomerScheta(await vystavitSchet(s.l, z));
+    const n = s.l.n.robokassa;
+    const itog = await prinyatUvedomlenie(s.l, {
+      OutSum: '0.010000',
+      InvId: String(nomer),
+      SignatureValue: podpisUvedomleniya(n, '0.010000', String(nomer)),
+    });
+    assert.equal(itog.chto, 'summa_ne_ta', 'КОПЕЙКА ЗАСЧИТАНА ЗА РУБЛЬ');
+    assert.equal(zakazy.po(s.l.db, z.id)!.status, 'zhdet_oplaty');
+  } finally {
+    await s.zakryt();
+  }
 });
