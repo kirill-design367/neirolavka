@@ -77,6 +77,7 @@ export type Slova = {
   otpravitPokupatelyu: string;
   otmenit: string;
   prichinaOtmeny: string;
+  obnovlenieZhdet: string;
   otkudaPrishli: string;
   istochnik: string;
   lyudey: string;
@@ -96,6 +97,7 @@ export type Slova = {
   otmenaNetDeneg: string;
   otmenaNetKoda: string;
   otmenaParol: string;
+  otmenaDannye: string;
   nuzhnoPismo: string;
   /** Шаг и группа: заказ с сайта ждёт, пока покупатель откроет ссылку. */
   zhdemPokupatelya: string;
@@ -333,6 +335,7 @@ const RU: Slova = {
   otpravitPokupatelyu: 'Отправить покупателю',
   otmenit: 'Отменить заказ',
   prichinaOtmeny: 'Причина отмены',
+  obnovlenieZhdet: 'выкл, пока на странице есть что набирать',
   otkudaPrishli: 'Откуда пришли',
   istochnik: 'Источник',
   lyudey: 'Людей',
@@ -356,6 +359,7 @@ const RU: Slova = {
   otmenaNetDeneg: 'Недостаточно средств на балансе',
   otmenaNetKoda: 'Превышено время ожидания кода двухфакторной аутентификации',
   otmenaParol: 'Неправильный логин или пароль',
+  otmenaDannye: 'Введены неверные данные для продления аккаунта',
   nuzhnoPismo: 'Сначала отправьте письмо восстановления и отметьте это',
   zhdemPokupatelya: 'Ждём покупателя с сайта',
   gruppaZhdemPokupatelya: 'Оплачены на сайте, покупатель ещё не пришёл в бот',
@@ -597,6 +601,7 @@ const EN: Slova = {
   otpravitPokupatelyu: 'Send to customer',
   otmenit: 'Cancel order',
   prichinaOtmeny: 'Reason',
+  obnovlenieZhdet: 'off while the page has something being typed',
   otkudaPrishli: 'Where they came from',
   istochnik: 'Source',
   lyudey: 'People',
@@ -620,6 +625,7 @@ const EN: Slova = {
   otmenaNetDeneg: 'Not enough money on the balance',
   otmenaNetKoda: 'Two-factor code timed out',
   otmenaParol: 'Wrong login or password',
+  otmenaDannye: 'Wrong details for renewing the account',
   nuzhnoPismo: 'Send the password reset email and mark it first',
   zhdemPokupatelya: 'Waiting for the website buyer',
   gruppaZhdemPokupatelya: 'Paid on the website, buyer has not opened the bot yet',

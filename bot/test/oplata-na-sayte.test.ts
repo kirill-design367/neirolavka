@@ -758,3 +758,248 @@ test('ПУТЬ ЧЕРЕЗ БОТА НЕ СЛОМАН: /start без заказа
     await s.zakryt();
   }
 });
+
+/* ── ПОВТОРНОЕ НАЖАТИЕ ПО ЗАКРЫТОМУ ЗАКАЗУ ─────────────────────────
+ *
+ * Тот самый баг, который владелец увидел как «с промокодом оплата
+ * не запускается». Ключ нажатия живёт, пока человек не поменял
+ * выбор, а страница переживает уход на Робокассу и возврат «Назад».
+ * Значит второе нажатие приходит с ТЕМ ЖЕ ключом и находит заказ,
+ * по которому платить уже нечего.
+ *
+ * Раньше обе развилки сваливались в одну: пустой адрес и фраза
+ * «Оплата сейчас не работает. Напишите в поддержку» — то есть
+ * человеку говорили, что сломана лавка, ровно в тот момент, когда
+ * его заказ УЖЕ ОПЛАЧЕН, а браузер при этом никуда не уходил.
+ *
+ * Промокод к причине отношения не имеет — он лишь ДЕРЖИТ человека
+ * на той же странице: набирать код заново неохота. Поэтому проверки
+ * две, с кодом и без: если однажды починку привяжут к промокоду,
+ * вторая покраснеет.
+ */
+
+test('ПОВТОР ПО ОПЛАЧЕННОМУ ЗАКАЗУ: «оплачен» и ссылка в бот, а не «оплата не работает»', async () => {
+  const s = await lavka();
+  try {
+    zavestiKod(s);
+    const p = popytka();
+    const zayavka = { tovar: ZHIVOY_PLAN, oplata: 'card', promo: 'LETO25', metka: '', popytka: p };
+
+    const pervoe = await zakazSSayta(s.l, zayavka);
+    assert.ok(pervoe.vyshlo && pervoe.adres, 'первое нажатие обязано вести на Робокассу');
+    const nomer = pervoe.nomer;
+
+    // Деньги пришли — заказ оплачен уведомлением, как в жизни.
+    const schet = schetZakaza(s, nomer);
+    const z = zakazy.po(s.l.db, nomer) as zakazy.Zakaz;
+    const itogUved = await prinyatUvedomlenie(s.l, uvedomlenie(schet, zakazy.kOplate(z)));
+    assert.equal(itogUved.chto, 'oplachen');
+
+    const vtoroe = await zakazSSayta(s.l, zayavka);
+    assert.ok(vtoroe.vyshlo, `повтор объявлен отказом: ${JSON.stringify(vtoroe)}`);
+    assert.equal(vtoroe.oplachen, true, 'повтор обязан сказать «оплачен»');
+    assert.equal(vtoroe.adres, '', 'на Робокассу второй раз вести нельзя: заплатит дважды');
+    assert.equal(vtoroe.nomer, nomer, 'это тот же заказ, а не новый');
+    assert.ok(vtoroe.vBot.includes('start=zakaz_'), 'в ответе обязана быть ссылка «забрать в боте»');
+
+    assert.equal(
+      (s.l.db.prepare('SELECT COUNT(*) n FROM zakazy').get() as { n: number }).n,
+      1,
+      'повтор не должен заводить второй заказ',
+    );
+    assert.equal(
+      (s.l.db.prepare('SELECT COUNT(*) n FROM promo_aktivacii').get() as { n: number }).n,
+      1,
+      'повтор не должен жечь вторую активацию промокода',
+    );
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('ПОВТОР ПО ОПЛАЧЕННОМУ ЗАКАЗУ БЕЗ ПРОМОКОДА — тот же ответ', async () => {
+  const s = await lavka();
+  try {
+    const p = popytka();
+    const zayavka = { tovar: ZHIVOY_PLAN, oplata: 'card', promo: '', metka: '', popytka: p };
+    const pervoe = await zakazSSayta(s.l, zayavka);
+    assert.ok(pervoe.vyshlo && pervoe.adres);
+    const z = zakazy.po(s.l.db, pervoe.nomer) as zakazy.Zakaz;
+    await prinyatUvedomlenie(s.l, uvedomlenie(schetZakaza(s, z.id), zakazy.kOplate(z)));
+
+    const vtoroe = await zakazSSayta(s.l, zayavka);
+    assert.ok(vtoroe.vyshlo && vtoroe.oplachen === true, 'починка не имеет права зависеть от промокода');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('ПОВТОР ПО ОТМЕНЁННОМУ ЗАКАЗУ: ключ мёртв — сайту велено начать заново', async () => {
+  const s = await lavka();
+  try {
+    const p = popytka();
+    const zayavka = { tovar: ZHIVOY_PLAN, oplata: 'card', promo: '', metka: '', popytka: p };
+    const pervoe = await zakazSSayta(s.l, zayavka);
+    assert.ok(pervoe.vyshlo);
+    zakazy.otmenit(s.l.db, pervoe.nomer, null, 'net_deneg');
+
+    const vtoroe = await zakazSSayta(s.l, zayavka);
+    assert.equal(vtoroe.vyshlo, false, 'по отменённому заказу платить нечего');
+    assert.equal(
+      vtoroe.vyshlo === false ? vtoroe.pochemu : '',
+      'zakaz_zakryt',
+      'сайт обязан узнать, что дело в ключе, а не в «оплата не работает»',
+    );
+
+    // А с новым ключом — новый заказ: именно это и делает сайт,
+    // получив `zakaz_zakryt`.
+    const tretye = await zakazSSayta(s.l, { ...zayavka, popytka: popytka() });
+    assert.ok(tretye.vyshlo && tretye.adres, 'с новым ключом заказ обязан завестись');
+    assert.notEqual(tretye.vyshlo === true ? tretye.nomer : 0, pervoe.nomer);
+  } finally {
+    await s.zakryt();
+  }
+});
+
+/* ── САЙТ СПРАШИВАЕТ, ОПЛАЧЕН ЛИ ЗАКАЗ ─────────────────────────────
+ *
+ * Второй баг владельца: «оплатил, вернулся на сайт — а там по-прежнему
+ * чек с кнопкой оплаты». Причина была в том, что сайт НИ У КОГО
+ * НЕ СПРАШИВАЛ: квитанция писалась ДО ухода на Робокассу и вечно
+ * говорила «вы начали оплату».
+ *
+ * Спрашивается это GET-ом по тому же пути `/api/zakaz` — у него
+ * в nginx уже есть проксирование и предел частоты. Проверяется
+ * настоящим HTTP к тому же серверу, что работает в бою.
+ */
+
+/** Спросить сервер о состоянии заказа так же, как это делает сайт. */
+async function sprositProZakaz(s: Stend, klyuch: string) {
+  const o = await fetch(`${s.koren}/api/zakaz?klyuch=${encodeURIComponent(klyuch)}`);
+  return { kod: o.status, telo: (await o.json()) as Record<string, unknown> };
+}
+
+test('сайт спрашивает про заказ: до оплаты «нет», после уведомления «оплачен»', async () => {
+  const s = await lavka();
+  try {
+    const itog = await zakazSSayta(s.l, {
+      tovar: ZHIVOY_PLAN, oplata: 'card', promo: '', metka: '', popytka: popytka(),
+    });
+    assert.ok(itog.vyshlo);
+    const z = zakazy.po(s.l.db, itog.nomer) as zakazy.Zakaz;
+    const klyuch = z.klyuch as string;
+
+    const do_ = await sprositProZakaz(s, klyuch);
+    assert.equal(do_.kod, 200);
+    assert.equal(do_.telo.nayden, true);
+    assert.equal(do_.telo.oplachen, false, 'до денег заказ не оплачен');
+    assert.equal(do_.telo.otmenen, false);
+
+    await prinyatUvedomlenie(s.l, uvedomlenie(schetZakaza(s, z.id), zakazy.kOplate(z)));
+
+    const posle = await sprositProZakaz(s, klyuch);
+    assert.equal(posle.telo.oplachen, true, 'после уведомления сайт обязан узнать про оплату');
+    assert.ok(
+      String(posle.telo.vBot).includes('start=zakaz_'),
+      'в ответе обязана быть ссылка «забрать заказ в боте»',
+    );
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('«оплачен» — это и ВЫДАННЫЙ заказ тоже, а не один статус', async () => {
+  const s = await lavka();
+  try {
+    const itog = await zakazSSayta(s.l, {
+      tovar: ZHIVOY_PLAN, oplata: 'card', promo: '', metka: '', popytka: popytka(),
+    });
+    assert.ok(itog.vyshlo);
+    const z = zakazy.po(s.l.db, itog.nomer) as zakazy.Zakaz;
+    await prinyatUvedomlenie(s.l, uvedomlenie(schetZakaza(s, z.id), zakazy.kOplate(z)));
+    zakazy.zabrat(s.l.db, z.klyuch as string, POKUPATEL);
+    zakazy.vzyat(s.l.db, z.id, POKUPATEL);
+    zakazy.otmetitVydannym(s.l.db, z.id, null, POKUPATEL);
+
+    const posle = await sprositProZakaz(s, z.klyuch as string);
+    assert.equal(
+      posle.telo.oplachen,
+      true,
+      'выданный заказ оплачен; сравнение с одним статусом объявило бы его неоплаченным',
+    );
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('отменённый заказ назван отменённым, а не оплаченным', async () => {
+  const s = await lavka();
+  try {
+    const itog = await zakazSSayta(s.l, {
+      tovar: ZHIVOY_PLAN, oplata: 'card', promo: '', metka: '', popytka: popytka(),
+    });
+    assert.ok(itog.vyshlo);
+    const z = zakazy.po(s.l.db, itog.nomer) as zakazy.Zakaz;
+    zakazy.otmenit(s.l.db, z.id, null, 'net_deneg');
+
+    const posle = await sprositProZakaz(s, z.klyuch as string);
+    assert.equal(posle.telo.otmenen, true);
+    assert.equal(posle.telo.oplachen, false, 'отменённый заказ не оплачен');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('чужой и выдуманный ключ: «не найден» и НИ СЛОВА о заказе', async () => {
+  const s = await lavka();
+  try {
+    const itog = await zakazSSayta(s.l, {
+      tovar: ZHIVOY_PLAN, oplata: 'card', promo: '', metka: '', popytka: popytka(),
+    });
+    assert.ok(itog.vyshlo);
+    const z = zakazy.po(s.l.db, itog.nomer) as zakazy.Zakaz;
+
+    for (const chuzhoy of ['0'.repeat(32), 'не-ключ', '', 'DROP TABLE zakazy']) {
+      const o = await sprositProZakaz(s, chuzhoy);
+      assert.equal(o.kod, 200, 'отвечать надо всегда: молчание читается поломкой');
+      assert.equal(o.telo.nayden, false, `выдуманный ключ ${JSON.stringify(chuzhoy)} что-то нашёл`);
+    }
+
+    /* НАРУЖУ УХОДИТ РОВНО СОСТОЯНИЕ. Ни суммы, ни названия, ни номера:
+       человеку они известны и без нас, а в ответе были бы лишней
+       добычей тому, кому ключ всё-таки достался.
+
+       Сторожим это СПИСКОМ ПОЛЕЙ, а не поиском значений в строке.
+       Поиск подстроки здесь врёт: ключ заказа — это 32 знака
+       из `0-9a-f`, и номер «1» с ценой «139900» находятся внутри
+       него по чистой случайности. Список полей и падает по делу,
+       и ловит любое новое поле, добавленное «заодно». */
+    const svoy = await sprositProZakaz(s, z.klyuch as string);
+    assert.deepEqual(
+      Object.keys(svoy.telo).sort(),
+      ['nayden', 'oplachen', 'otmenen', 'vBot'],
+      `в ответе появились лишние поля: ${JSON.stringify(svoy.telo)}`,
+    );
+    assert.ok(
+      !String(svoy.telo.vBot).includes(z.nazvanie),
+      'название товара не имеет права уезжать в ответ',
+    );
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('заводит заказ только POST: GET ничего не создаёт', async () => {
+  const s = await lavka();
+  try {
+    const bylo = (s.l.db.prepare('SELECT COUNT(*) n FROM zakazy').get() as { n: number }).n;
+    await fetch(`${s.koren}/api/zakaz?tovar=${ZHIVOY_PLAN}&oplata=card&popytka=${popytka()}`);
+    assert.equal(
+      (s.l.db.prepare('SELECT COUNT(*) n FROM zakazy').get() as { n: number }).n,
+      bylo,
+      'GET по адресу заказа не имеет права ничего создавать',
+    );
+  } finally {
+    await s.zakryt();
+  }
+});

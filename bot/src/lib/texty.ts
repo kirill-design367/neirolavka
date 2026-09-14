@@ -315,6 +315,8 @@ export function prichinaSlovami(p: PrichinaOtmeny): string {
       return 'код не пришёл вовремя';
     case 'nevernyy_parol':
       return 'логин или пароль не подошли';
+    case 'nevernye_dannye':
+      return 'введены неверные данные для продления аккаунта';
     case 'net_deneg':
       return 'на балансе не хватило денег';
   }
@@ -619,6 +621,13 @@ export function zakazOtmenen(
       '',
       'На Вашу почту отправлено письмо для восстановления пароля — ' +
         'восстановите доступ и оформите заказ заново.',
+    );
+  }
+  if (prichina === 'nevernye_dannye') {
+    strok.push(
+      '',
+      'Данные, которые Вы прислали для продления аккаунта, не подошли. ' +
+        'Пожалуйста, проверьте их и оформите заказ заново.',
     );
   }
   if (prichina === 'net_deneg') {

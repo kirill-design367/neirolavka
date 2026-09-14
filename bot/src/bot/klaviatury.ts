@@ -277,6 +277,12 @@ export function prichinaOtmeny(z: Zakaz): InlineKeyboard {
   const k = new InlineKeyboard();
   k.text('Превышено время ожидания кода', `aotmp:${z.id}:net_koda`).row();
   k.text('Недостаточно средств на балансе', `aotmp:${z.id}:net_deneg`).row();
+  if (z.vid_akkaunta === 'svoy') {
+    // Продлевают только СВОЙ аккаунт: у заказа на новый продлевать
+    // нечего. Письма эта причина не требует — данные могли быть
+    // с опечаткой в самой почте.
+    k.text('Неверные данные для продления', `aotmp:${z.id}:nevernye_dannye`).row();
+  }
   if (z.vid_akkaunta === 'svoy' && z.pismo_v) {
     k.text('Неправильный логин или пароль', `aotmp:${z.id}:nevernyy_parol`).row();
   }

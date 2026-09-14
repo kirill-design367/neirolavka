@@ -66,9 +66,20 @@ export type VidAkkaunta = 'novy' | 'svoy' | 'ne_vybran';
  * Один список на оба вопроса означал бы либо потерю истории, либо
  * возвращение снятой причины в меню при первой же правке.
  */
-export type PrichinaOtmeny = 'ruchnaya' | 'net_koda' | 'nevernyy_parol' | 'net_deneg';
+export type PrichinaOtmeny =
+  | 'ruchnaya'
+  | 'net_koda'
+  | 'nevernyy_parol'
+  | 'net_deneg'
+  /** Продление своего аккаунта: то, что прислал покупатель, не подошло. */
+  | 'nevernye_dannye';
 
-export const PRICHINY_VYBORA = ['nevernyy_parol', 'net_koda', 'net_deneg'] as const;
+export const PRICHINY_VYBORA = [
+  'nevernyy_parol',
+  'nevernye_dannye',
+  'net_koda',
+  'net_deneg',
+] as const;
 export type PrichinaVybora = (typeof PRICHINY_VYBORA)[number];
 
 /** Разбор причины, пришедшей из формы или из кнопки. Чужое — null. */

@@ -24,8 +24,24 @@ export type PromoSostoyanie =
 /** Адрес проверки. Тот же домен, что и сайт: бот стоит за nginx. */
 const PROVERKA = '/api/promo';
 
-/** Адрес заведения заказа. Тот же бот за тем же nginx. */
+/**
+ * Адрес заказа. POST заводит заказ, GET спрашивает, что с ним.
+ * Путь ОДИН намеренно: у него в nginx уже есть и проксирование,
+ * и предел частоты, а второй путь потребовал бы правки nginx
+ * на сервере — то есть починка упиралась бы в неё.
+ */
 const ZAKAZ = '/api/zakaz';
+
+/**
+ * Как часто переспрашивать про оплату.
+ *
+ * Пятнадцать секунд — это четыре запроса в минуту при пределе в 20
+ * на весь путь, включая нажатия «Оплатить». Чаще нельзя: опрос
+ * отобрал бы бюджет у оплаты. Реже незачем — человек возвращается
+ * с Робокассы за секунды, и главный ответ он получает не отсюда,
+ * а от события «вкладка снова видна».
+ */
+const OPROS_MS = 15_000;
 
 /**
  * Где браузер помнит начатую оплату.
@@ -47,7 +63,31 @@ const ZAKAZ = '/api/zakaz';
  */
 const KLYUCH_KVITANCII = 'neirolavka:zakaz';
 
-export type Kvitanciya = { nomer: number; vBot: string };
+export type Kvitanciya = {
+  nomer: number;
+  vBot: string;
+  /**
+   * ЗАКАЗ ОПЛАЧЕН. Не хранится в браузере и не может: правду про
+   * деньги знает только бот, а хранимое «оплачено» пережило бы
+   * отмену заказа и врало бы человеку с его же устройства.
+   * Спрашивается заново на каждой загрузке страницы.
+   */
+  oplachen?: boolean;
+};
+
+/**
+ * Секрет заказа из готовой ссылки в бот.
+ *
+ * Он ЛЕЖИТ В `vBot` — `t.me/…?start=zakaz_<ключ>`, — и вынимать его
+ * оттуда дешевле, чем хранить вторым полем: у людей, заплативших
+ * до этой правки, в браузере лежит квитанция старого вида, и второе
+ * поле в ней просто не появилось бы. Единственный источник правды
+ * остаётся один, и старые квитанции работают.
+ */
+function klyuchIzSsylki(vBot: string): string {
+  const m = /[?&]start=zakaz_([0-9a-f]+)/i.exec(vBot || '');
+  return m ? m[1].toLowerCase() : '';
+}
 
 function prochitatKvitanciyu(): Kvitanciya | null {
   try {
@@ -66,7 +106,9 @@ function prochitatKvitanciyu(): Kvitanciya | null {
 
 function zapisatKvitanciyu(k: Kvitanciya | null): void {
   try {
-    if (k) window.localStorage.setItem(KLYUCH_KVITANCII, JSON.stringify(k));
+    // В хранилище уезжают РОВНО номер и ссылка — те же две вещи, что
+    // и до появления признака оплаты. Про деньги врать себе нельзя.
+    if (k) window.localStorage.setItem(KLYUCH_KVITANCII, JSON.stringify({ nomer: k.nomer, vBot: k.vBot }));
     else window.localStorage.removeItem(KLYUCH_KVITANCII);
   } catch {
     /* Не записалось — не беда: ссылку человек получит на странице
@@ -217,6 +259,71 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setKvitanciya(prochitatKvitanciyu());
   }, []);
+
+  /**
+   * САЙТ САМ СПРАШИВАЕТ, ОПЛАЧЕН ЛИ ЗАКАЗ.
+   *
+   * Без этого чек после оплаты выглядел так, будто денег не было:
+   * квитанция писалась ДО ухода на Робокассу и вечно говорила
+   * «вы начали оплату», а кнопка «Оплатить» возвращалась в исходный
+   * вид. Человек, заплативший настоящие деньги, видел ровно то же,
+   * что и человек, не плативший ничего.
+   *
+   * Спрашиваем ПО СОБЫТИЯМ, а не по частому таймеру. Оплата приходит
+   * не от нас: человек уходит на Робокассу, платит и возвращается —
+   * значит моменты, когда ответ мог измениться, наперечёт: страница
+   * открылась, вернулась из кеша «назад-вперёд», вкладку сделали
+   * видимой. Между ними стоит редкий опрос: у `/api/zakaz` предел
+   * частоты 20 запросов в минуту на адрес, и он общий с нажатием
+   * «Оплатить» — частый опрос съел бы чужой бюджет и отказал бы
+   * в оплате тому, кто нажимает кнопку.
+   *
+   * Опрос ЗАМОЛКАЕТ, как только заказ оплачен, и не идёт вовсе,
+   * пока квитанции нет.
+   */
+  useEffect(() => {
+    if (!kvitanciya || kvitanciya.oplachen) return;
+    const klyuch = klyuchIzSsylki(kvitanciya.vBot);
+    if (!klyuch) return;
+
+    let zhiv = true;
+    const sprosit = () => {
+      if (!zhiv || document.visibilityState !== 'visible') return;
+      fetch(`${ZAKAZ}?klyuch=${encodeURIComponent(klyuch)}`, {
+        headers: { accept: 'application/json' },
+      })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((d: { nayden?: boolean; oplachen?: boolean; otmenen?: boolean }) => {
+          if (!zhiv || !d.nayden) return;
+          /* ОТМЕНЁННЫЙ ЗАКАЗ — ЭТО НЕ «ОПЛАЧЕННЫЙ», и квитанцию
+             по нему надо убрать: ссылка «забрать в боте» ведёт
+             к заказу, которого больше нет. */
+          if (d.otmenen) {
+            zapisatKvitanciyu(null);
+            setKvitanciya(null);
+            return;
+          }
+          if (d.oplachen) setKvitanciya((k) => (k && !k.oplachen ? { ...k, oplachen: true } : k));
+        })
+        .catch(() => {
+          /* Не дозвонились — молчим. Сказать «не оплачено», когда мы
+             просто не спросили, значит напугать человека, который
+             только что отдал деньги. */
+        });
+    };
+
+    sprosit();
+    const chasy = window.setInterval(sprosit, OPROS_MS);
+    const vernulis = () => sprosit();
+    document.addEventListener('visibilitychange', vernulis);
+    window.addEventListener('pageshow', vernulis);
+    return () => {
+      zhiv = false;
+      window.clearInterval(chasy);
+      document.removeEventListener('visibilitychange', vernulis);
+      window.removeEventListener('pageshow', vernulis);
+    };
+  }, [kvitanciya]);
 
   /* Ключ нажатия живёт, пока не изменился ВЫБОР. Два нажатия подряд
      по одной и той же подписке — это одно нажатие; сменил человек
@@ -381,8 +488,25 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
      * уже заведён и уже виден команде, независимо от того, дойдут ли
      * деньги.
      */
-    const oplatit = () => {
-      if (!selection || !payment || !priceKnown || oplata.vid === 'idem') return;
+    type OtvetZakaza = {
+      vyshlo?: boolean;
+      oplachen?: boolean;
+      pochemu?: string;
+      adres?: string;
+      nomer?: number;
+      vBot?: string;
+      soobshchenie?: string;
+    };
+
+    /* ДВА ИМЕНИ У ОДНОГО ДЕЙСТВИЯ, И ЭТО НЕ УКРАШЕНИЕ.
+       `poslat` умеет повторить запрос сам («прошлый заказ закрыт,
+       пробую ещё раз»), а наружу уходит `oplatit` БЕЗ АРГУМЕНТОВ:
+       он висит на `onClick`, а React передаёт обработчику событие —
+       то есть необязательный первый параметр получил бы объект
+       события, всегда истинный, и защита от двойного нажатия
+       отключилась бы сама собой. */
+    const poslat = (zanovo: boolean) => {
+      if (!selection || !payment || !priceKnown || (!zanovo && oplata.vid === 'idem')) return;
       const tovar = selection.plan?.id ?? selection.product.id;
       const kod = promo.vid === 'godit' || promo.vid === 'ne_proverili' ? promo.kod : '';
       const podpis = `${tovar}|${kod}`;
@@ -403,7 +527,40 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
         body: telo.toString(),
       })
         .then((r) => r.json())
-        .then((d: { vyshlo?: boolean; adres?: string; nomer?: number; vBot?: string; soobshchenie?: string }) => {
+        .then((d: OtvetZakaza) => {
+          /* ЗАКАЗ ПО ЭТОМУ НАЖАТИЮ УЖЕ ОПЛАЧЕН.
+             Второй раз за то же самое человека платить не пускаем:
+             показываем квитанцию и уводим в бот. И ЗАБЫВАЕМ КЛЮЧ
+             НАЖАТИЯ — иначе следующее нажатие снова упёрлось бы
+             в оплаченный заказ, и кнопка «Оплатить» перестала бы
+             работать навсегда. Забытый ключ значит, что человек,
+             нажавший ещё раз, покупает ЕЩЁ ОДНУ подписку, — а он
+             ровно это и делает, нажимая кнопку под словами
+             «заказ оплачен». */
+          if (d.vyshlo && d.oplachen) {
+            if (typeof d.nomer === 'number' && d.vBot) {
+              const k = { nomer: d.nomer, vBot: d.vBot, oplachen: true };
+              zapisatKvitanciyu(k);
+              setKvitanciya(k);
+            }
+            popytka.current = { podpis: '', id: '' };
+            setOplata({ vid: 'net' });
+            return;
+          }
+          /* ЗАКАЗ ПО ЭТОМУ НАЖАТИЮ ЗАКРЫТ (отменён). Ключ мёртв
+             навсегда: по нему бот всегда будет возвращать тот же
+             закрытый заказ. Забываем его и повторяем запрос ОДИН
+             раз — человек этого не замечает, для него просто
+             сработала кнопка. Один раз, а не «пока не выйдет»:
+             круг из двух запросов на каждое нажатие — это способ
+             упереться в предел частоты вместо ответа. */
+          if (!d.vyshlo && d.pochemu === 'zakaz_zakryt') {
+            popytka.current = { podpis: '', id: '' };
+            if (!zanovo) {
+              poslat(true);
+              return;
+            }
+          }
           if (!d.vyshlo || !d.adres) {
             setOplata({
               vid: 'otkaz',
@@ -439,6 +596,8 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
           });
         });
     };
+
+    const oplatit = () => poslat(false);
 
     return {
       openProductId,

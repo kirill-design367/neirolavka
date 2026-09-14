@@ -17,7 +17,7 @@ import * as promokody from './db/promokody.js';
 import { otkazSlovami } from './lib/promokod.js';
 import { prinyatUvedomlenie } from './oplata/schet.js';
 import { proveritVozvrat } from './oplata/robokassa.js';
-import { zakazSSayta, ssylkaVBot } from './oplata/zakaz-s-sayta.js';
+import { zakazSSayta, ssylkaVBot, sostoyanieZakaza } from './oplata/zakaz-s-sayta.js';
 import * as zakazy from './db/zakazy.js';
 import { getCatalog } from './lib/katalog.js';
 
@@ -212,10 +212,17 @@ export function sozdatServer(l: Lavka, vypusk: string, sostoyanie: Sostoyanie): 
      * активацию промокода и выставляет счёт. То есть правило «сайт
      * ничего не обрабатывает» цело — обрабатывает по-прежнему бот.
      *
-     * ТОЛЬКО POST. Заведение заказа — действие, а не чтение: GET,
-     * который что-то создаёт, срабатывает от предзагрузки ссылки
+     * ЗАВОДИТ ЗАКАЗ ТОЛЬКО POST. Заведение — действие, а не чтение:
+     * GET, который что-то создаёт, срабатывает от предзагрузки ссылки
      * браузером, от антивируса и от чужого мессенджера, рисующего
      * превью. Ответ при этом никогда не кешируется.
+     *
+     * А GET по ЭТОМУ ЖЕ пути — вопрос «что с моим заказом», и он
+     * ничего не меняет. Отдельного пути ему не заведено намеренно:
+     * у `location = /api/zakaz` в nginx уже стоит и проксирование,
+     * и предел частоты, а новый путь потребовал бы прогнать
+     * `server-setup.sh` на сервере — то есть починка бага упиралась
+     * бы в правку nginx.
      */
     if (adres === '/api/zakaz') {
       const zagolovki = {
@@ -223,6 +230,11 @@ export function sozdatServer(l: Lavka, vypusk: string, sostoyanie: Sostoyanie): 
         'cache-control': 'no-store, no-cache, must-revalidate',
         'x-content-type-options': 'nosniff',
       };
+      if (req.method === 'GET') {
+        const klyuch = new URL(req.url ?? '/', 'http://x').searchParams.get('klyuch') ?? '';
+        res.writeHead(200, zagolovki).end(JSON.stringify(sostoyanieZakaza(l, klyuch)));
+        return;
+      }
       if (req.method !== 'POST') {
         res
           .writeHead(405, zagolovki)

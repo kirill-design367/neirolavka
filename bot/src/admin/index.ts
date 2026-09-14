@@ -338,7 +338,7 @@ export function sozdatPanel(l: Lavka): Panel {
       if (zak) {
         const z = zakazy.po(db, Number(zak[1]));
         if (!z) return otdat(res, 404, ocheredStranica());
-        return otdat(res, 200, str.zakaz(o, db, z, klyuch, poyas, pokaz));
+        return otdat(res, 200, str.zakaz(o, db, z, klyuch, poyas, pokaz, obnovlyat));
       }
       if (put === `${KOREN}/pokupateli`) {
         if (!vladelec) return otdat(res, 403, ocheredStranica());
@@ -435,7 +435,17 @@ export function sozdatPanel(l: Lavka): Panel {
         const a = svoi.vzyat(db, id, klyuch);
         if (!a) return kuda(res, sSoobshcheniem(stranicaZakaza, { oshibka: 'dannyhNet' }));
         zakazy.sobytie(db, id, 'смотрели данные аккаунта покупателя', kto);
-        return otdat(res, 200, str.zakaz(o, db, z, klyuch, poyas, { akkaunt: { pochta: a.pochta, parol: a.parol } }));
+        /* Частота передаётся и здесь, хотя страница с показанным
+           секретом обновляться не должна. Решает это ОДНО правило
+           внутри `str.zakaz` — «есть ли на странице что терять», —
+           а не забытый аргумент: забытый аргумент защищает ровно
+           до того дня, когда его допишут «для единообразия»,
+           и проверка на это не краснеет. */
+        return otdat(
+          res,
+          200,
+          str.zakaz(o, db, z, klyuch, poyas, { akkaunt: { pochta: a.pochta, parol: a.parol } }, obnovlyat),
+        );
       }
       if (chto === 'kod-pokazat') {
         const kod = kody.vzyat(db, id, klyuch);
@@ -444,7 +454,7 @@ export function sozdatPanel(l: Lavka): Panel {
            а показ кода — нет: та же расшифровка чужого секрета,
            а в истории заказа пусто. Асимметрия была недосмотром. */
         zakazy.sobytie(db, id, 'смотрели код двухфакторной аутентификации', kto);
-        return otdat(res, 200, str.zakaz(o, db, z, klyuch, poyas, { kod: kod.kod }));
+        return otdat(res, 200, str.zakaz(o, db, z, klyuch, poyas, { kod: kod.kod }, obnovlyat));
       }
 
       /* ОТМЕТКА ОПЛАТЫ — ТОЛЬКО ВЛАДЕЛЬЦУ, и это не педантизм.

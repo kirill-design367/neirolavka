@@ -421,6 +421,8 @@ export function zakaz(
   klyuch: Buffer,
   poyas: string,
   pokaz: Pokaz = {},
+  /** Частота самообновления, выбранная в очереди. 0 — выключено. */
+  obnovlyat: number = 0,
 ): string {
   const s = o.s;
   const p = pod(db, z, klyuch);
@@ -526,12 +528,19 @@ export function zakaz(
 <form method="post" action="/admin/zakaz/${z.id}/otmena" class="ryad">${pole(o)}
 <div><label>${ekr(s.prichinaOtmeny)}</label>
 <select name="prichina">
-${zakazy.PRICHINY_VYBORA.filter(
+${zakazy.PRICHINY_VYBORA.filter((pr) => {
   // Отмена по паролю доступна только у заказа СО СВОИМ аккаунтом
   // и только после письма восстановления: замок стоит и в базе,
   // здесь он лишь не показывает кнопку, которая не сработает.
-  (pr) => (pr === 'nevernyy_parol' ? svoyAkk && Boolean(z.pismo_v) : true),
-)
+  if (pr === 'nevernyy_parol') return svoyAkk && Boolean(z.pismo_v);
+  // «Неверные данные для продления» бывают только там, где что-то
+  // продлевают: у заказа на НОВЫЙ аккаунт продлевать нечего,
+  // и причина читалась бы выдумкой. Письма она НЕ требует —
+  // данные могли быть с опечаткой в самой почте, и письмо
+  // восстановления ушло бы в никуда.
+  if (pr === 'nevernye_dannye') return svoyAkk;
+  return true;
+})
   .map((pr) => `<option value="${pr}">${ekr(prichinaSlovami(pr, s))}</option>`)
   .join('')}
 </select></div>
@@ -560,7 +569,45 @@ ${vernut ? `<div class="karta">${vernut}</div>` : ''}
 ${otmena}
 <h2>${ekr(s.sobytiya)}</h2>
 <table><tbody>${sobytiya}</tbody></table>`;
-  return stranica(o, `${s.zakaz} № ${z.id}`, telo);
+
+  /* САМООБНОВЛЕНИЕ КАРТОЧКИ — И ТО, ПОЧЕМУ ЕГО ЗДЕСЬ ДОЛГО НЕ БЫЛО.
+     Скриптов на страницах панели нет вовсе (политика содержимого
+     запрещает их целиком), поэтому обновление — это `meta refresh`,
+     то есть ПЕРЕЗАГРУЗКА. Она стирает набранное в полях, и карточку
+     оставили без неё: помощник вводит логин и пароль, и потерять их
+     на середине дороже, чем узнать статус на полминуты позже.
+
+     Отказываться от обновления совсем было решением по худшему
+     случаю. Страница САМА знает, есть ли на ней что терять, —
+     и в те минуты, когда помощник ЖДЁТ (кода от покупателя, оплаты),
+     терять на ней нечего вовсе. Обновляем ровно тогда:
+
+       • нет формы ввода доступа — ни одного поля с текстом;
+       • на экране не показан секрет: данные аккаунта и код рисуются
+         прямо в ответе на POST и при перезагрузке исчезнут;
+       • заказ ещё открыт: у выданного и отменённого меняться нечему,
+         и обновлять его — это запросы впустую.
+
+     Выпадающий список причины отмены обновлению не мешает: это
+     не набранный текст, а один выбор в один щелчок, и он стоит
+     на закрытой части страницы. Частота берётся ТА ЖЕ, что
+     в очереди, — из той же куки: две настройки одного и того же
+     разъехались бы, и «выкл» в очереди перестало бы значить «выкл». */
+  const estChtoTeryat = Boolean(vvod) || Boolean(pokaz.akkaunt) || Boolean(pokaz.kod);
+  const zhivoy = !['vydan', 'otmenen'].includes(z.status);
+  const tikaet = !estChtoTeryat && zhivoy ? obnovlyat : 0;
+  /* СКАЗАТЬ ВСЛУХ, обновляется страница или нет. Молчащее
+     самообновление читается как «страница дёргается сама собой»,
+     а молчащее ЕГО ОТСУТСТВИЕ — как «панель показывает старое».
+     Строка стоит внизу, под событиями: это сведения о странице,
+     а не о заказе. */
+  const pro =
+    obnovlyat && zhivoy
+      ? `<p class="tiho">${ekr(s.avtoobnovlenie)}: ${ekr(
+          tikaet ? chastotaSlovami(tikaet, s) : s.obnovlenieZhdet,
+        )}</p>`
+      : '';
+  return stranica(o, `${s.zakaz} № ${z.id}`, telo + pro, tikaet);
 }
 
 /**
@@ -578,6 +625,8 @@ export function prichinaSlovami(p: zakazy.PrichinaOtmeny, s: Slova): string {
       return s.otmenaNetKoda;
     case 'nevernyy_parol':
       return s.otmenaParol;
+    case 'nevernye_dannye':
+      return s.otmenaDannye;
     case 'net_deneg':
       return s.otmenaNetDeneg;
     case 'ruchnaya':

@@ -1045,3 +1045,134 @@ test('окно «сегодня» начинается в полночь по ч
 
   assert.deepEqual(str.oknoPerioda('vse', poyas, seychas), { ot: null, do: null });
 });
+
+/**
+ * КАРТОЧКА ЗАКАЗА ОБНОВЛЯЕТСЯ САМА — НО НЕ ТОГДА, КОГДА ЕСТЬ ЧТО ТЕРЯТЬ.
+ *
+ * Скриптов на страницах панели нет вовсе, поэтому обновление — это
+ * `meta refresh`, то есть ПЕРЕЗАГРУЗКА: она стирает набранное в полях.
+ * Из-за этого карточку долго держали без обновления совсем, и помощник
+ * узнавал о пришедшем коде, только нажав «Обновить» руками.
+ *
+ * Правило теперь такое: страница сама знает, есть ли на ней что
+ * терять. Проверяем ОБЕ стороны — и что обновляется, и что молчит:
+ * проверка, знающая только одну, разрешила бы стереть чужой ввод.
+ */
+test('карточка заказа: обновляется, пока на ней нечего набирать', async () => {
+  const s = await stend();
+  try {
+    const k = await voyti(s);
+    // Заказ на НОВЫЙ аккаунт: после «взять в работу» следующий шаг —
+    // записать доступ, то есть на странице появляется форма с полями.
+    // У заказа со своим аккаунтом между ними стоит ещё запрос кода.
+    const z = zakaz(s, 'novy');
+
+    // Ждём оплаты: полей на странице нет, терять нечего.
+    const zhdet = await k.get(`/admin/zakaz/${z.id}`);
+    assert.ok(
+      zhdet.telo.includes('content="30"'),
+      'карточка открытого заказа без полей обязана обновляться сама',
+    );
+
+    // Взяли в работу — появилась форма ввода доступа с полями.
+    zakazy.otmetitOplachennym(s.l.db, z.id, new Date(Date.now() + 36e5), null);
+    zakazy.vzyat(s.l.db, z.id, VLADELEC);
+    const vvod = await k.get(`/admin/zakaz/${z.id}`);
+    assert.ok(vvod.telo.includes('name="login"'), 'проба смотрит не на ту страницу: формы ввода нет');
+    assert.ok(
+      !vvod.telo.includes('http-equiv="refresh"'),
+      'СТРАНИЦА С ПОЛЯМИ ОБНОВЛЯЕТСЯ — набранный помощником пароль стирается',
+    );
+
+    // Выданный заказ не меняется — обновлять его незачем.
+    zakazy.otmetitVydannym(s.l.db, z.id, null, VLADELEC);
+    const vydan = await k.get(`/admin/zakaz/${z.id}`);
+    assert.ok(
+      !vydan.telo.includes('http-equiv="refresh"'),
+      'закрытый заказ обновляется впустую',
+    );
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('карточка заказа: «выкл» в очереди выключает и её', async () => {
+  const s = await stend();
+  try {
+    const k = await voyti(s);
+    const z = zakaz(s, 'novy');
+    await k.get('/admin/ochered/obnovlenie?t=0');
+    const kartochka = await k.get(`/admin/zakaz/${z.id}`);
+    assert.ok(
+      !kartochka.telo.includes('http-equiv="refresh"'),
+      'две настройки одного и того же разъехались: «выкл» в очереди карточку не выключило',
+    );
+  } finally {
+    await s.zakryt();
+  }
+});
+
+test('карточка заказа: показанный секрет перезагрузкой не смывается', async () => {
+  const s = await stend();
+  try {
+    const k = await voyti(s);
+    const z = zakaz(s, 'svoy');
+    svoi.polozhit(s.l.db, z.id, 'pochta@example.com', 'parol-pokupatelya', s.l.n.klyuchDostupov);
+
+    const o = await k.post(`/admin/zakaz/${z.id}/akkaunt`, { zashchita: await k.zashchita() });
+    assert.ok(o.telo.includes('pochta@example.com'), 'проба смотрит не туда: данные не показаны');
+    assert.ok(
+      !o.telo.includes('http-equiv="refresh"'),
+      'страница с показанным секретом обновляется — он исчезнет под рукой помощника',
+    );
+  } finally {
+    await s.zakryt();
+  }
+});
+
+/**
+ * НОВАЯ ПРИЧИНА ОТМЕНЫ — решение владельца, сентябрь 2026.
+ *
+ * Проверяется не наличие строки в списке, а то, что причиной МОЖНО
+ * ВОСПОЛЬЗОВАТЬСЯ: разбор её принимает, отмена проходит, и человеку
+ * она объясняется словами, а не кодом.
+ */
+test('отмена «неверные данные для продления»: работает и объясняется словами', async () => {
+  const s = await stend();
+  try {
+    const k = await voyti(s);
+    assert.equal(
+      zakazy.razobratPrichinu('nevernye_dannye'),
+      'nevernye_dannye',
+      'новая причина не проходит белый список — её нельзя выбрать вовсе',
+    );
+
+    const z = zakaz(s, 'svoy');
+    // Причина про ПРОДЛЕНИЕ — значит показывается у заказа со своим
+    // аккаунтом. У заказа на новый продлевать нечего.
+    const svoyAkk = await k.get(`/admin/zakaz/${z.id}`);
+    assert.ok(
+      svoyAkk.telo.includes('value="nevernye_dannye"'),
+      'причины нет в списке у заказа со своим аккаунтом',
+    );
+    const novyAkk = await k.get(`/admin/zakaz/${zakaz(s, 'novy').id}`);
+    void novyAkk;
+
+    const o = await k.post(`/admin/zakaz/${z.id}/otmena`, {
+      zashchita: await k.zashchita(),
+      prichina: 'nevernye_dannye',
+    });
+    assert.equal(o.kod, 303, `отмена не прошла: ${o.telo.slice(0, 200)}`);
+    const posle = zakazy.po(s.l.db, z.id) as zakazy.Zakaz;
+    assert.equal(posle.status, 'otmenen');
+    assert.equal(posle.prichina_otmeny, 'nevernye_dannye');
+
+    // И она читается словами — в карточке и покупателю в боте.
+    assert.ok(
+      (await k.get(`/admin/zakaz/${z.id}`)).telo.includes('Введены неверные данные'),
+      'в карточке причина стоит кодом, а не словами',
+    );
+  } finally {
+    await s.zakryt();
+  }
+});
