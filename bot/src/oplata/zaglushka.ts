@@ -13,7 +13,7 @@
  * что оплаты нет»: заказ обязан приниматься в обоих случаях.
  */
 
-import type { PostavshchikOplaty, Schet } from './index.js';
+import type { PostavshchikOplaty, RazborUvedomleniya, Schet } from './index.js';
 
 export const zaglushka: PostavshchikOplaty = {
   imya: 'zaglushka',
@@ -28,9 +28,18 @@ export const zaglushka: PostavshchikOplaty = {
       gotovoSrazu: false,
     };
   },
-  razobratUvedomlenie() {
-    // Настоящих уведомлений пока не бывает. Молча ничего не разбираем:
-    // отвечать «принято» на то, чего мы не проверяли, нельзя.
-    return null;
+  razobratUvedomlenie(pary: Record<string, string>): RazborUvedomleniya {
+    // Настоящих уведомлений пока не бывает. Отвечать «принято»
+    // на то, чего мы не проверяли, нельзя — но и молчать о причине
+    // тоже: «оплата не настроена» и «подпись не сошлась» лечатся
+    // совершенно по-разному.
+    return {
+      vzyali: false,
+      pochemu: 'podpis_ne_soshlas',
+      slovami: 'оплата не подключена: проверять подпись нечем',
+      podpisnye: {},
+      imena: Object.keys(pary).sort(),
+      podpisPrishla: '',
+    };
   },
 };

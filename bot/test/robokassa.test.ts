@@ -33,6 +33,7 @@ import {
   nomerOshibki,
   OSHIBKI,
   podpisUvedomleniya,
+  razbor,
   podpisVozvrata,
   rubliStrokoy,
   ssylkaOplaty,
@@ -66,6 +67,10 @@ function nastroyki(dop: Partial<NastroykiRobokassy> = {}): NastroykiRobokassy {
     testParol2: TEST2,
     test: true,
     algoritm: 'md5',
+    // Алгоритм у каждой подписи свой; в проверках по умолчанию
+    // тот же, что у ссылки, — как у магазина с общей настройкой.
+    algoritmResult: dop.algoritm ?? 'md5',
+    algoritmVozvrata: dop.algoritm ?? 'md5',
     sno: '',
     chekVPodpisi: 'syroy',
     ...dop,
@@ -703,4 +708,89 @@ test('838 истолковано словами и названо НЕ подп�
   assert.ok(t.includes('Технические настройки'), 'и куда идти чинить');
   assert.ok(OSHIBKI['29']!.includes('подпись'));
   assert.ok(OSHIBKI['40']!.includes('счёт'));
+});
+
+/* ── ОТКАЗ НАЗЫВАЕТ ПРИЧИНУ ────────────────────────────────────────
+ *
+ * Уведомление отклонялось по четырём разным поводам, а в журнал
+ * уходила одна строка на все: «уведомление с несошедшейся подписью».
+ * Владелец прочитал её и пошёл проверять пароли — при том что
+ * до подписи разбор мог и не дойти.
+ */
+
+test('разбор уведомления называет ПРИЧИНУ, а не одну на все случаи', () => {
+  const n = nastroyki({ test: false });
+  const verno = (pary: Record<string, string>) => ({
+    ...pary,
+    SignatureValue: podpisUvedomleniya(n, pary['OutSum']!, pary['InvId']!, pary),
+  });
+
+  const net = razbor(n, { InvId: '7' });
+  assert.equal(net.vzyali, false);
+  assert.equal(net.vzyali === false && net.pochemu, 'net_poley');
+
+  const krivoyNomer = razbor(n, { OutSum: '10.00', InvId: 'sem', SignatureValue: 'abc' });
+  assert.equal(krivoyNomer.vzyali === false && krivoyNomer.pochemu, 'nomer_ne_chislo');
+
+  const krivayaSumma = razbor(n, { OutSum: 'мильон', InvId: '7', SignatureValue: 'abc' });
+  assert.equal(krivayaSumma.vzyali === false && krivayaSumma.pochemu, 'summa_ne_chislo');
+
+  const chuzhaya = razbor(n, { OutSum: '10.00', InvId: '7', SignatureValue: 'f'.repeat(32) });
+  assert.equal(chuzhaya.vzyali === false && chuzhaya.pochemu, 'podpis_ne_soshlas');
+  assert.ok(
+    chuzhaya.vzyali === false && chuzhaya.slovami.includes('пароль'),
+    'на несошедшейся подписи человеку говорят, где искать',
+  );
+
+  const horoshee = razbor(n, verno({ OutSum: '10.00', InvId: '7' }));
+  assert.equal(horoshee.vzyali, true);
+  assert.equal(horoshee.vzyali === true && horoshee.uvedomlenie.nomer, 7);
+  assert.equal(horoshee.vzyali === true && horoshee.uvedomlenie.summaKop, 1000);
+});
+
+test('в отказе лежат подписные поля и ТОЛЬКО ИМЕНА остальных', () => {
+  const n = nastroyki({ test: false });
+  /* Робокасса кладёт в уведомление почту плательщика. Персональных
+     данных лавка не собирает нигде — значит значение не должно
+     попасть ни в отказ, ни, стало быть, в базу. */
+  const o = razbor(n, {
+    OutSum: '10.00',
+    InvId: '7',
+    SignatureValue: 'f'.repeat(32),
+    EMail: 'ivan@example.com',
+    PaymentMethod: 'BankCard',
+    Shp_svoe: 'da',
+  });
+  assert.equal(o.vzyali, false);
+  if (o.vzyali) return;
+  assert.deepEqual(Object.keys(o.podpisnye).sort(), ['InvId', 'OutSum', 'Shp_svoe', 'SignatureValue']);
+  assert.ok(!JSON.stringify(o.podpisnye).includes('ivan@example.com'), 'ПОЧТА ПЛАТЕЛЬЩИКА уехала в отказ');
+  assert.ok(o.imena.includes('EMail'), 'имя поля знать надо: по нему видно, что Робокасса его прислала');
+});
+
+/* ── АЛГОРИТМ У КАЖДОЙ ПОДПИСИ СВОЙ ────────────────────────────── */
+
+test('алгоритм ResultURL отдельный: ссылку он не трогает', () => {
+  const obshchiy = nastroyki({ test: false });
+  const drugoy = nastroyki({ test: false, algoritmResult: 'sha256' });
+
+  // Ссылка подписывается алгоритмом ссылки — он не менялся.
+  assert.equal(
+    podpisSsylki(obshchiy, '10.00', 7, null),
+    podpisSsylki(drugoy, '10.00', 7, null),
+    'смена алгоритма ResultURL не имеет права трогать подпись ссылки',
+  );
+  // А уведомление — своим.
+  const a = podpisUvedomleniya(obshchiy, '10.00', '7');
+  const b = podpisUvedomleniya(drugoy, '10.00', '7');
+  assert.notEqual(a, b, 'подпись уведомления обязана считаться СВОИМ алгоритмом');
+  assert.equal(a.length, 32, 'md5 — 32 знака');
+  assert.equal(b.length, 64, 'sha256 — 64 знака');
+
+  /* И то, ради чего это заведено: уведомление, подписанное магазином
+     по sha256, при верно заданном алгоритме берётся, а при общем md5
+     отвергается — и выглядит это как «неверный пароль № 2». */
+  const pary = { OutSum: '10.00', InvId: '7', SignatureValue: b };
+  assert.equal(razbor(drugoy, pary).vzyali, true);
+  assert.equal(razbor(obshchiy, pary).vzyali, false);
 });

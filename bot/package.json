@@ -12,7 +12,8 @@
     "start": "node dist/bot/src/index.js",
     "test": "tsc -p tsconfig.json && node --test 'dist/bot/test/*.test.js'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "proba-oplaty": "node dist/bot/src/oplata/proba.js"
+    "proba-oplaty": "node dist/bot/src/oplata/proba.js",
+    "proba-podpisi": "node dist/bot/src/oplata/proba-podpisi.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",

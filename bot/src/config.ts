@@ -203,13 +203,29 @@ function flag(env: NodeJS.ProcessEnv, imya: string, poumolchaniyu: boolean): boo
  * кусок настроек, не трогая ни токена бота, ни ключа хранилища.
  */
 export function robokassa(env: NodeJS.ProcessEnv): NastroykiRobokassy {
-  const algoritm = (env['NEIROLAVKA_ROBOKASSA_ALGORITM'] ?? 'md5').trim().toLowerCase();
-  if (!(ALGORITMY as string[]).includes(algoritm)) {
-    throw new OshibkaNastroyek(
-      `NEIROLAVKA_ROBOKASSA_ALGORITM: «${algoritm}» Робокасса не знает. ` +
-        `Можно: ${ALGORITMY.join(', ')}. Значение обязано совпадать с тем, что выбрано в кабинете.`,
-    );
-  }
+  /* АЛГОРИТМ У КАЖДОЙ ПОДПИСИ СВОЙ, и это не запас на будущее.
+     В кабинете Робокассы «Алгоритм расчёта хеша» выбирается РЯДОМ
+     С КАЖДЫМ адресом: у Result URL свой, у Success URL свой, —
+     и совпадать они не обязаны. Пока настройка была одна на всё,
+     расхождение выглядело как «пароль № 2 неверный»: ссылка
+     на оплату подписывалась и работала, а уведомление по тому же
+     алгоритму не сходилось.
+
+     Не задано — берётся общий: у большинства магазинов алгоритм
+     везде один, и требовать три переменные вместо одной незачем. */
+  const nazvat = (imya: string, poumolchaniyu: string): Algoritm => {
+    const a = (env[imya] ?? poumolchaniyu).trim().toLowerCase();
+    if (!(ALGORITMY as string[]).includes(a)) {
+      throw new OshibkaNastroyek(
+        `${imya}: «${a}» Робокасса не знает. ` +
+          `Можно: ${ALGORITMY.join(', ')}. Значение обязано совпадать с тем, что выбрано в кабинете.`,
+      );
+    }
+    return a as Algoritm;
+  };
+  const algoritm = nazvat('NEIROLAVKA_ROBOKASSA_ALGORITM', 'md5');
+  const algoritmResult = nazvat('NEIROLAVKA_ROBOKASSA_ALGORITM_RESULT', algoritm);
+  const algoritmVozvrata = nazvat('NEIROLAVKA_ROBOKASSA_ALGORITM_USPEH', algoritm);
   const chek = (env['NEIROLAVKA_ROBOKASSA_CHEK_V_PODPISI'] ?? 'syroy').trim().toLowerCase();
   if (chek !== 'kodirovanny' && chek !== 'syroy') {
     throw new OshibkaNastroyek(
@@ -223,7 +239,9 @@ export function robokassa(env: NodeJS.ProcessEnv): NastroykiRobokassy {
     testParol1: (env['NEIROLAVKA_ROBOKASSA_TEST_PAROL1'] ?? '').trim(),
     testParol2: (env['NEIROLAVKA_ROBOKASSA_TEST_PAROL2'] ?? '').trim(),
     test: flag(env, 'NEIROLAVKA_ROBOKASSA_TEST', true),
-    algoritm: algoritm as Algoritm,
+    algoritm,
+    algoritmResult,
+    algoritmVozvrata,
     sno: (env['NEIROLAVKA_ROBOKASSA_SNO'] ?? '').trim(),
     chekVPodpisi: chek as VidChekaVPodpisi,
   };

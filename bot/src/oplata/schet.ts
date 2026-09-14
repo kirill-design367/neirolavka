@@ -8,8 +8,10 @@
  */
 
 import type { Lavka } from '../lavka.js';
+import type { PochemuNeVzyali } from './index.js';
 import * as zakazy from '../db/zakazy.js';
 import * as koshelek from '../db/koshelek.js';
+import * as otkazy from '../db/otkazy.js';
 import { raspisanie } from '../db/nastroyki.js';
 import { srokVydachi } from '../lib/vremya.js';
 import { zhurnal } from '../lib/zhurnal.js';
@@ -73,7 +75,11 @@ export type ItogUvedomleniya = {
   kod: number;
   /** Для журнала и проверок: что именно произошло. */
   chto:
-    | 'podpis_ne_soshlas'
+    /* ПРИЧИНА, С КОТОРОЙ ОТКАЗАЛИ, а не одна на все. Здесь стояло
+       только `podpis_ne_soshlas`, и отказ «не пришло поле» называл
+       себя несошедшейся подписью — ровно то, из-за чего владелец
+       пошёл проверять пароли. */
+    | PochemuNeVzyali
     | 'net_scheta'
     | 'summa_ne_ta'
     | 'uzhe_prinyat'
@@ -99,11 +105,43 @@ export async function prinyatUvedomlenie(
   l: Lavka,
   pary: Record<string, string>,
 ): Promise<ItogUvedomleniya> {
-  const u = l.oplata.razobratUvedomlenie(pary);
-  if (!u) {
-    zhurnal.vnimanie('оплата: уведомление с несошедшейся подписью — отклонено');
-    return { otvet: 'bad sign', kod: 403, chto: 'podpis_ne_soshlas' };
+  const razbor = l.oplata.razobratUvedomlenie(pary);
+  if (!razbor.vzyali) {
+    /* ПРИЧИНА НАЗЫВАЕТСЯ СВОИМ ИМЕНЕМ. Здесь стояла одна строка
+       на четыре разные беды — «уведомление с несошедшейся подписью», —
+       и она отправляла человека проверять пароли даже тогда, когда
+       не пришло само поле. Тот же закон, что у пробы подписи:
+       названная не та причина дороже отсутствующей.
+
+       Подпись печатается НАЧАЛОМ, а не целиком: чтобы отличить
+       «пришла совсем другая» от «почти та же», хватает двенадцати
+       знаков, а журнал читают не только те, кому положено знать всё.
+
+       И отказ ЗАПИСЫВАЕТСЯ: Робокасса повторяет уведомление, пока
+       не получит «OK», но разобрать его потом можно только по тому,
+       что мы сохранили, — второй раз его не пришлют. */
+    const p = razbor.podpisnye;
+    zhurnal.vnimanie(
+      `оплата: уведомление ОТКЛОНЕНО — ${razbor.slovami}. ` +
+        `Счёт «${p['InvId'] ?? p['invId'] ?? '—'}», сумма «${p['OutSum'] ?? p['outSum'] ?? '—'}», ` +
+        `подпись пришла ${razbor.podpisPrishla.slice(0, 12) || '—'}…, поля: ${razbor.imena.join(', ') || '—'}. ` +
+        'Разобрать: npm run proba-podpisi',
+    );
+    try {
+      otkazy.zapisat(l.db, {
+        postavshchik: l.oplata.imya,
+        pochemu: razbor.pochemu,
+        pary: razbor.podpisnye,
+        imena: razbor.imena,
+      });
+    } catch (e) {
+      // Не записалось — не повод менять ответ Робокассе: уведомление
+      // мы всё равно не взяли, и врать «принято» нельзя.
+      zhurnal.oshibka('оплата: отказ не записался в базу:', e);
+    }
+    return { otvet: 'bad sign', kod: 403, chto: razbor.pochemu };
   }
+  const u = razbor.uvedomlenie;
 
   const platezh = zakazy.platezhPo(l.db, u.nomer);
   if (!platezh || platezh.postavshchik !== l.oplata.imya) {

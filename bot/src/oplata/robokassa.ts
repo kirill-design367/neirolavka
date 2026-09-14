@@ -25,7 +25,13 @@
  */
 
 import { createHash } from 'node:crypto';
-import type { PostavshchikOplaty, Schet, Uvedomlenie, ZaprosScheta } from './index.js';
+import type {
+  PochemuNeVzyali,
+  PostavshchikOplaty,
+  RazborUvedomleniya,
+  Schet,
+  ZaprosScheta,
+} from './index.js';
 
 /** Куда человек уходит платить. */
 export const ADRES_OPLATY = 'https://auth.robokassa.ru/Merchant/Index.aspx';
@@ -159,7 +165,26 @@ export type NastroykiRobokassy = {
   testParol2: string;
   /** Тестовый режим: деньги не списываются. */
   test: boolean;
+  /** Алгоритм подписи ССЫЛКИ на оплату. */
   algoritm: Algoritm;
+  /**
+   * Алгоритм подписи УВЕДОМЛЕНИЯ на ResultURL.
+   *
+   * ОТДЕЛЬНЫЙ, И ЭТО НЕ ЗАПАС НА БУДУЩЕЕ. В кабинете Робокассы
+   * алгоритм хеша выбирается РЯДОМ С КАЖДЫМ адресом — у Result URL
+   * свой, у Success URL свой, — и совпадать они не обязаны. Пока
+   * настройка была одна на всё, расхождение выглядело как «пароль № 2
+   * неверный»: ссылка на оплату подписывалась и работала, а
+   * уведомление по тому же алгоритму не сходилось, и искать причину
+   * человек шёл в пароли.
+   *
+   * Пусто — значит тот же, что у ссылки: у большинства магазинов
+   * так и есть, и заставлять заполнять две переменные вместо одной
+   * незачем.
+   */
+  algoritmResult: Algoritm;
+  /** Алгоритм подписи возврата человека на SuccessURL. */
+  algoritmVozvrata: Algoritm;
   /**
    * Система налогообложения в чеке. Пусто — берётся та, что заведена
    * в кабинете магазина; для продавца с ОДНОЙ системой это и есть
@@ -218,9 +243,15 @@ export function chek(n: NastroykiRobokassy, nazvanie: string, summaKop: number):
   return out;
 }
 
-/** Хеш подписи в том виде, в каком его ждёт Робокасса: hex. */
-function hesh(n: NastroykiRobokassy, stroka: string): string {
-  return createHash(n.algoritm).update(stroka, 'utf8').digest('hex');
+/**
+ * Хеш подписи в том виде, в каком его ждёт Робокасса: hex.
+ *
+ * Алгоритм передаётся ЯВНО, а не берётся из настроек внутри: у трёх
+ * подписей он может быть разный, и «взять из настроек» здесь значило
+ * бы взять алгоритм ссылки для уведомления.
+ */
+function hesh(algoritm: Algoritm, stroka: string): string {
+  return createHash(algoritm).update(stroka, 'utf8').digest('hex');
 }
 
 /**
@@ -258,7 +289,7 @@ export function podpisSsylki(
   const chasti = [n.login, outSum, String(invId)];
   if (chekVStroke) chasti.push(chekVStroke);
   chasti.push(n.test ? n.testParol1 : n.parol1);
-  return hesh(n, [...chasti, ...shpHvost(shp)].join(':'));
+  return hesh(n.algoritm, [...chasti, ...shpHvost(shp)].join(':'));
 }
 
 /**
@@ -275,7 +306,7 @@ export function podpisUvedomleniya(
   shp: Record<string, string> = {},
 ): string {
   const parol = n.test ? n.testParol2 : n.parol2;
-  return hesh(n, [outSum, invId, parol, ...shpHvost(shp)].join(':'));
+  return hesh(n.algoritmResult, [outSum, invId, parol, ...shpHvost(shp)].join(':'));
 }
 
 /** Подпись возврата человека на SuccessURL: то же, но паролем №1. */
@@ -286,7 +317,7 @@ export function podpisVozvrata(
   shp: Record<string, string> = {},
 ): string {
   const parol = n.test ? n.testParol1 : n.parol1;
-  return hesh(n, [outSum, invId, parol, ...shpHvost(shp)].join(':'));
+  return hesh(n.algoritmVozvrata, [outSum, invId, parol, ...shpHvost(shp)].join(':'));
 }
 
 /**
@@ -352,18 +383,68 @@ function opisanie(z: ZaprosScheta): string {
  * подпись, сумма не похожа на сумму. Вызывающий код на `null`
  * обязан ответить отказом и НИЧЕГО не менять.
  */
-export function razobrat(n: NastroykiRobokassy, pary: Record<string, string>): Uvedomlenie | null {
+/**
+ * Поля уведомления, ИЗ КОТОРЫХ СТРОИТСЯ ПОДПИСЬ.
+ *
+ * Белый список, а не «всё, что пришло», и это про персональные
+ * данные. Робокасса кладёт в уведомление и почту плательщика
+ * (`EMail`), и способ оплаты, а лавка персональных данных
+ * не собирает нигде — ни в базе, ни в журнале. Для разбора подписи
+ * нужны ровно эти поля плюс пользовательские `Shp_`, и больше
+ * ничего.
+ */
+export function podpisnyePolya(pary: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const k of Object.keys(pary)) {
+    if (/^(outsum|invid|signaturevalue|istest)$/i.test(k) || /^shp_/i.test(k)) out[k] = pary[k]!;
+  }
+  return out;
+}
+
+const SLOVAMI: Record<PochemuNeVzyali, string> = {
+  net_poley: 'в уведомлении нет OutSum, InvId или самой подписи',
+  nomer_ne_chislo: 'номер счёта (InvId) не число',
+  summa_ne_chislo: 'сумма (OutSum) не похожа на сумму',
+  podpis_ne_soshlas:
+    'поля на месте, а подпись не сошлась — это про пароль № 2, алгоритм ' +
+    'или формулу; запустите пробу подписи',
+};
+
+/**
+ * Разбор уведомления: чем именно он кончился.
+ *
+ * ПРИЧИНА НАЗЫВАЕТСЯ СВОИМ ИМЕНЕМ, и это не педантизм. Раньше здесь
+ * стоял `null` на всех четырёх бедах разом, а журнал печатал
+ * «уведомление с несошедшейся подписью» — то есть на отсутствующее
+ * поле и на кривой номер счёта отвечал «проверьте пароли». Человек
+ * шёл искать поломку туда, где её не было.
+ */
+export function razbor(n: NastroykiRobokassy, pary: Record<string, string>): RazborUvedomleniya {
   const outSum = (pary['OutSum'] ?? pary['outSum'] ?? '').trim();
   const invId = (pary['InvId'] ?? pary['invId'] ?? '').trim();
   const podpis = (pary['SignatureValue'] ?? pary['signatureValue'] ?? '').trim();
-  if (!outSum || !invId || !podpis) return null;
-  if (!/^\d+$/.test(invId)) return null;
-  if (!/^\d+(\.\d{1,2})?$/.test(outSum)) return null;
-  if (!podpisiSovpali(podpis, podpisUvedomleniya(n, outSum, invId, pary))) return null;
+  const otkaz = (pochemu: PochemuNeVzyali): RazborUvedomleniya => ({
+    vzyali: false,
+    pochemu,
+    slovami: SLOVAMI[pochemu],
+    podpisnye: podpisnyePolya(pary),
+    imena: Object.keys(pary).sort(),
+    podpisPrishla: podpis,
+  });
+
+  if (!outSum || !invId || !podpis) return otkaz('net_poley');
+  if (!/^\d+$/.test(invId)) return otkaz('nomer_ne_chislo');
+  if (!/^\d+(\.\d{1,2})?$/.test(outSum)) return otkaz('summa_ne_chislo');
+  if (!podpisiSovpali(podpis, podpisUvedomleniya(n, outSum, invId, pary))) {
+    return otkaz('podpis_ne_soshlas');
+  }
   return {
-    nomer: Number(invId),
-    summaKop: Math.round(Number(outSum) * 100),
-    oplachen: true,
+    vzyali: true,
+    uvedomlenie: {
+      nomer: Number(invId),
+      summaKop: Math.round(Number(outSum) * 100),
+      oplachen: true,
+    },
   };
 }
 
@@ -403,8 +484,8 @@ export function sozdatRobokassu(n: NastroykiRobokassy): PostavshchikOplaty {
         gotovoSrazu: false,
       };
     },
-    razobratUvedomlenie(pary: Record<string, string>): Uvedomlenie | null {
-      return razobrat(n, pary);
+    razobratUvedomlenie(pary: Record<string, string>): RazborUvedomleniya {
+      return razbor(n, pary);
     },
   };
 }
