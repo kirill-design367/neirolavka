@@ -14,13 +14,30 @@ import { kopeyki, rubliIli } from '../lib/katalog.js';
 import type { Zakaz } from '../db/zakazy.js';
 import type { Rol } from '../db/komanda.js';
 import { denKratko } from '../lib/vremya.js';
+import { prichina } from './texty-komandy.js';
 
 export const KNOPKA_KUPIT = 'Купить доступ';
 export const KNOPKA_ZAKAZY = 'Мои заказы';
 export const KNOPKA_BALANS = 'Баланс';
 export const KNOPKA_O_NAS = 'О нас';
 export const KNOPKA_PODDERZHKA = 'Поддержка';
-export const KNOPKA_LAVKA = 'Заказы лавки';
+/**
+ * Служебная кнопка нижней клавиатуры — ПО-АНГЛИЙСКИ, как и всё
+ * служебное с сентября 2026. Покупательские четыре кнопки рядом
+ * остались русскими: команда пользуется ботом и как покупатель тоже.
+ */
+export const KNOPKA_LAVKA = 'Shop orders';
+
+/**
+ * ПРЕЖНЯЯ подпись той же кнопки, и убирать её нельзя.
+ *
+ * Нижняя клавиатура живёт в клиенте Telegram, пока человек не нажмёт
+ * «Старт»: у помощника, открывшего бота до выкладки, на экране
+ * по-прежнему «Заказы лавки». Не принимай бот старую подпись — тот
+ * нажал бы свою кнопку и получил «Не понял сообщение» ровно в ту
+ * минуту, когда в очереди лежит заказ.
+ */
+export const KNOPKA_LAVKA_STARAYA = 'Заказы лавки';
 
 /** Живой человек поддержки. Отдельно от бота: бот отвечает по делу,
  *  а разбираться с частным случаем идут сюда. */
@@ -186,27 +203,32 @@ export const oNas = (): InlineKeyboard =>
 export const poddershka = (): InlineKeyboard =>
   new InlineKeyboard().url('Написать в поддержку', PODDERZHKA);
 
-// ── служебные ────────────────────────────────────────────────────────
+/* ── служебные ───────────────────────────────────────────────────────
+   Всё ниже видят владелец и помощник, и говорит оно ПО-АНГЛИЙСКИ —
+   решение владельца, сентябрь 2026. Кнопки покупателя выше остались
+   русскими. Причины отмены берутся из словаря панели, а не пишутся
+   здесь второй раз: одна и та же причина в боте и в панели обязана
+   называться одними словами. */
 
 export function sluzhebnoe(rol: Rol): InlineKeyboard {
   const k = new InlineKeyboard()
-    .text('Очередь на выдачу', 'aoch')
+    .text('Delivery queue', 'aoch')
     .row()
-    .text('Мои в работе', 'amoi')
+    .text('On me', 'amoi')
     .row()
-    .text('Ждут оплаты', 'aneopl')
+    .text('Awaiting payment', 'aneopl')
     .row();
   if (rol === 'vladelec') {
-    k.text('Люди', 'alyudi').row().text('Статистика', 'astat').row().text('Настройки', 'anastr');
+    k.text('People', 'alyudi').row().text('Statistics', 'astat').row().text('Settings', 'anastr');
   }
   return k;
 }
 
 export function novyZakazAdminu(z: Zakaz, oplachen: boolean, vladelec: boolean): InlineKeyboard {
   const k = new InlineKeyboard();
-  if (!oplachen && vladelec) k.text('Оплата пришла', `aopl:${z.id}`).row();
-  else k.text('Взять в работу', `avz:${z.id}`).row();
-  k.text('Открыть заказ', `az:${z.id}`);
+  if (!oplachen && vladelec) k.text('Payment received', `aopl:${z.id}`).row();
+  else k.text('Take into work', `avz:${z.id}`).row();
+  k.text('Open order', `az:${z.id}`);
   return k;
 }
 
@@ -239,24 +261,29 @@ export function zakazAdminu(z: Zakaz, pod: Pod | boolean, vladelec: boolean): In
   /* Отметка оплаты — деньги, значит владелец. Флаг обязателен, а не
      «по умолчанию можно»: умолчание здесь означало бы, что забытый
      на новом месте вызов молча показывает помощнику чужие деньги. */
-  if (z.status === 'zhdet_oplaty' && vladelec) k.text('Оплата пришла', `aopl:${z.id}`).row();
-  if (z.status === 'oplachen') k.text('Взять в работу', `avz:${z.id}`).row();
+  if (z.status === 'zhdet_oplaty' && vladelec) k.text('Payment received', `aopl:${z.id}`).row();
+  if (z.status === 'oplachen') k.text('Take into work', `avz:${z.id}`).row();
+
+  /* ВВОД ДОСТУПА СТОИТ ПЕРВЫМ У ПОМОЩНИКА, и это про необязательность
+     кода. Прежде над ним лежали «Данные аккаунта» и «Запросить код»,
+     и порядок читался как очередь шагов: сначала спроси код, потом
+     вводи. Код при входе спрашивают не все нейросети — значит путь
+     к выдаче идёт мимо него, а всё, что про чужой аккаунт, стоит
+     ниже отдельной кучкой. */
+  if (uPomoshnika) k.text(p.estDostup ? 'Change access' : 'Enter access', `avv:${z.id}`).row();
 
   if (uPomoshnika && z.vid_akkaunta === 'svoy') {
-    if (p.estAkkaunt) k.text('Данные аккаунта', `aakk:${z.id}`).row();
-    if (z.status !== 'zhdem_kod') k.text('Запросить код', `akodz:${z.id}`).row();
-    if (p.estKod) k.text('Показать код', `akodp:${z.id}`).row();
-    if (!z.pismo_v) k.text('Письмо восстановления отправлено', `apis:${z.id}`).row();
-    else k.text('Отменить: пароль не подошёл', `aparol:${z.id}`).row();
+    if (p.estAkkaunt) k.text('Customer account details', `aakk:${z.id}`).row();
+    if (z.status !== 'zhdem_kod') k.text('Request 2FA code', `akodz:${z.id}`).row();
+    if (p.estKod) k.text('Show code', `akodp:${z.id}`).row();
+    if (!z.pismo_v) k.text('Mark: reset email sent', `apis:${z.id}`).row();
+    else k.text('Cancel: password did not match', `aparol:${z.id}`).row();
   }
 
-  if (uPomoshnika) {
-    k.text(p.estDostup ? 'Изменить доступ' : 'Ввести доступ', `avv:${z.id}`).row();
-    k.text('Вернуть в очередь', `aver:${z.id}`).row();
-  }
+  if (uPomoshnika) k.text('Return to queue', `aver:${z.id}`).row();
 
-  if (z.status !== 'vydan' && z.status !== 'otmenen') k.text('Отменить заказ', `aotm:${z.id}`).row();
-  k.text('← Очередь', 'aoch');
+  if (z.status !== 'vydan' && z.status !== 'otmenen') k.text('Cancel order', `aotm:${z.id}`).row();
+  k.text('← Queue', 'aoch');
   return k;
 }
 
@@ -275,60 +302,60 @@ export function zakazAdminu(z: Zakaz, pod: Pod | boolean, vladelec: boolean): In
  */
 export function prichinaOtmeny(z: Zakaz): InlineKeyboard {
   const k = new InlineKeyboard();
-  k.text('Превышено время ожидания кода', `aotmp:${z.id}:net_koda`).row();
-  k.text('Недостаточно средств на балансе', `aotmp:${z.id}:net_deneg`).row();
+  k.text(prichina('net_koda'), `aotmp:${z.id}:net_koda`).row();
+  k.text(prichina('net_deneg'), `aotmp:${z.id}:net_deneg`).row();
   if (z.vid_akkaunta === 'svoy') {
     // Продлевают только СВОЙ аккаунт: у заказа на новый продлевать
     // нечего. Письма эта причина не требует — данные могли быть
     // с опечаткой в самой почте.
-    k.text('Неверные данные для продления', `aotmp:${z.id}:nevernye_dannye`).row();
+    k.text(prichina('nevernye_dannye'), `aotmp:${z.id}:nevernye_dannye`).row();
   }
   if (z.vid_akkaunta === 'svoy' && z.pismo_v) {
-    k.text('Неправильный логин или пароль', `aotmp:${z.id}:nevernyy_parol`).row();
+    k.text(prichina('nevernyy_parol'), `aotmp:${z.id}:nevernyy_parol`).row();
   }
-  k.text('← Не отменять', `az:${z.id}`);
+  k.text('← Do not cancel', `az:${z.id}`);
   return k;
 }
 
 /** Кнопка «открыть заказ» под служебным сообщением про код. */
 export function kodAdminu(zakazId: number): InlineKeyboard {
-  return new InlineKeyboard().text(`Открыть заказ № ${zakazId}`, `az:${zakazId}`);
+  return new InlineKeyboard().text(`Open order #${zakazId}`, `az:${zakazId}`);
 }
 
 export function ocheredAdminu(spisok: Zakaz[]): InlineKeyboard {
   const k = new InlineKeyboard();
-  for (const z of spisok) k.text(`№ ${z.id} · ${z.nazvanie}`, `az:${z.id}`).row();
-  k.text('← Служебное', 'a');
+  for (const z of spisok) k.text(`#${z.id} · ${z.nazvanie}`, `az:${z.id}`).row();
+  k.text('← Shop desk', 'a');
   return k;
 }
 
 export function proverkaDostupa(zakazId: number): InlineKeyboard {
   return new InlineKeyboard()
-    .text('Отправить покупателю', `avyd:${zakazId}`)
+    .text('Send to customer', `avyd:${zakazId}`)
     .row()
-    .text('Ввести заново', `avv:${zakazId}`)
+    .text('Enter again', `avv:${zakazId}`)
     .row()
-    .text('← Заказ', `az:${zakazId}`);
+    .text('← Order', `az:${zakazId}`);
 }
 
-export const nazadSluzhebnoe = (): InlineKeyboard => new InlineKeyboard().text('← Служебное', 'a');
+export const nazadSluzhebnoe = (): InlineKeyboard => new InlineKeyboard().text('← Shop desk', 'a');
 
 export function nastroykiVladelca(): InlineKeyboard {
   return new InlineKeyboard()
-    .text('Часы работы', 'achasy')
+    .text('Working hours', 'achasy')
     .row()
-    .text('Команда', 'akom')
+    .text('Team', 'akom')
     .row()
-    .text('← Служебное', 'a');
+    .text('← Shop desk', 'a');
 }
 
 export function komandaVladelca(): InlineKeyboard {
-  return new InlineKeyboard().text('Добавить помощника', 'adobp').row().text('← Настройки', 'anastr');
+  return new InlineKeyboard().text('Add an assistant', 'adobp').row().text('← Settings', 'anastr');
 }
 
 /** Люди — и пополнение баланса оттуда же: пополняет владелец. */
 export function lyudiVladelca(): InlineKeyboard {
-  return new InlineKeyboard().text('Пополнить баланс', 'abal').row().text('← Служебное', 'a');
+  return new InlineKeyboard().text('Top up a balance', 'abal').row().text('← Shop desk', 'a');
 }
 
-export const otmenaVvoda = (): InlineKeyboard => new InlineKeyboard().text('Отменить ввод', 'aotmena');
+export const otmenaVvoda = (): InlineKeyboard => new InlineKeyboard().text('Cancel input', 'aotmena');

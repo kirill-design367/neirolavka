@@ -1,6 +1,16 @@
 /**
  * Что видит администратор.
  *
+ * ПО-АНГЛИЙСКИ. Решение владельца, сентябрь 2026: покупатель читает
+ * по-русски, команда — по-английски. Все строки, которые здесь
+ * показываются, живут в `texty-komandy.ts`; вписанных сюда строк
+ * быть не должно — иначе половина экрана однажды снова заговорит
+ * по-русски, и заметит это помощник, а не мы.
+ *
+ * Исключение ровно одно и оно намеренное: `zakazy.sobytie(...)` пишет
+ * историю заказа ПО-РУССКИ. Это запись о случившемся, лежащая в базе
+ * у всех прежних заказов, а не строка на экране.
+ *
  * Ролей две. Владелец видит всё: очередь, выдачу, людей, статистику,
  * настройки. Помощник — только заказы и выдачу: чтобы отдать логин
  * и пароль, знать выручку и список покупателей не нужно.
@@ -23,14 +33,15 @@ import * as komanda from '../db/komanda.js';
 import * as nastroykiBd from '../db/nastroyki.js';
 import { raspisanie } from '../db/nastroyki.js';
 import { postavitOpisanie } from './opisanie.js';
-import { rubli, rubliIli } from '../lib/katalog.js';
-import { chasSlovami, dataSlovami, momentSlovami, skolkoOsalos, srokVydachi, dostupDo, sklonenie } from '../lib/vremya.js';
+import { rubli } from '../lib/katalog.js';
+import { chasSlovami, mnozhestvennoe, srokVydachi, dostupDo } from '../lib/vremya.js';
 import * as t from '../lib/texty.js';
+import * as k from './texty-komandy.js';
 import * as uvedom from './uvedomleniya.js';
 import { pravit, prinyatVopros, prinyatPochtu, prinyatParolAkkaunta, prinyatKod } from './pokupatel.js';
 import { zhurnal } from '../lib/zhurnal.js';
 
-const NET_PRAV = 'Этот раздел только для владельца.';
+
 
 function svoy(l: Lavka, ctx: Context): komanda.Rol | null {
   return ctx.from ? komanda.rol(l.db, ctx.from.id) : null;
@@ -50,47 +61,52 @@ function opisanie(l: Lavka, z: zakazy.Zakaz): string {
   const r = raspisanie(l.db, l.n);
   const c = lyudi.chelovek(l.db, z.tg_id);
   const strok = [
-    `Заказ № ${z.id} · ${t.statusSlovami(z.status)}`,
+    `${k.ZAKAZ(z.id)} · ${k.status(z.status)}`,
     '',
     z.nazvanie,
-    `Аккаунт: ${t.vidAkkauntaSlovami(z.vid_akkaunta)}`,
+    `${k.AKKAUNT}: ${k.vidAkkaunta(z.vid_akkaunta)}`,
     // Срок печатается, только если он есть: у уровней подписки его
     // нет, и «0 месяцев» в карточке заказа читалось бы поломкой.
     z.mesyacev > 0
-      ? `${rubliIli(z.cena_kop)} · ${sklonenie(z.mesyacev, 'месяц', 'месяца', 'месяцев')}`
-      : rubliIli(z.cena_kop),
-    `Покупатель: ${lyudi.podpis(c, z.tg_id)}`,
-    `Оформлен: ${momentSlovami(new Date(z.sozdan), r.poyas)}`,
+      ? `${k.cena(z.cena_kop)} · ${mnozhestvennoe(z.mesyacev, 'month', 'months')}`
+      : k.cena(z.cena_kop),
+    `${k.POKUPATEL}: ${lyudi.podpis(c, z.tg_id)}`,
+    `${k.OFORMLEN}: ${k.moment(z.sozdan, r.poyas)}`,
   ];
   if (z.srok_do) {
     const srok = new Date(z.srok_do);
-    strok.push(`Обещано: ${momentSlovami(srok, r.poyas)} (${skolkoOsalos(new Date(), srok)})`);
+    strok.push(`${k.OBESHCHANO}: ${k.moment(srok, r.poyas)} (${k.ostalos(new Date(), srok)})`);
   }
-  if (z.ispolnitel) strok.push(`Взял: ${z.ispolnitel}`);
+  if (z.ispolnitel) strok.push(`${k.VZYAL}: ${z.ispolnitel}`);
   if (z.status === 'vydan' && z.dostup_do) {
-    strok.push(`Доступ до: ${dataSlovami(new Date(z.dostup_do), r.poyas)}`);
+    strok.push(`${k.DOSTUP_DO}: ${k.data(z.dostup_do, r.poyas)}`);
   }
   // Деньги: сколько заказ держит и сколько из этого пришло с баланса.
   // Помощнику это нужно, чтобы понимать, чего ждать «живыми».
   if (z.oplacheno_kop > 0) {
     strok.push(
       z.s_balansa_kop > 0
-        ? `Оплачено: ${rubli(z.oplacheno_kop)} (с баланса ${rubli(z.s_balansa_kop)})`
-        : `Оплачено: ${rubli(z.oplacheno_kop)}`,
+        ? `${k.OPLACHENO}: ${rubli(z.oplacheno_kop)} (${k.S_BALANSA} ${rubli(z.s_balansa_kop)})`
+        : `${k.OPLACHENO}: ${rubli(z.oplacheno_kop)}`,
     );
   }
   if (z.status === 'zhdem_kod' && z.kod_zapros_v) {
-    strok.push(`Код запрошен: ${momentSlovami(new Date(z.kod_zapros_v), r.poyas)} — ждём ответа`);
+    strok.push(`${k.KOD_ZAPROSHEN}: ${k.moment(z.kod_zapros_v, r.poyas)} — ${k.ZHDEM_OTVETA}`);
   }
-  if (z.kod_poluchen_v) strok.push(`Код получен: ${momentSlovami(new Date(z.kod_poluchen_v), r.poyas)}`);
-  if (z.pismo_v) strok.push(`Письмо восстановления отправлено: ${momentSlovami(new Date(z.pismo_v), r.poyas)}`);
-  if (z.prichina_otmeny) strok.push(`Причина отмены: ${t.prichinaSlovami(z.prichina_otmeny)}`);
-  if (svoi.est(l.db, z.id)) strok.push('Данные аккаунта покупателя записаны');
-  if (dostupy.est(l.db, z.id)) strok.push('Доступ записан');
+  if (z.kod_poluchen_v) strok.push(`${k.KOD_POLUCHEN}: ${k.moment(z.kod_poluchen_v, r.poyas)}`);
+  if (z.pismo_v) strok.push(`${k.PISMO_OTPRAVLENO}: ${k.moment(z.pismo_v, r.poyas)}`);
+  if (z.prichina_otmeny) strok.push(`${k.PRICHINA_OTMENY}: ${k.prichina(z.prichina_otmeny)}`);
+  if (svoi.est(l.db, z.id)) strok.push(k.AKKAUNT_ZAPISAN);
+  if (dostupy.est(l.db, z.id)) strok.push(k.DOSTUP_ZAPISAN);
   // Заказ, о котором никому не сообщили, обязан быть виден как таковой:
   // иначе он тихо лежит в очереди и ждёт, пока кто-нибудь туда заглянет.
+  /* Признак ищется по РУССКОЙ записи истории, и это не недосмотр
+     перевода: `sobytie` пишет историю по-русски у всех заказов,
+     включая заведённые до того, как служебное заговорило
+     по-английски. Перевести признак значило бы перестать находить
+     его у прежних заказов. */
   if (zakazy.sobytiya(l.db, z.id).some((s) => s.chto === 'команду уведомить не удалось')) {
-    strok.push('⚠ уведомление команде не дошло — заказ найден в очереди');
+    strok.push(k.NE_DOSHLO_KOMANDE);
   }
   return strok.join('\n');
 }
@@ -106,7 +122,7 @@ function opisanie(l: Lavka, z: zakazy.Zakaz): string {
 export async function soobshchitOZakaze(l: Lavka, z: zakazy.Zakaz): Promise<void> {
   try {
     const oplachen = z.status !== 'zhdet_oplaty';
-    const shapka = oplachen ? 'Новый оплаченный заказ.' : 'Новый заказ. Оплата пока вне бота.';
+    const shapka = oplachen ? k.NOVY_ZAKAZ_OPLACHEN : k.NOVY_ZAKAZ;
     const itog = await uvedom.komande(l, `${shapka}\n\n${opisanie(l, z)}`, (tgId: number) => klav.novyZakazAdminu(z, oplachen, komanda.vladelec(l.db, tgId)));
 
     if (itog.doshlo > 0) {
@@ -142,21 +158,26 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     const moi = zakazy.vRabote(l.db, ctx.from!.id);
     const zhdutKod = moi.filter((z) => z.status === 'zhdem_kod').length;
     const text = [
-      rl === 'vladelec' ? 'Служебное. Вы владелец.' : 'Служебное. Вы помощник.',
+      rl === 'vladelec' ? k.SLUZHEBNOE_VLADELEC : k.SLUZHEBNOE_POMOSHNIK,
       '',
-      `В очереди на выдачу: ${och.length}`,
+      k.V_OCHEREDI(och.length),
       // Свои заказы отдельной строкой: помощник ведёт несколько разом,
       // и «сколько на мне» — первое, что он хочет знать.
-      `На вас: ${moi.length}${zhdutKod ? `, из них ждут код: ${zhdutKod}` : ''}`,
-      `Ждут оплаты: ${neop.length}`,
+      k.NA_VAS(moi.length, zhdutKod),
+      k.ZHDUT_OPLATY(neop.length),
     ].join('\n');
     if (pravkoy) await pravit(ctx, text, klav.sluzhebnoe(rl));
     else await ctx.reply(text, { reply_markup: klav.sluzhebnoe(rl) });
   };
 
-  // Не свой, набравший эти слова руками, не должен упереться в тишину:
-  // пропускаем дальше, и он получит обычный ответ на непонятое.
-  bot.hears(klav.KNOPKA_LAVKA, async (ctx, next) => {
+  /* Не свой, набравший эти слова руками, не должен упереться в тишину:
+     пропускаем дальше, и он получит обычный ответ на непонятое.
+
+     Подписей две — нынешняя английская и прежняя русская. Нижняя
+     клавиатура живёт в клиенте Telegram, пока человек не нажмёт
+     «Старт»: у помощника, открывшего бота до выкладки, на экране
+     по-прежнему «Заказы лавки». */
+  bot.hears([klav.KNOPKA_LAVKA, klav.KNOPKA_LAVKA_STARAYA], async (ctx, next) => {
     if (!svoy(l, ctx)) return next();
     await sluzhebnoe(ctx, false);
   });
@@ -176,8 +197,8 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     if (!svoy(l, ctx)) return;
     const spisok = zakazy.ochered(l.db);
     const text = spisok.length
-      ? `Очередь на выдачу: ${spisok.length}. Старые сверху.`
-      : 'Очередь пуста: всё выдано.';
+      ? k.OCHERED_EST(spisok.length)
+      : k.OCHERED_PUSTA;
     await pravit(ctx, text, klav.ocheredAdminu(spisok));
   });
 
@@ -186,8 +207,8 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     if (!svoy(l, ctx)) return;
     const spisok = zakazy.vRabote(l.db, ctx.from.id);
     const text = spisok.length
-      ? `На вас ${spisok.length}. Открывайте любой — они идут независимо друг от друга.`
-      : 'На вас сейчас ничего нет. Возьмите заказ из очереди.';
+      ? k.MOI_EST(spisok.length)
+      : k.MOI_PUSTO;
     await pravit(ctx, text, klav.ocheredAdminu(spisok));
   });
 
@@ -196,8 +217,8 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     if (!svoy(l, ctx)) return;
     const spisok = zakazy.neoplachennye(l.db);
     const text = spisok.length
-      ? `Ждут оплаты: ${spisok.length}. Пока оплата вне бота, отмечайте вручную.`
-      : 'Неоплаченных заказов нет.';
+      ? k.NEOPL_EST(spisok.length)
+      : k.NEOPL_PUSTO;
     await pravit(ctx, text, klav.ocheredAdminu(spisok));
   });
 
@@ -205,7 +226,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     await ctx.answerCallbackQuery();
     if (!svoy(l, ctx)) return;
     const z = zakazy.po(l.db, Number(ctx.match![1]));
-    if (!z) return pravit(ctx, 'Такого заказа нет.', klav.nazadSluzhebnoe());
+    if (!z) return pravit(ctx, k.NET_ZAKAZA, klav.nazadSluzhebnoe());
     await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z), komanda.vladelec(l.db, ctx.from.id)));
   });
 
@@ -215,11 +236,11 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
      Панель и бот зовут одни переходы, значит и замок должен стоять
      на обеих дверях, иначе закрытая панель ничего не значит. */
   bot.callbackQuery(/^aopl:(\d+)$/, async (ctx) => {
-    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     const id = Number(ctx.match![1]);
     const srok = srokVydachi(new Date(), r());
     const vyshlo = zakazy.otmetitOplachennym(l.db, id, srok.do, ctx.from.id);
-    await ctx.answerCallbackQuery(vyshlo ? 'Отметил оплаченным' : 'Заказ уже не ждёт оплаты');
+    await ctx.answerCallbackQuery(vyshlo ? k.OTMETIL_OPLATU : k.UZHE_NE_ZHDET_OPLATY);
     const z = zakazy.po(l.db, id);
     if (!z) return;
     if (vyshlo) await uvedom.cheloveku(l, z.tg_id, t.oplataPodtverzhdena(z, srok, r()));
@@ -227,10 +248,10 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
   });
 
   bot.callbackQuery(/^avz:(\d+)$/, async (ctx) => {
-    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     const id = Number(ctx.match![1]);
     const vzyal = zakazy.vzyat(l.db, id, ctx.from.id);
-    await ctx.answerCallbackQuery(vzyal ? 'Взяли в работу' : 'Заказ уже взят или выдан');
+    await ctx.answerCallbackQuery(vzyal ? k.VZYALI : k.UZHE_VZYAT);
     const z = zakazy.po(l.db, id);
     if (!z) return;
     // Покупателю сообщаем о КАЖДОЙ смене состояния, которая его
@@ -241,10 +262,10 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
   });
 
   bot.callbackQuery(/^aver:(\d+)$/, async (ctx) => {
-    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     const id = Number(ctx.match![1]);
     zakazy.vernutVOchered(l.db, id, ctx.from.id);
-    await ctx.answerCallbackQuery('Вернул в очередь');
+    await ctx.answerCallbackQuery(k.VERNUL_V_OCHERED);
     const z = zakazy.po(l.db, id);
     if (z) await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z), komanda.vladelec(l.db, ctx.from.id)));
   });
@@ -264,13 +285,11 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     const itog = zakazy.otmenit(l.db, id, ctx.from!.id, prichina);
     if (!itog.otmenen) {
       await ctx.answerCallbackQuery(
-        itog.pochemu === 'net_pisma'
-          ? 'Сначала отправьте письмо восстановления и отметьте это'
-          : 'Заказ уже закрыт',
+        itog.pochemu === 'net_pisma' ? k.SNACHALA_PISMO : k.UZHE_ZAKRYT,
       );
       return;
     }
-    await ctx.answerCallbackQuery(itog.vernuli > 0 ? 'Отменил, деньги на балансе' : 'Отменил');
+    await ctx.answerCallbackQuery(itog.vernuli > 0 ? k.OTMENIL_DENGI : k.OTMENIL);
     const z = zakazy.po(l.db, id);
     if (!z) return;
     // Ничейному заказу сказать некому: покупатель ещё не пришёл в бот.
@@ -290,16 +309,16 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
      и ту же значило бы, что статистика отмен ничего не показывает. */
   bot.callbackQuery(/^aotm:(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     const z = zakazy.po(l.db, Number(ctx.match![1]));
-    if (!z) return pravit(ctx, 'Такого заказа нет.', klav.nazadSluzhebnoe());
-    await pravit(ctx, `${opisanie(l, z)}\n\nПочему отменяем?`, klav.prichinaOtmeny(z));
+    if (!z) return pravit(ctx, k.NET_ZAKAZA, klav.nazadSluzhebnoe());
+    await pravit(ctx, `${opisanie(l, z)}\n\n${k.POCHEMU_OTMENYAEM}`, klav.prichinaOtmeny(z));
   });
 
   bot.callbackQuery(/^aotmp:(\d+):([a-z_]+)$/, async (ctx) => {
-    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     const prichina = zakazy.razobratPrichinu(ctx.match![2]);
-    if (!prichina) return void (await ctx.answerCallbackQuery('Такой причины нет'));
+    if (!prichina) return void (await ctx.answerCallbackQuery(k.NET_TAKOY_PRICHINY));
     await otmenit(ctx, Number(ctx.match![1]), prichina);
   });
 
@@ -314,12 +333,12 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
    * у обоих.
    */
   bot.callbackQuery(/^akodz:(\d+)$/, async (ctx) => {
-    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     const id = Number(ctx.match![1]);
     const z = zakazy.po(l.db, id);
-    if (!z) return void (await ctx.answerCallbackQuery('Заказа нет'));
+    if (!z) return void (await ctx.answerCallbackQuery(k.NET_ZAKAZA_KRATKO));
     if (z.vid_akkaunta !== 'svoy') {
-      return void (await ctx.answerCallbackQuery('У этого заказа новый аккаунт — код не нужен'));
+      return void (await ctx.answerCallbackQuery(k.KOD_NE_NUZHEN));
     }
     /* Ничейный заказ сюда не доходит: `svoy` ставится только
        забранному. Проверка стоит не «на всякий случай», а затем,
@@ -327,21 +346,21 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
        завтра — здесь будет честный отказ, а не разговор о коде,
        заведённый неизвестно кому. */
     if (z.tg_id === null) {
-      return void (await ctx.answerCallbackQuery('Заказ ещё не забран покупателем — спрашивать код некого'));
+      return void (await ctx.answerCallbackQuery(k.ZAKAZ_NE_ZABRAN));
     }
     const drugoy = zakazy.zhdutKodaOt(l.db, z.tg_id).find((x) => x.id !== z.id);
     if (drugoy) {
-      return void (await ctx.answerCallbackQuery(`Покупатель уже вводит код по заказу № ${drugoy.id}`));
+      return void (await ctx.answerCallbackQuery(k.UZHE_VVODIT_KOD(drugoy.id)));
     }
     if (!zakazy.zaprositKod(l.db, id, ctx.from.id)) {
-      return void (await ctx.answerCallbackQuery('Сейчас код запросить нельзя'));
+      return void (await ctx.answerCallbackQuery(k.KOD_SEYCHAS_NELZYA));
     }
     kody.zaprosit(l.db, id, ctx.from.id);
     dialogi.postavit(l.db, z.tg_id, 'zhdem_kod', id, {}, l.n.klyuchDostupov);
 
     const svezhy = zakazy.po(l.db, id) as zakazy.Zakaz;
     const doshlo = await uvedom.cheloveku(l, z.tg_id, t.prosimKod(svezhy, r().obeshchanieMinut));
-    await ctx.answerCallbackQuery(doshlo.doshlo ? 'Спросил у покупателя' : 'Покупателю не доставлено');
+    await ctx.answerCallbackQuery(doshlo.doshlo ? k.SPROSILI_KOD : k.KOD_NE_DOSHEL);
     if (!doshlo.doshlo) {
       zakazy.sobytie(l.db, id, 'просьба о коде не доставлена', ctx.from.id, doshlo.pochemu);
     }
@@ -350,30 +369,30 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
 
   /** Показать пришедший код. Расшифровка — только здесь и только своим. */
   bot.callbackQuery(/^akodp:(\d+)$/, async (ctx) => {
-    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     const id = Number(ctx.match![1]);
-    const k = kody.vzyat(l.db, id, l.n.klyuchDostupov);
-    if (!k) return void (await ctx.answerCallbackQuery('Кода по этому заказу нет'));
+    const kd = kody.vzyat(l.db, id, l.n.klyuchDostupov);
+    if (!kd) return void (await ctx.answerCallbackQuery(k.KODA_NET));
     await ctx.answerCallbackQuery();
-    await ctx.reply(`Код по заказу № ${id}: ${k.kod}`, { reply_markup: klav.kodAdminu(id) });
+    await ctx.reply(k.KOD_PO_ZAKAZU(id, kd.kod), { reply_markup: klav.kodAdminu(id) });
   });
 
   /** Логин почты и пароль, которые принёс покупатель. */
   bot.callbackQuery(/^aakk:(\d+)$/, async (ctx) => {
-    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     const id = Number(ctx.match![1]);
     let a;
     try {
       a = svoi.vzyat(l.db, id, l.n.klyuchDostupov);
     } catch (e) {
       zhurnal.oshibka(`не читается аккаунт покупателя по заказу ${id}:`, e);
-      return void (await ctx.answerCallbackQuery('Не читается запись аккаунта'));
+      return void (await ctx.answerCallbackQuery(k.NE_CHITAETSYA_AKKAUNT));
     }
-    if (!a) return void (await ctx.answerCallbackQuery('Покупатель не передавал свой аккаунт'));
+    if (!a) return void (await ctx.answerCallbackQuery(k.NET_AKKAUNTA));
     await ctx.answerCallbackQuery();
     zakazy.sobytie(l.db, id, 'помощник открыл данные аккаунта', ctx.from.id);
     await ctx.reply(
-      [`Заказ № ${id}. Аккаунт покупателя.`, '', `Почта: ${a.pochta}`, `Пароль: ${a.parol}`].join('\n'),
+      [k.AKKAUNT_PLASHKA(id), '', `${k.POCHTA}: ${a.pochta}`, `${k.PAROL}: ${a.parol}`].join('\n'),
       { reply_markup: klav.kodAdminu(id) },
     );
   });
@@ -386,60 +405,55 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
    * доступ, и только потом заказ отменяется.
    */
   bot.callbackQuery(/^apis:(\d+)$/, async (ctx) => {
-    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     const id = Number(ctx.match![1]);
     const vyshlo = zakazy.otmetitPismo(l.db, id, ctx.from.id);
-    await ctx.answerCallbackQuery(vyshlo ? 'Отметил. Теперь можно отменять' : 'Сейчас это нельзя отметить');
+    await ctx.answerCallbackQuery(vyshlo ? k.OTMETIL_PISMO : k.PISMO_SEYCHAS_NELZYA);
     const z = zakazy.po(l.db, id);
     if (z) await pravit(ctx, opisanie(l, z), klav.zakazAdminu(z, pod(l, z), komanda.vladelec(l.db, ctx.from.id)));
   });
 
   bot.callbackQuery(/^aparol:(\d+)$/, async (ctx) => {
-    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     await otmenit(ctx, Number(ctx.match![1]), 'nevernyy_parol');
   });
 
   // ── ввод доступа ───────────────────────────────────────────────────
 
   bot.callbackQuery(/^avv:(\d+)$/, async (ctx) => {
-    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     await ctx.answerCallbackQuery();
     const id = Number(ctx.match![1]);
     const z = zakazy.po(l.db, id);
     if (!z) return;
     dialogi.postavit(l.db, ctx.from.id, 'zhdem_login', id, {}, l.n.klyuchDostupov);
     await ctx.reply(
-      [
-        `Заказ № ${id}. Пришлите логин одним сообщением.`,
-        '',
-        'Следующим сообщением — пароль. Если к доступу нужна записка ' +
-          'для покупателя, допишите её со второй строки того же сообщения.',
-      ].join('\n'),
+      k.PROSIM_LOGIN(id),
       { reply_markup: klav.otmenaVvoda() },
     );
   });
 
   bot.callbackQuery('aotmena', async (ctx) => {
-    await ctx.answerCallbackQuery('Ввод отменён');
+    await ctx.answerCallbackQuery(k.VVOD_OTMENEN_KRATKO);
     dialogi.zabyt(l.db, ctx.from.id);
-    await pravit(ctx, 'Ввод отменён. Заказ остался как был.');
+    await pravit(ctx, k.VVOD_OTMENEN);
   });
 
   bot.callbackQuery(/^avyd:(\d+)$/, async (ctx) => {
-    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!svoy(l, ctx)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     const id = Number(ctx.match![1]);
     const z = zakazy.po(l.db, id);
-    if (!z) return void (await ctx.answerCallbackQuery('Заказа нет'));
-    if (!dostupy.est(l.db, id)) return void (await ctx.answerCallbackQuery('Доступ не записан'));
+    if (!z) return void (await ctx.answerCallbackQuery(k.NET_ZAKAZA_KRATKO));
+    if (!dostupy.est(l.db, id)) return void (await ctx.answerCallbackQuery(k.DOSTUP_NE_ZAPISAN));
 
     let d;
     try {
       d = dostupy.vzyat(l.db, id, l.n.klyuchDostupov);
     } catch (e) {
       zhurnal.oshibka(`не читается доступ по заказу ${id}:`, e);
-      return void (await ctx.answerCallbackQuery('Не читается запись доступа'));
+      return void (await ctx.answerCallbackQuery(k.NE_CHITAETSYA_DOSTUP));
     }
-    if (!d) return void (await ctx.answerCallbackQuery('Доступ не записан'));
+    if (!d) return void (await ctx.answerCallbackQuery(k.DOSTUP_NE_ZAPISAN));
 
     // Сначала отправляем человеку, потом отмечаем выданным. Обратный
     // порядок оставил бы заказ «выданным» при неотправленном доступе.
@@ -459,21 +473,13 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
       t.dostupVydan(dlyaPokupatelya, d.login, d.parol, d.zametka, r()),
     );
     if (!otpravka.doshlo) {
-      await ctx.answerCallbackQuery('Сообщение покупателю не доставлено');
-      await ctx.reply(
-        [
-          `Покупателю по заказу № ${id} доступ не доставлен:`,
-          uvedom.pochemuSlovami(otpravka.pochemu, z.tg_id) + '.',
-          '',
-          'Заказ оставил НЕвыданным — иначе он числился бы закрытым, а человек ' +
-            'остался бы без доступа.',
-        ].join('\n'),
-      );
+      await ctx.answerCallbackQuery(k.NE_DOSTAVLENO);
+      await ctx.reply(k.NE_DOSTAVLEN_DOSTUP(id, uvedom.pochemuPoAngliyski(otpravka.pochemu, z.tg_id)));
       zakazy.sobytie(l.db, id, 'доступ не доставлен покупателю', ctx.from.id, otpravka.pochemu);
       return;
     }
     zakazy.otmetitVydannym(l.db, id, dostupDoDaty, ctx.from.id);
-    await ctx.answerCallbackQuery('Отправил покупателю');
+    await ctx.answerCallbackQuery(k.OTPRAVIL);
     const svezhy = zakazy.po(l.db, id);
     if (svezhy) await pravit(ctx, opisanie(l, svezhy), klav.zakazAdminu(svezhy, pod(l, svezhy), komanda.vladelec(l.db, ctx.from.id)));
   });
@@ -481,17 +487,15 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
   // ── владелец ───────────────────────────────────────────────────────
 
   bot.callbackQuery('alyudi', async (ctx) => {
-    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     await ctx.answerCallbackQuery();
     const spisok = lyudi.spisok(l.db, 20);
-    const strok = spisok.map((c) => {
-      const b = koshelek.balans(l.db, c.tg_id);
-      const hvost = b > 0 ? `, баланс ${rubli(b)}` : '';
-      return `${c.tg_id} · ${lyudi.podpis(c, c.tg_id)} · заказов ${c.zakazov}, выдано ${c.vydano}${hvost}`;
-    });
+    const strok = spisok.map((c) =>
+      `${c.tg_id} · ${k.LYUDI_STROKA(lyudi.podpis(c, c.tg_id), c.zakazov, c.vydano, koshelek.balans(l.db, c.tg_id))}`,
+    );
     await pravit(
       ctx,
-      [`Всего людей: ${lyudi.skolkoVsego(l.db)}. Последние двадцать:`, '', ...strok].join('\n'),
+      [k.LYUDI_SHAPKA(lyudi.skolkoVsego(l.db)), '', ...strok].join('\n'),
       klav.lyudiVladelca(),
     );
   });
@@ -504,17 +508,11 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
    * не примет, а другой двери к чужому балансу в боте не существует.
    */
   bot.callbackQuery('abal', async (ctx) => {
-    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     await ctx.answerCallbackQuery();
     dialogi.postavit(l.db, ctx.from.id, 'zhdem_popolnenie', null, {}, l.n.klyuchDostupov);
     await ctx.reply(
-      [
-        'Пришлите одной строкой: идентификатор человека и сумму в рублях.',
-        '',
-        'Например: 42 1500',
-        '',
-        'Сумма только положительная: списывать с чужого баланса руками нельзя.',
-      ].join('\n'),
+      k.PROSIM_POPOLNENIE,
       { reply_markup: klav.otmenaVvoda() },
     );
   });
@@ -528,14 +526,14 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
    * выглядит полной.
    */
   const dengi = (summaKop: number, vsego: number, bezCeny: number): string => {
-    if (vsego === 0) return 'выдач пока не было';
-    if (bezCeny >= vsego) return 'цена не объявлена';
-    if (bezCeny > 0) return `${rubli(summaKop)} (у ${bezCeny} из ${vsego} цена не объявлена)`;
+    if (vsego === 0) return k.VYDACH_NE_BYLO;
+    if (bezCeny >= vsego) return k.CENA_NE_OBYAVLENA;
+    if (bezCeny > 0) return k.CHASTICHNO_BEZ_CENY(rubli(summaKop), bezCeny, vsego);
     return rubli(summaKop);
   };
 
   bot.callbackQuery('astat', async (ctx) => {
-    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     await ctx.answerCallbackQuery();
     const s = zakazy.statistika(l.db);
     const poTovaram = s.poTovaram.map(
@@ -544,101 +542,81 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
     await pravit(
       ctx,
       [
-        'Статистика.',
+        k.STATISTIKA,
         '',
-        `Заказов всего: ${s.vsego}, за сутки: ${s.zaSutki}`,
-        `Ждут оплаты: ${s.poStatusam['zhdet_oplaty'] ?? 0}`,
-        `Оплачены: ${s.poStatusam['oplachen'] ?? 0}`,
-        `В работе: ${s.poStatusam['v_rabote'] ?? 0}`,
-        `Выданы: ${s.poStatusam['vydan'] ?? 0}`,
-        `Отменены: ${s.poStatusam['otmenen'] ?? 0}`,
+        k.STAT_VSEGO(s.vsego, s.zaSutki),
+        k.STAT_ZHDUT_OPLATY(s.poStatusam['zhdet_oplaty'] ?? 0),
+        k.STAT_OPLACHENY(s.poStatusam['oplachen'] ?? 0),
+        k.STAT_V_RABOTE(s.poStatusam['v_rabote'] ?? 0),
+        k.STAT_VYDANY(s.poStatusam['vydan'] ?? 0),
+        k.STAT_OTMENENY(s.poStatusam['otmenen'] ?? 0),
         '',
-        `Выручка по выданным: ${dengi(s.vyruchkaKop, s.poStatusam['vydan'] ?? 0, s.bezCeny)}`,
-        s.srednyayaVydachaMinut === null
-          ? 'Среднего времени выдачи пока нет: ни один заказ не прошёл путь целиком.'
-          : `Среднее время выдачи: ${sklonenie(s.srednyayaVydachaMinut, 'минута', 'минуты', 'минут')}`,
-        ...(poTovaram.length ? ['', 'По товарам:', ...poTovaram] : []),
+        k.STAT_VYRUCHKA(dengi(s.vyruchkaKop, s.poStatusam['vydan'] ?? 0, s.bezCeny)),
+        s.srednyayaVydachaMinut === null ? k.STAT_NET_SREDNEGO : k.STAT_SREDNEE(s.srednyayaVydachaMinut),
+        ...(poTovaram.length ? ['', k.STAT_PO_TOVARAM, ...poTovaram] : []),
       ].join('\n'),
       klav.nazadSluzhebnoe(),
     );
   });
 
   bot.callbackQuery('anastr', async (ctx) => {
-    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     await ctx.answerCallbackQuery();
     const rr = r();
     await pravit(
       ctx,
       [
-        'Настройки.',
+        k.NASTROYKI,
         '',
-        `Часы работы: с ${chasSlovami(rr.rabotaS)} до ${chasSlovami(rr.rabotaDo)} (${rr.poyas})`,
-        `Обещание выдачи: ${sklonenie(rr.obeshchanieMinut, 'минута', 'минуты', 'минут')}`,
-        `Оплата: ${l.oplata.rabotaet ? l.oplata.imya : 'не подключена'}`,
+        k.CHASY_RABOTY(rr.rabotaS, rr.rabotaDo, rr.poyas),
+        k.OBESHCHANIE(rr.obeshchanieMinut),
+        k.OPLATA_STROKA(l.oplata.rabotaet ? l.oplata.imya : null),
         '',
-        'Часы работы подставляются в тексты сами: менять их здесь достаточно.',
+        k.CHASY_SAMI,
       ].join('\n'),
       klav.nastroykiVladelca(),
     );
   });
 
   bot.callbackQuery('achasy', async (ctx) => {
-    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     await ctx.answerCallbackQuery();
     dialogi.postavit(l.db, ctx.from.id, 'zhdem_chasy', null, {}, l.n.klyuchDostupov);
     await ctx.reply(
-      [
-        'Пришлите два числа через пробел: час открытия и час закрытия.',
-        '',
-        `Сейчас: ${r().rabotaS} ${r().rabotaDo}`,
-      ].join('\n'),
+      k.PROSIM_CHASY(r().rabotaS, r().rabotaDo),
       { reply_markup: klav.otmenaVvoda() },
     );
   });
 
   bot.callbackQuery('akom', async (ctx) => {
-    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     await ctx.answerCallbackQuery();
     const strok = komanda
       .vsya(l.db)
-      .map((s) => `${s.rol === 'vladelec' ? 'владелец' : 'помощник'} · ${s.tg_id}${s.imya ? ` · ${s.imya}` : ''}`);
+      .map((s) => `${s.rol === 'vladelec' ? k.ROL_VLADELEC : k.ROL_POMOSHNIK} · ${s.tg_id}${s.imya ? ` · ${s.imya}` : ''}`);
     await pravit(
       ctx,
-      [
-        'Команда.',
-        '',
-        ...strok,
-        '',
-        'Помощник видит очередь и выдаёт доступы. Людей, статистику ' +
-          'и настройки не видит.',
-        '',
-        'Убрать помощника: /ubrat_pomoshnika ‹id›',
-      ].join('\n'),
+      [k.KOMANDA, '', ...strok, '', k.KOMANDA_POYASNENIE, '', k.KOMANDA_UBRAT].join('\n'),
       klav.komandaVladelca(),
     );
   });
 
   bot.callbackQuery('adobp', async (ctx) => {
-    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(NET_PRAV));
+    if (!komanda.vladelec(l.db, ctx.from.id)) return void (await ctx.answerCallbackQuery(k.NET_PRAV));
     await ctx.answerCallbackQuery();
     dialogi.postavit(l.db, ctx.from.id, 'zhdem_pomoshnika', null, {}, l.n.klyuchDostupov);
     await ctx.reply(
-      [
-        'Пришлите телеграм-идентификатор помощника — число.',
-        '',
-        'Узнать его можно так: пусть человек напишет боту любое сообщение, ' +
-          'а вы посмотрите список людей в служебном разделе.',
-      ].join('\n'),
+      k.PROSIM_POMOSHNIKA,
       { reply_markup: klav.otmenaVvoda() },
     );
   });
 
   bot.command('ubrat_pomoshnika', async (ctx) => {
-    if (!komanda.vladelec(l.db, ctx.from?.id ?? 0)) return void (await ctx.reply(NET_PRAV));
+    if (!komanda.vladelec(l.db, ctx.from?.id ?? 0)) return void (await ctx.reply(k.NET_PRAV));
     const id = Number((ctx.match ?? '').trim());
-    if (!Number.isInteger(id) || id <= 0) return void (await ctx.reply('Нужен числовой идентификатор.'));
+    if (!Number.isInteger(id) || id <= 0) return void (await ctx.reply(k.NUZHEN_ID));
     const itog = komanda.ubrat(l.db, id);
-    await ctx.reply(itog.ok ? `Убрал ${id} из команды.` : `Не убрал: ${itog.pochemu}.`);
+    await ctx.reply(itog.ok || !itog.pochemu ? k.UBRAL_IZ_KOMANDY(id) : k.NE_UBRAL(itog.pochemu));
   });
 }
 
@@ -709,7 +687,7 @@ export function podklyuchitDialogi(bot: Bot, l: Lavka): void {
       const login = text.trim();
       dialogi.postavit(l.db, tgId, 'zhdem_parol', d.zakazId, { login }, l.n.klyuchDostupov);
       await ubratSoobshchenie(ctx);
-      await ctx.reply('Логин записал. Теперь пароль — и записка со второй строки, если нужна.', {
+      await ctx.reply(k.LOGIN_ZAPISAN, {
         reply_markup: klav.otmenaVvoda(),
       });
       return;
@@ -726,17 +704,17 @@ export function podklyuchitDialogi(bot: Bot, l: Lavka): void {
       await ubratSoobshchenie(ctx);
       dialogi.zabyt(l.db, tgId);
       if (!id || !login || !parol) {
-        await ctx.reply('Что-то потерялось при вводе. Начните заново из карточки заказа.');
+        await ctx.reply(k.VVOD_POTERYALSYA);
         return;
       }
       dostupy.polozhit(l.db, id, { login, parol, zametka }, tgId, l.n.klyuchDostupov);
       zakazy.sobytie(l.db, id, 'доступ записан', tgId);
       await ctx.reply(
         [
-          `Заказ № ${id}. Проверьте, что отправлю покупателю.`,
+          k.PROVERKA_DOSTUPA(id),
           '',
-          `Логин: ${login}`,
-          `Пароль: ${parol}`,
+          `${k.LOGIN}: ${login}`,
+          `${k.PAROL}: ${parol}`,
           ...(zametka ? ['', zametka] : []),
         ].join('\n'),
         { reply_markup: klav.proverkaDostupa(id) },
@@ -748,7 +726,7 @@ export function podklyuchitDialogi(bot: Bot, l: Lavka): void {
       dialogi.zabyt(l.db, tgId);
       const id = Number(text.trim());
       if (!Number.isInteger(id) || id <= 0) {
-        await ctx.reply('Это не похоже на идентификатор. Нужно число.');
+        await ctx.reply(k.NE_POHOZHE_NA_ID);
         return;
       }
       const c = lyudi.chelovek(l.db, id);
@@ -757,25 +735,16 @@ export function podklyuchitDialogi(bot: Bot, l: Lavka): void {
       // Проверяем СРАЗУ, а не в момент первого заказа. «chat not
       // found» здесь — обычное дело: человек мог ни разу не открывать
       // бота, и узнать об этом лучше сейчас.
-      const dostupen = await uvedom.cheloveku(
-        l,
-        id,
-        'Вас добавили помощником в Нейролавке. В нижнем меню появился раздел «Заказы лавки»: ' +
-          'там очередь на выдачу. Нажмите /start, чтобы меню обновилось.',
-      );
+      const dostupen = await uvedom.cheloveku(l, id, k.DOBAVLEN_POMOSHNIKOM);
       if (dostupen.doshlo) {
-        await ctx.reply(`Добавил ${id} помощником, сообщение ему дошло. Заказы теперь приходят и ему.`);
+        await ctx.reply(k.DOBAVIL_DOSHLO(id));
       } else {
         await ctx.reply(
-          [
-            `Добавил ${id} помощником, но написать ему я не могу:`,
-            uvedom.pochemuSlovami(dostupen.pochemu, id) + '.',
-            '',
-            dostupen.pochemu === 'ne_zapuskal'
-              ? 'Пусть он откроет бота и нажмёт «Начать» — после этого заказы начнут ему приходить. ' +
-                'До тех пор он в команде числится, но уведомлений не получает.'
-              : 'Пока это так, заказы ему не придут.',
-          ].join('\n'),
+          k.DOBAVIL_NE_DOSHLO(
+            id,
+            uvedom.pochemuPoAngliyski(dostupen.pochemu, id),
+            dostupen.pochemu === 'ne_zapuskal',
+          ),
         );
       }
       return;
@@ -784,7 +753,7 @@ export function podklyuchitDialogi(bot: Bot, l: Lavka): void {
     if (d.shag === 'zhdem_popolnenie') {
       if (!komanda.vladelec(l.db, tgId)) {
         dialogi.zabyt(l.db, tgId);
-        await ctx.reply(NET_PRAV);
+        await ctx.reply(k.NET_PRAV);
         return;
       }
       dialogi.zabyt(l.db, tgId);
@@ -792,16 +761,16 @@ export function podklyuchitDialogi(bot: Bot, l: Lavka): void {
       const komu = Number(chasti[0]);
       const rublei = Number((chasti[1] ?? '').replace(',', '.'));
       if (!Number.isInteger(komu) || komu <= 0 || !Number.isFinite(rublei) || rublei <= 0) {
-        await ctx.reply('Нужны два числа: идентификатор и сумма в рублях больше нуля. Например: 42 1500');
+        await ctx.reply(k.POPOLNENIE_NE_RAZOBRALI);
         return;
       }
       if (!lyudi.chelovek(l.db, komu)) {
-        await ctx.reply('Такого человека в базе нет. Он должен хотя бы раз написать боту.');
+        await ctx.reply(k.NET_TAKOGO_CHELOVEKA);
         return;
       }
       const kop = Math.round(rublei * 100);
       const stalo = koshelek.popolnit(l.db, komu, kop, 'пополнение владельцем', tgId);
-      await ctx.reply(`Пополнил ${komu} на ${rubli(kop)}. Стало ${rubli(stalo)}.`);
+      await ctx.reply(k.POPOLNIL(komu, kop, stalo));
       await uvedom.cheloveku(
         l,
         komu,
@@ -820,15 +789,12 @@ export function podklyuchitDialogi(bot: Bot, l: Lavka): void {
       const chasti = text.trim().split(/[\s—–-]+/).map(Number);
       const [s, po] = chasti;
       if (chasti.length !== 2 || !Number.isInteger(s) || !Number.isInteger(po) || s! < 0 || po! > 24 || s! >= po!) {
-        await ctx.reply('Нужны два целых часа, начало меньше конца. Например: 8 23');
+        await ctx.reply(k.CHASY_NE_RAZOBRALI);
         return;
       }
       nastroykiBd.postavit(l.db, 'rabota_s', String(s), tgId);
       nastroykiBd.postavit(l.db, 'rabota_do', String(po), tgId);
-      await ctx.reply(
-        `Часы работы теперь с ${chasSlovami(s!)} до ${chasSlovami(po!)}. ` +
-          'Тексты подставят их сами — править ничего не нужно.',
-      );
+      await ctx.reply(k.CHASY_POSTAVLENY(s!, po!));
       /* Описание бота — единственный текст, который живёт НЕ у нас,
          а на стороне Telegram, и сам собой не пересоберётся. Час
          выдачи в нём есть, значит после смены часов его надо

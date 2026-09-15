@@ -60,8 +60,9 @@ test('просроченный заказ будит ВСЮ команду, а �
   zakazy.otmetitOplachennym(l.db, zakaz.id, new Date('2026-09-01T10:00:00Z'), 1);
   assert.equal(await proverit(l, new Date('2026-09-01T10:30:00Z')), 1);
   assert.deepEqual(ushlo.map((u) => u.komu).sort(), [1, 2]);
-  assert.equal(ushlo[0]?.text.includes('просрочен'), true);
-  assert.equal(ushlo[0]?.text.includes(`№ ${zakaz.id}`), true);
+  // Служебное говорит по-английски — решение владельца, сентябрь 2026.
+  assert.equal(ushlo[0]?.text.includes('Order overdue'), true);
+  assert.equal(ushlo[0]?.text.includes(`#${zakaz.id}`), true);
 });
 
 test('второй раз подряд не повторяется: пауза считается по базе', async () => {

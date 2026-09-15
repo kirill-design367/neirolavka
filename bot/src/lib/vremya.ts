@@ -195,3 +195,60 @@ export function sklonenie(n: number, odna: string, dve: string, pyat: string): s
   if (b === 1) return `${n} ${odna}`;
   return `${n} ${pyat}`;
 }
+
+/*
+ * ── Английские написания: служебная часть бота и панель ──────────────
+ *
+ * Служебное в боте говорит по-английски (решение владельца, сентябрь
+ * 2026), а даты в нём — те же самые даты, что на карточке заказа
+ * в панели. Держать два формата одного момента нельзя: владелец
+ * сверяет глазами бота и панель, и «14 сентября, 13:07» против
+ * «14 Sep, 13:07» в двух окнах про ОДИН заказ читается как два
+ * разных заказа.
+ *
+ * Поэтому английские написания живут здесь, рядом с русскими,
+ * а панель зовёт их же.
+ */
+
+/** «14 Sep, 13:07» в нужном поясе. */
+export function momentPoAngliyski(d: Date, poyas: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: poyas,
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d);
+}
+
+/** «14 September 2026» в нужном поясе. */
+export function dataPoAngliyski(d: Date, poyas: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: poyas,
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(d);
+}
+
+/**
+ * Английское число: 1 minute, 2 minutes.
+ *
+ * Отдельно от `sklonenie`, а не «тот же вызов с другими словами»:
+ * у русского три формы и они выбираются по последним двум цифрам,
+ * у английского две и выбор идёт по самому числу. Свести их в одну
+ * функцию значило бы гонять английский через русское правило —
+ * и получить «21 minute» там, где надо «21 minutes».
+ */
+export function mnozhestvennoe(n: number, odno: string, mnogo: string): string {
+  return `${n} ${Math.abs(n) === 1 ? odno : mnogo}`;
+}
+
+/** «40 minutes», «2 hours», «overdue by 15 minutes». */
+export function skolkoOsalosPoAngliyski(seychas: Date, srok: Date): string {
+  const minut = Math.round((srok.getTime() - seychas.getTime()) / 60_000);
+  if (minut < 0) return `overdue by ${mnozhestvennoe(-minut, 'minute', 'minutes')}`;
+  if (minut < 90) return mnozhestvennoe(minut, 'minute', 'minutes');
+  return mnozhestvennoe(Math.round(minut / 60), 'hour', 'hours');
+}

@@ -11,6 +11,8 @@
  * типом, и забытый перевод не компилируется.
  */
 
+import type { StatusZakaza, PrichinaOtmeny } from '../db/zakazy.js';
+
 export type Yazyk = 'ru' | 'en';
 
 export const YAZYKI: Yazyk[] = ['ru', 'en'];
@@ -64,6 +66,10 @@ export type Slova = {
   pokazatDannye: string;
   pochta: string;
   zaprositKod: string;
+  /** Запрос кода — шаг необязательный: не все сервисы его спрашивают. */
+  kodNeobyazatelen: string;
+  /** Следующий шаг «ввести доступ»: форма стоит ниже на той же странице. */
+  dostupNizhe: string;
   kod: string;
   pokazatKod: string;
   kodZaproshen: string;
@@ -236,7 +242,6 @@ export type Slova = {
   smotretSayt: string;
   gruppaOtpravit: string;
   gruppaDostup: string;
-  gruppaKod: string;
   gruppaVzyat: string;
   gruppaOplata: string;
   gruppaZhdemKod: string;
@@ -322,6 +327,8 @@ const RU: Slova = {
   pokazatDannye: 'Показать данные аккаунта',
   pochta: 'Почта',
   zaprositKod: 'Запросить код',
+  kodNeobyazatelen: 'Нужен, только если сервис спрашивает код при входе. Можно сразу вводить доступ.',
+  dostupNizhe: 'Ввести доступ — форма ниже на этой странице.',
   kod: 'Код',
   pokazatKod: 'Показать код',
   kodZaproshen: 'Код запрошен',
@@ -501,7 +508,6 @@ const RU: Slova = {
   smotretSayt: 'Открыть сайт',
   gruppaOtpravit: 'Готовы к выдаче',
   gruppaDostup: 'Нужно записать доступ',
-  gruppaKod: 'Нужно запросить код',
   gruppaVzyat: 'Готовы взять в работу',
   gruppaOplata: 'Ждут оплаты',
   gruppaZhdemKod: 'Ждём код от покупателя',
@@ -588,6 +594,8 @@ const EN: Slova = {
   pokazatDannye: 'Show account details',
   pochta: 'Email',
   zaprositKod: 'Request code',
+  kodNeobyazatelen: 'Only if the service asks for a code at sign-in. You can enter the access straight away.',
+  dostupNizhe: 'Enter access — the form is below on this page.',
   kod: 'Code',
   pokazatKod: 'Show code',
   kodZaproshen: 'Code requested',
@@ -767,7 +775,6 @@ const EN: Slova = {
   smotretSayt: 'Open the site',
   gruppaOtpravit: 'Ready to send',
   gruppaDostup: 'Access to enter',
-  gruppaKod: 'Code to request',
   gruppaVzyat: 'Ready to take',
   gruppaOplata: 'Awaiting payment',
   gruppaZhdemKod: 'Waiting for the customer code',
@@ -809,4 +816,62 @@ export const SLOVAR: Record<Yazyk, Slova> = { ru: RU, en: EN };
 
 export function razobratYazyk(znachenie: string | undefined): Yazyk {
   return znachenie === 'en' ? 'en' : 'ru';
+}
+
+/*
+ * ── Перечисления словами ─────────────────────────────────────────────
+ *
+ * Статус и причина отмены живут ЗДЕСЬ, а не в модуле страниц панели,
+ * потому что читателей у них теперь двое: панель и служебная часть
+ * бота. Две копии английского написания статуса разъехались бы
+ * молча — владелец смотрит на один и тот же заказ в двух окнах,
+ * и «In progress» против «Being worked on» читается как два разных
+ * состояния.
+ *
+ * Перебор ПОЛНЫЙ, без хвоста `default`: забытая новая причина
+ * не скомпилируется, а не покажется человеку как «отменено
+ * администратором».
+ */
+
+/**
+ * СОСТОЯНИЕ заказа, а не действие над ним.
+ *
+ * Слова здесь свои, отдельные от кнопок, и это не расточительство:
+ * пока состояние подписывалось словом кнопки, в колонке «Состояние»
+ * стояло «Взять в работу» у заказа, который УЖЕ взят, — то есть
+ * колонка врала ровно там, где помощник смотрит первым делом.
+ */
+export function statusSlovami(st: StatusZakaza, s: Slova): string {
+  switch (st) {
+    case 'zhdet_oplaty':
+      return s.stZhdetOplaty;
+    case 'oplachen':
+      return s.stOplachen;
+    case 'v_rabote':
+      return s.stVRabote;
+    case 'zhdem_kod':
+      return s.stZhdemKod;
+    case 'kod_poluchen':
+      return s.stKodPoluchen;
+    case 'vydan':
+      return s.stVydan;
+    case 'otmenen':
+      return s.stOtmenen;
+  }
+}
+
+export function prichinaSlovami(p: PrichinaOtmeny, s: Slova): string {
+  switch (p) {
+    case 'net_koda':
+      return s.otmenaNetKoda;
+    case 'nevernyy_parol':
+      return s.otmenaParol;
+    case 'nevernye_dannye':
+      return s.otmenaDannye;
+    case 'net_deneg':
+      return s.otmenaNetDeneg;
+    case 'ruchnaya':
+      // Выбрать её больше нельзя, но в старых заказах она лежит.
+      return s.otmenaRuchnaya;
+  }
 }

@@ -11,6 +11,7 @@ import type { Bot, Context, InlineKeyboard } from 'grammy';
 import type { Lavka } from '../lavka.js';
 import * as klav from './klaviatury.js';
 import * as t from '../lib/texty.js';
+import * as k from './texty-komandy.js';
 import * as zakazy from '../db/zakazy.js';
 import * as lyudi from '../db/lyudi.js';
 import * as dostupy from '../db/dostupy.js';
@@ -348,7 +349,7 @@ export function podklyuchit(bot: Bot, l: Lavka): void {
         'Не смог прочитать доступ по этому заказу. Это моя поломка, а не ваша: ' +
           'администратору я уже сообщил, он пришлёт доступ вручную.',
       );
-      await uvedom.komande(l, `Не читается доступ по заказу № ${z.id}. Проверьте ключ шифрования.`);
+      await uvedom.komande(l, k.NE_CHITAETSYA_DOSTUP_KOMANDE(z.id));
     }
   });
 
@@ -436,7 +437,7 @@ async function zabratSSayta(l: Lavka, ctx: Context, klyuch: string): Promise<voi
       zhurnal.vnimanie('метку с заказа записать не вышло:', e);
     }
     void uvedom
-      .komande(l, `Заказ № ${est.id} забран покупателем: ${lyudi.podpis(lyudi.chelovek(l.db, tgId), tgId)}.`)
+      .komande(l, k.ZAKAZ_ZABRAN(est.id, lyudi.podpis(lyudi.chelovek(l.db, tgId), tgId)))
       .catch(() => undefined);
   }
 
@@ -805,12 +806,7 @@ export async function podtverditKod(l: Lavka, ctx: Context, zakazId: number | nu
   const c = lyudi.chelovek(l.db, tgId);
   await uvedom.komande(
     l,
-    [
-      `Код по заказу № ${z.id} · ${z.nazvanie}`,
-      `Покупатель: ${lyudi.podpis(c, tgId)}`,
-      '',
-      `Код: ${kod}`,
-    ].join('\n'),
+    k.KOD_KOMANDE({ id: z.id, nazvanie: z.nazvanie, pokupatel: lyudi.podpis(c, tgId), kod }),
     klav.kodAdminu(z.id),
   );
 }
@@ -843,8 +839,5 @@ export async function prinyatVopros(l: Lavka, tgId: number, text: string): Promi
   dialogi.zabyt(l.db, tgId);
   const c = lyudi.chelovek(l.db, tgId);
   zakazy.sobytie(l.db, null, 'вопрос от покупателя', tgId);
-  await uvedom.komande(
-    l,
-    ['Вопрос от покупателя.', '', `От кого: ${lyudi.podpis(c, tgId)}`, `id: ${tgId}`, '', text].join('\n'),
-  );
+  await uvedom.komande(l, k.VOPROS_KOMANDE({ ot: lyudi.podpis(c, tgId), tgId, text }));
 }

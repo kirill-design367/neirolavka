@@ -19,7 +19,7 @@ import * as dostupy from '../db/dostupy.js';
 import * as klav from '../bot/klaviatury.js';
 import * as uvedom from '../bot/uvedomleniya.js';
 import { raspisanie } from '../db/nastroyki.js';
-import { momentSlovami, skolkoOsalos } from '../lib/vremya.js';
+import * as k from '../bot/texty-komandy.js';
 import { zhurnal } from '../lib/zhurnal.js';
 
 export const SHAG_MS = 60_000;
@@ -32,13 +32,13 @@ export async function proverit(l: Lavka, seychas = new Date()): Promise<number> 
     const srok = z.srok_do ? new Date(z.srok_do) : seychas;
     await uvedom.komande(
       l,
-      [
-        'Заказ просрочен.',
-        '',
-        `№ ${z.id} · ${z.nazvanie}`,
-        `Покупатель: ${lyudi.podpis(c, z.tg_id)}`,
-        `Обещали к ${momentSlovami(srok, r.poyas)} — ${skolkoOsalos(seychas, srok)}`,
-      ].join('\n'),
+      k.ZAKAZ_PROSROCHEN({
+        id: z.id,
+        nazvanie: z.nazvanie,
+        pokupatel: lyudi.podpis(c, z.tg_id),
+        srok: k.moment(srok, r.poyas),
+        ostalos: k.ostalos(seychas, srok),
+      }),
       (tgId: number) => klav.zakazAdminu(z, dostupy.est(l.db, z.id), komanda.vladelec(l.db, tgId)),
     );
     zakazy.otmetitNapominanie(l.db, z.id, seychas);

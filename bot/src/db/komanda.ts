@@ -75,17 +75,27 @@ export function dobavit(db: Baza, tgId: number, r: Rol, imya: string, kto: numbe
 }
 
 /**
+ * Почему не убрали — КОДОМ, а не фразой.
+ *
+ * Фраза живёт там, где её показывают (`bot/texty-komandy.ts`): пока
+ * она лежала здесь, служебный ответ был русским на английском экране,
+ * и починить это правкой одного модуля было нельзя. Тот же довод,
+ * по которому кодом хранится причина отмены заказа.
+ */
+export type PochemuNeUbrali = 'net_v_komande' | 'posledniy_vladelec';
+
+/**
  * Убрать из команды.
  *
  * Последнего владельца убрать нельзя: лавка без хозяина — это лавка,
  * в которую никто не может войти.
  */
-export function ubrat(db: Baza, tgId: number): { ok: boolean; pochemu?: string } {
+export function ubrat(db: Baza, tgId: number): { ok: boolean; pochemu?: PochemuNeUbrali } {
   const eto = rol(db, tgId);
-  if (!eto) return { ok: false, pochemu: 'такого в команде нет' };
+  if (!eto) return { ok: false, pochemu: 'net_v_komande' };
   if (eto === 'vladelec') {
     const skolko = (db.prepare("SELECT COUNT(*) n FROM komanda WHERE rol = 'vladelec'").get() as { n: number }).n;
-    if (skolko <= 1) return { ok: false, pochemu: 'это единственный владелец' };
+    if (skolko <= 1) return { ok: false, pochemu: 'posledniy_vladelec' };
   }
   db.prepare('DELETE FROM komanda WHERE tg_id = ?').run(tgId);
   return { ok: true };

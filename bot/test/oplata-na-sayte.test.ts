@@ -29,7 +29,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
-import { stend, poslat, SEKRET, POKUPATEL, ZHIVOY_PLAN, PRODUKT_BEZ_UROVNEY } from './stend.js';
+import { stend, poslat, SEKRET, POKUPATEL, ZHIVOY_PLAN, PRODUKT_BEZ_UROVNEY, zavestiProduktBezUrovney } from './stend.js';
 import type { Stend } from './stend.js';
 import * as zakazy from '../src/db/zakazy.js';
 import * as promokody from '../src/db/promokody.js';
@@ -139,6 +139,7 @@ test('заказ с сайта: без хозяина, с ключом, вид �
 test('продукт БЕЗ уровней покупается с сайта так же', async () => {
   const s = await lavka();
   try {
+    zavestiProduktBezUrovney(s.l.db);
     const itog = await zakazSSayta(s.l, {
       tovar: PRODUKT_BEZ_UROVNEY.id,
       oplata: 'card',
@@ -613,7 +614,10 @@ test('ПУТЬ ЦЕЛИКОМ: оплатил на сайте → открыл �
     assert.equal(lyudi.chelovek(s.l.db, POKUPATEL)?.metka, 'vk-posty', 'метка не переехала');
 
     const text = skazal(s);
-    assert.ok(text.includes(`№ ${itog.nomer}`), `бот не назвал номер заказа: ${text}`);
+    /* Номер назван КОМАНДЕ, а не покупателю: у покупателя его нет
+       нигде (решение владельца). Служебное при этом по-английски,
+       поэтому ищем «#N», а не «№ N». */
+    assert.ok(text.includes(`#${itog.nomer}`), `команде не назвали номер заказа: ${text}`);
     assert.ok(text.includes('Оплачено'), `бот не сказал, что заказ оплачен: ${text}`);
     assert.ok(text.includes('аккаунт'), `бот не спросил про аккаунт: ${text}`);
 

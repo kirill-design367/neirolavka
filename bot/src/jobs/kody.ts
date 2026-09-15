@@ -23,6 +23,7 @@ import * as lyudi from '../db/lyudi.js';
 import * as dialogi from '../db/dialogi.js';
 import * as uvedom from '../bot/uvedomleniya.js';
 import * as t from '../lib/texty.js';
+import * as k from '../bot/texty-komandy.js';
 import { raspisanie } from '../db/nastroyki.js';
 import { zhurnal } from '../lib/zhurnal.js';
 
@@ -52,13 +53,13 @@ export async function proverit(l: Lavka, seychas = new Date()): Promise<number> 
     const c = lyudi.chelovek(l.db, z.tg_id);
     await uvedom.komande(
       l,
-      [
-        `Заказ № ${z.id} отменён: код не пришёл за ${minut} мин.`,
-        '',
-        `${z.nazvanie}`,
-        `Покупатель: ${lyudi.podpis(c, z.tg_id)}`,
-        itog.vernuli > 0 ? `Деньги вернулись на его баланс: ${itog.vernuli / 100} ₽` : 'Денег по заказу не было',
-      ].join('\n'),
+      k.OTMENEN_BEZ_KODA({
+        id: z.id,
+        nazvanie: z.nazvanie,
+        pokupatel: lyudi.podpis(c, z.tg_id),
+        minut,
+        vernuli: itog.vernuli,
+      }),
     );
     zhurnal.info(`заказ № ${z.id} отменён: код не пришёл за ${minut} мин.`);
   }

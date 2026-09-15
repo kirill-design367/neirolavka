@@ -155,7 +155,7 @@ test('свой аккаунт: ввод, код, выдача — и кажда�
     // заказов разом и по голому коду не поймёт, к какому он.
     const komande = komu(s.tg.vyzovy, VLADELEC).find((x) => x.includes(KOD));
     assert.ok(komande, 'код команде не ушёл');
-    assert.ok(komande!.includes(`№ ${zakaz!.id}`), `в коде нет номера заказа: ${komande}`);
+    assert.ok(komande!.includes(`#${zakaz!.id}`), `в коде нет номера заказа: ${komande}`);
 
     // Сам код в базе — шифротекстом.
     const kodySyrye = JSON.stringify(s.l.db.prepare('SELECT * FROM kody').all());
@@ -336,12 +336,15 @@ test('в боте «Отменить заказ» сначала спрашив�
     await poslat(s.adres, SEKRET, nazhatie(`aotm:${z.id}`, VLADELEC));
     assert.notEqual(zakazy.po(s.l.db, z.id)!.status, 'otmenen', 'заказ отменён без выбора причины');
     const vopros = poslednee(s.tg.vyzovy);
-    assert.ok(vopros.includes('Почему отменяем?'), `не спросили причину: ${vopros}`);
+    assert.ok(vopros.includes('Why are we cancelling?'), `не спросили причину: ${vopros}`);
     // Подписи причин живут в клавиатуре, а не в тексте сообщения.
     const knopki = JSON.stringify(
       [...s.tg.vyzovy].reverse().find((v) => v.metod === 'editMessageText')?.telo['reply_markup'] ?? {},
     );
-    assert.ok(knopki.includes('Недостаточно средств'), `новой причины нет среди кнопок: ${knopki}`);
+    assert.ok(
+      knopki.includes('Not enough money on the balance'),
+      `новой причины нет среди кнопок: ${knopki}`,
+    );
     assert.ok(!knopki.includes('ruchnaya'), 'снятая причина осталась кнопкой');
 
     // Чужой код причины не проходит.

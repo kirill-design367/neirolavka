@@ -23,6 +23,7 @@ import {
   VLADELEC,
   nazhatie,
   PRODUKT_BEZ_UROVNEY,
+  zavestiProduktBezUrovney,
   PRODUKT_S_UROVNYAMI,
 } from './stend.js';
 
@@ -48,6 +49,7 @@ function posledniyTekst(vyzovy: { metod: string; telo: Record<string, unknown> }
 test('продукт без уровней покупается прямо с карточки', async () => {
   const s = await stend();
   try {
+    zavestiProduktBezUrovney(s.l.db);
     const p = PRODUKT_BEZ_UROVNEY;
 
     const kartochka = await poslat(s.adres, SEKRET, nazhatie(`t:${p.id}`));
@@ -126,6 +128,7 @@ test('оформить по идентификатору продукта С у�
 test('в статистике ноль не печатается как цена', async () => {
   const s = await stend();
   try {
+    zavestiProduktBezUrovney(s.l.db);
     const p = PRODUKT_BEZ_UROVNEY;
     // ЦЕНУ СНИМАЕМ САМИ, а не надеемся, что её нет в каталоге.
     // Здесь стояло «цены в каталоге ещё нет — в базе ноль», и
@@ -142,9 +145,10 @@ test('в статистике ноль не печатается как цена
 
     await poslat(s.adres, SEKRET, nazhatie('astat', VLADELEC));
     const tekst = posledniyTekst(s.tg.vyzovy);
-    assert.ok(tekst.includes('Статистика'), `не та страница: ${tekst}`);
+    // Служебное говорит по-английски — решение владельца, сентябрь 2026.
+    assert.ok(tekst.includes('Statistics'), `не та страница: ${tekst}`);
     assert.ok(!/\b0\s?₽/.test(tekst), `ноль напечатан как цена: ${tekst}`);
-    assert.ok(tekst.includes('цена не объявлена'), `не сказано, что цены нет: ${tekst}`);
+    assert.ok(tekst.includes('price not set'), `не сказано, что цены нет: ${tekst}`);
   } finally {
     await s.zakryt();
   }

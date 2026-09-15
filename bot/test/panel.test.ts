@@ -690,10 +690,19 @@ test('следующий шаг считается один раз и не вы�
   assert.equal(sleduyushchiyShag(osnova, pusto), 'oplata');
   assert.equal(sleduyushchiyShag({ ...osnova, status: 'oplachen' }, pusto), 'vzyat');
   assert.equal(sleduyushchiyShag({ ...osnova, status: 'v_rabote' }, pusto), 'dostup');
+  /* ЗАПРОС КОДА ШАГОМ НЕ СЧИТАЕТСЯ, и это решение владельца: код при
+     входе спрашивают не все нейросети. У своего аккаунта без кода
+     следующий шаг — сразу ввод доступа; кнопка «Запросить код»
+     осталась, но необязательной. */
   assert.equal(
     sleduyushchiyShag({ ...osnova, status: 'v_rabote', vid_akkaunta: 'svoy' }, pusto),
-    'kod',
-    'у своего аккаунта сначала код',
+    'dostup',
+    'запрос кода снова стал обязательным шагом',
+  );
+  // И в состоянии «ждём код» шаг по-прежнему свой: там мы ЖДЁМ.
+  assert.equal(
+    sleduyushchiyShag({ ...osnova, status: 'zhdem_kod', vid_akkaunta: 'svoy' }, pusto),
+    'zhdem_kod',
   );
   assert.equal(
     sleduyushchiyShag({ ...osnova, status: 'kod_poluchen', vid_akkaunta: 'svoy' }, { ...pusto, estKod: true }),
@@ -828,9 +837,13 @@ test('очередь разложена по группам, и в шапке г
       assert.ok(o.telo.includes(imya), `нет группы «${imya}»`);
     }
     assert.ok(o.telo.includes('Ждём код от покупателя'), 'пустая группа исчезла со страницы');
+    /* ГРУППЫ «НУЖНО ЗАПРОСИТЬ КОД» БОЛЬШЕ НЕТ: запрос кода перестал
+       быть шагом, и группа под него стояла бы вечно пустой — то есть
+       врала бы о работе, которой никто не должен. */
+    assert.ok(!o.telo.includes('Нужно запросить код'), 'вернулась группа под необязательный шаг');
 
     // Порядок групп: сначала то, что можно доделать сейчас.
-    const mesta = ['Готовы к выдаче', 'Нужно записать доступ', 'Нужно запросить код', 'Готовы взять в работу', 'Ждут оплаты']
+    const mesta = ['Готовы к выдаче', 'Нужно записать доступ', 'Готовы взять в работу', 'Ждут оплаты']
       .map((imya) => o.telo.indexOf(imya));
     assert.deepEqual([...mesta].sort((a, b) => a - b), mesta, 'группы стоят не в том порядке');
 

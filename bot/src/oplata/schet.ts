@@ -18,6 +18,7 @@ import { zhurnal } from '../lib/zhurnal.js';
 import * as uved from '../bot/uvedomleniya.js';
 import { rubli } from '../lib/katalog.js';
 import * as t from '../lib/texty.js';
+import * as k from '../bot/texty-komandy.js';
 
 /** Что показать человеку у неоплаченного заказа. */
 export type Predlozhenie = {
@@ -159,9 +160,12 @@ export async function prinyatUvedomlenie(
     void uved
       .komande(
         l,
-        `Оплата не сошлась по сумме.\nСчёт № ${u.nomer}, заказ № ${platezh.zakaz_id}.\n` +
-          `Ждали ${rubli(platezh.summa_kop)}, пришло ${rubli(u.summaKop)}.\n` +
-          'Заказ НЕ отмечен оплаченным — разберитесь руками.',
+        k.SUMMA_NE_TA({
+          nomer: u.nomer,
+          zakazId: platezh.zakaz_id,
+          zhdali: platezh.summa_kop,
+          prishlo: u.summaKop,
+        }),
       )
       .catch(() => undefined);
     return { otvet: 'sum mismatch', kod: 400, chto: 'summa_ne_ta' };
@@ -213,10 +217,12 @@ export async function prinyatUvedomlenie(
     void uved
       .komande(
         l,
-        `ДЕНЬГИ БЕЗ ХОЗЯИНА. Оплата ${rubli(u.summaKop)} пришла по заказу № ${zakaz.id} ` +
-          `(${zakaz.status}), который оформили на сайте и не забрали в боте.\n` +
-          'Зачислить не на что — у заказа нет покупателя. Разберитесь руками: ' +
-          `счёт № ${u.nomer} в Робокассе.`,
+        k.DENGI_BEZ_HOZYAINA({
+          summaKop: u.summaKop,
+          zakazId: zakaz.id,
+          status: k.status(zakaz.status),
+          nomer: u.nomer,
+        }),
       )
       .catch(() => undefined);
     return { otvet: otvetPrinyato(l, u.nomer), kod: 200, chto: 'zakaz_zakryt' };
@@ -234,8 +240,11 @@ export async function prinyatUvedomlenie(
   void uved
     .komande(
       l,
-      `Оплата пришла по заказу № ${zakaz.id}, который уже закрыт (${zakaz.status}).\n` +
-        `${rubli(u.summaKop)} зачислены покупателю на баланс.`,
+      k.OPLATA_PO_ZAKRYTOMU({
+        zakazId: zakaz.id,
+        status: k.status(zakaz.status),
+        summaKop: u.summaKop,
+      }),
     )
     .catch(() => undefined);
   void uved
@@ -269,5 +278,5 @@ async function soobshchitObOplate(l: Lavka, zakazId: number): Promise<void> {
   /* НОМЕРА ЗАКАЗА У ПОКУПАТЕЛЯ НЕТ — решение владельца. Команде
      ниже он, наоборот, нужен: помощник ведёт несколько заказов. */
   await uved.cheloveku(l, z.tg_id, t.oplataPodtverzhdena(z, srok, r));
-  await uved.komande(l, `Заказ № ${z.id} оплачен: ${z.nazvanie}. Можно брать в работу.`);
+  await uved.komande(l, k.ZAKAZ_OPLACHEN(z.id, z.nazvanie));
 }

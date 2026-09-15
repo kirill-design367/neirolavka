@@ -10,6 +10,7 @@
 import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { otkrytBazu } from '../src/db/index.js';
+import type { Baza } from '../src/db/index.js';
 import { prochitat } from '../src/config.js';
 import { zaseyat } from '../src/db/komanda.js';
 import { sobrat } from '../src/bot/index.js';
@@ -20,6 +21,7 @@ import { sozdatRobokassu } from '../src/oplata/robokassa.js';
 import type { Lavka } from '../src/lavka.js';
 import { sozdatBota, zapomnitOpros } from '../src/lavka.js';
 import { getCatalog } from '../../src/lib/catalog.js';
+import * as bdKatalog from '../src/db/katalog.js';
 import { podnyat } from './podstavnoy-telegram.js';
 import type { PodstavnoyTelegram } from './podstavnoy-telegram.js';
 
@@ -44,12 +46,52 @@ export const ZHIVOY_PLAN: string = (() => {
   return p.plans[0]!.id;
 })();
 
-/** Продукт, у которого уровней подписки НЕТ вовсе, — тоже из каталога. */
-export const PRODUKT_BEZ_UROVNEY = (() => {
-  const p = getCatalog().products.find((t) => t.plans.length === 0);
-  if (!p) throw new Error('в каталоге не осталось продукта без уровней подписки');
-  return p;
-})();
+/**
+ * Продукт БЕЗ уровней подписки — стенд ЗАВОДИТ его сам.
+ *
+ * Прежде он искался в прайсе, и это была ставка на чужой прайс:
+ * владелец выложил из панели уровни всем шести продуктам — и стенд
+ * перестал подниматься ВООБЩЕ, уронив разом двенадцать файлов
+ * проверок. Падали они при этом не по той причине, ради которой
+ * написаны: покупка продукта без уровней работает, её просто не на
+ * чем стало показать.
+ *
+ * Свойство продукта проверять НАДО — у такого заказ оформляется
+ * с самой карточки, — но держать его в прайсе владельца нельзя:
+ * прайс его, и он вправе завести уровни кому угодно. Поэтому такой
+ * продукт заводится В БАЗЕ СТЕНДА, рядом с засеянными из файла.
+ *
+ * Тот же закон, что у `ZHIVOY_PLAN`: ничего, что зависит от прайса,
+ * в проверки не вписывается.
+ */
+export const PRODUKT_BEZ_UROVNEY = {
+  id: 'proba-bez-urovney',
+  name: 'Proba bez urovney',
+  tagline: 'Proba: podpiska bez urovney',
+  note: 'Odna podpiska, vybirat nechego',
+};
+
+/**
+ * Завести его в базе стенда — ЯВНО, там, где он нужен.
+ *
+ * Не в самом `stend()`, и это не мелочь: каталог стенда обязан
+ * оставаться точной копией прайса. Проверка выкладки гоняет круг
+ * «файл → база → файл» и требует совпадения БАЙТ В БАЙТ; лишний
+ * продукт в базе ломает его на ровном месте — то есть проверка
+ * краснела бы не про то, ради чего написана.
+ *
+ * Цена положительная: ноль в базе значит «цена не объявлена», и проба,
+ * которой нужен настоящий заказ, получила бы «уточняется» вместо
+ * суммы. Та проверка, что мерит именно ноль, снимает цену сама.
+ */
+export function zavestiProduktBezUrovney(db: Baza): void {
+  bdKatalog.sozdatProdukt(db, PRODUKT_BEZ_UROVNEY.id, PRODUKT_BEZ_UROVNEY.name);
+  bdKatalog.pravitProdukt(db, PRODUKT_BEZ_UROVNEY.id, {
+    tagline: PRODUKT_BEZ_UROVNEY.tagline,
+    note: PRODUKT_BEZ_UROVNEY.note,
+    cenaKop: 139900,
+  });
+}
 
 /** Продукт, у которого уровни есть. */
 export const PRODUKT_S_UROVNYAMI = (() => {

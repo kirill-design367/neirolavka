@@ -62,6 +62,33 @@ export function pochemuSlovami(p: Pochemu, tgId: number | null): string {
 }
 
 /**
+ * То же самое ПО-АНГЛИЙСКИ — для экрана команды.
+ *
+ * Две функции на одно перечисление здесь не дублирование, а два
+ * разных читателя. `pochemuSlovami` уходит в ЖУРНАЛ и в ИСТОРИЮ
+ * ЗАКАЗА, а они русские целиком и таковыми остаются: журнал читают
+ * через `journalctl` рядом с сообщениями модулей, которых этот заход
+ * не касался, а история лежит в базе у всех прежних заказов. Эта
+ * уходит в Telegram владельцу и помощнику, а служебное в боте
+ * говорит по-английски.
+ *
+ * Перебор ПОЛНЫЙ: новая причина не скомпилируется, пока ей не найдут
+ * слов на обоих языках.
+ */
+export function pochemuPoAngliyski(p: Pochemu, tgId: number | null): string {
+  switch (p) {
+    case 'nekomu':
+      return 'the order has no owner: paid on the website and not yet claimed in the bot';
+    case 'ne_zapuskal':
+      return `${tgId} has never started the bot — let them open it and press “Start”`;
+    case 'zablokiroval':
+      return `${tgId} has blocked the bot`;
+    case 'inoe':
+      return `${tgId} is unreachable for another reason`;
+  }
+}
+
+/**
  * Сказать покупателю.
  *
  * `tgId` МОЖЕТ БЫТЬ ПУСТ, и это не оплошность вызывающего: заказ,

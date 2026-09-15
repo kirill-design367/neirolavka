@@ -24,9 +24,10 @@ import * as bdVykladki from '../db/vykladki.js';
 import * as vyk from './vykladka.js';
 import { rubli, rubliIli } from '../lib/katalog.js';
 import { KLYUCH_PROMO } from '../lib/promokod.js';
-import { chasti, moment, momentSlovami } from '../lib/vremya.js';
+import { chasti, moment, momentPoAngliyski, momentSlovami } from '../lib/vremya.js';
 import { ekr, pole, stranica } from './vid.js';
 import type { Obstanovka } from './vid.js';
+import { prichinaSlovami, statusSlovami } from './yazyk.js';
 import type { Slova, Yazyk } from './yazyk.js';
 
 /**
@@ -39,15 +40,7 @@ import type { Slova, Yazyk } from './yazyk.js';
  * на него смотрят.
  */
 export function momentPaneli(d: Date, poyas: string, yazyk: Yazyk): string {
-  if (yazyk === 'ru') return momentSlovami(d, poyas);
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: poyas,
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(d);
+  return yazyk === 'ru' ? momentSlovami(d, poyas) : momentPoAngliyski(d, poyas);
 }
 
 /** Что помощник может сделать с заказом прямо сейчас. */
@@ -58,7 +51,6 @@ export type Shag =
   | 'zhdem_pokupatelya'
   | 'oplata'
   | 'vzyat'
-  | 'kod'
   | 'zhdem_kod'
   | 'dostup'
   | 'otpravit'
@@ -89,8 +81,18 @@ export function sleduyushchiyShag(z: zakazy.Zakaz, pod: Pod): Shag {
   if (z.status === 'zhdem_kod') return 'zhdem_kod';
   // Заказ у помощника. Доступ записан — осталось отправить.
   if (pod.estDostup) return 'otpravit';
-  // Свой аккаунт, кода ещё нет — сначала код.
-  if (z.vid_akkaunta === 'svoy' && !pod.estKod) return 'kod';
+  /* ЗАПРОС КОДА ШАГОМ БОЛЬШЕ НЕ СЧИТАЕТСЯ, и это решение владельца,
+     сентябрь 2026. Здесь стояло «свой аккаунт, кода ещё нет — сначала
+     код», и путь к выдаче шёл через него: формы ввода доступа
+     на карточке не было вовсе, пока код не запросили и не получили.
+     Код при входе спрашивают НЕ ВСЕ нейросети — значит помощник ждал
+     бы того, чего никто не пришлёт, и заказ отменился бы по часу
+     на код.
+
+     Кнопка «Запросить код» никуда не делась: она стоит там же, под
+     заголовком следующего шага, но вторым, необязательным действием.
+     Час на код и отмена по нему тоже не тронуты — они отсчитываются
+     от `kod_zapros_v`, то есть работают, только если код ЗАПРАШИВАЛИ. */
   return 'dostup';
 }
 
@@ -100,8 +102,6 @@ export function shagSlovami(shag: Shag, s: Slova): string {
       return s.otmetitOplatu;
     case 'vzyat':
       return s.vzyat;
-    case 'kod':
-      return s.zaprositKod;
     case 'zhdem_kod':
       return `${s.kodZaproshen} — ${s.zhdet.toLowerCase()}`;
     case 'zhdem_pokupatelya':
@@ -115,13 +115,20 @@ export function shagSlovami(shag: Shag, s: Slova): string {
   }
 }
 
-/** «2 ч 14 мин» — сколько заказ уже ждёт. */
-export function skolkoZhdet(ot: string, seychas = Date.now()): string {
+/**
+ * «2 ч 14 мин» — сколько заказ уже ждёт.
+ *
+ * Сокращения берутся из языка страницы: на английской странице
+ * «2 ч 14 мин» — это русская строка в колонке, которую читает
+ * помощник, не знающий русского.
+ */
+export function skolkoZhdet(ot: string, yazyk: Yazyk = 'ru', seychas = Date.now()): string {
+  const [m, ch, d] = yazyk === 'ru' ? ['мин', 'ч', 'д'] : ['min', 'h', 'd'];
   const minut = Math.max(0, Math.round((seychas - Date.parse(ot)) / 60_000));
-  if (minut < 60) return `${minut} мин`;
+  if (minut < 60) return `${minut} ${m}`;
   const chasov = Math.floor(minut / 60);
-  if (chasov < 24) return `${chasov} ч ${minut % 60} мин`;
-  return `${Math.floor(chasov / 24)} д ${chasov % 24} ч`;
+  if (chasov < 24) return `${chasov} ${ch} ${minut % 60} ${m}`;
+  return `${Math.floor(chasov / 24)} ${d} ${chasov % 24} ${ch}`;
 }
 
 /**
@@ -183,11 +190,15 @@ export function pod(db: Baza, z: zakazy.Zakaz, klyuch: Buffer): Pod {
  * Сверху то, что можно доделать сейчас, и первым — самое близкое
  * к концу. Внизу три ожидания, в которых от нас не зависит ничего:
  * оплата придёт извне, код и покупателя с сайта присылает человек.
+ *
+ * ГРУППЫ «НУЖНО ЗАПРОСИТЬ КОД» БОЛЬШЕ НЕТ: запрос кода перестал быть
+ * шагом, и группа под него стояла бы вечно пустой — то есть врала бы
+ * о работе, которой никто не должен. Такие заказы теперь лежат
+ * в «Нужно записать доступ», где им и место.
  */
 export const GRUPPY: Shag[] = [
   'otpravit',
   'dostup',
-  'kod',
   'vzyat',
   'oplata',
   'zhdem_kod',
@@ -200,8 +211,6 @@ export function gruppaSlovami(shag: Shag, s: Slova): string {
       return s.gruppaOtpravit;
     case 'dostup':
       return s.gruppaDostup;
-    case 'kod':
-      return s.gruppaKod;
     case 'vzyat':
       return s.gruppaVzyat;
     case 'oplata':
@@ -324,7 +333,7 @@ export function ochered(
 <td>${ekr(lyudi.podpis(c, z.tg_id))}</td>
 <td><span class="metka">${ekr(z.vid_akkaunta === 'svoy' ? s.svoyAkkaunt : s.novyAkkaunt)}</span></td>
 <td>${ekr(statusSlovami(z.status, s))}</td>
-<td class="zhdet">${ekr(skolkoZhdet(z.sozdan))}</td>
+<td class="zhdet">${ekr(skolkoZhdet(z.sozdan, o.yazyk))}</td>
 <td><a href="/admin/zakaz/${z.id}">${ekr(s.otkryt)}</a></td>
 </tr>`;
   };
@@ -383,36 +392,16 @@ export function ochered(
   );
 }
 
-/**
- * СОСТОЯНИЕ заказа, а не действие над ним.
- *
- * Слова здесь свои, отдельные от кнопок, и это не расточительство:
- * пока состояние подписывалось словом кнопки, в колонке «Состояние»
- * стояло «Взять в работу» у заказа, который УЖЕ взят, — то есть
- * колонка врала ровно там, где помощник смотрит первым делом.
- */
-export function statusSlovami(st: zakazy.StatusZakaza, s: Slova): string {
-  switch (st) {
-    case 'zhdet_oplaty':
-      return s.stZhdetOplaty;
-    case 'oplachen':
-      return s.stOplachen;
-    case 'v_rabote':
-      return s.stVRabote;
-    case 'zhdem_kod':
-      return s.stZhdemKod;
-    case 'kod_poluchen':
-      return s.stKodPoluchen;
-    case 'vydan':
-      return s.stVydan;
-    case 'otmenen':
-      return s.stOtmenen;
-  }
-}
-
 // ── карточка заказа ──────────────────────────────────────────────────
 
-export type Pokaz = { kod?: string; akkaunt?: { pochta: string; parol: string }; oshibka?: string; horosho?: string };
+export type Pokaz = {
+  kod?: string;
+  akkaunt?: { pochta: string; parol: string };
+  oshibka?: string;
+  horosho?: string;
+  /** Раскрыть форму ввода доступа там, где она по умолчанию свёрнута. */
+  vvod?: boolean;
+};
 
 export function zakaz(
   o: Obstanovka,
@@ -484,16 +473,57 @@ export function zakaz(
         : `<p class="tiho">${ekr(s.oplatuOtmechaetVladelec)}</p>`
       : shag === 'vzyat'
         ? knopka('vzyat', s.vzyat)
-        : shag === 'kod'
-          ? knopka('kod', s.zaprositKod)
-          : shag === 'otpravit'
-            ? knopka('otpravit', s.otpravitPokupatelyu)
+        : shag === 'otpravit'
+          ? knopka('otpravit', s.otpravitPokupatelyu)
+          : // Ввод доступа — не кнопка, а форма, и она стоит ниже
+            // на этой же странице. Строка нужна затем, чтобы заголовок
+            // «Следующий шаг» не оказался пустым: пустой заголовок над
+            // одной лишь необязательной кнопкой читается как «шаг —
+            // запросить код», то есть ровно наоборот.
+            shag === 'dostup'
+            ? `<p class="tiho">${ekr(s.dostupNizhe)}</p>`
             : shag === 'zhdem_kod'
-              ? `<p class="tiho">${ekr(shagSlovami(shag, s))}</p>${knopka('kod', s.zaprositKod, 'tihaya')}`
+              ? /* КОД УЖЕ ЗАПРОСИЛИ — и передумать всё равно можно.
+                   Ссылка раскрывает форму ввода доступа, которой
+                   в этом состоянии по умолчанию нет. Почему нет:
+                   пока помощник ЖДЁТ, на странице нечего терять,
+                   и она обновляется сама — а форма с полями
+                   обновление выключает. Один щелчок меняет одно
+                   на другое, и человек сам решает, что ему сейчас
+                   нужнее. */
+                `<p class="tiho">${ekr(shagSlovami(shag, s))}</p>` +
+                `<p><a href="/admin/zakaz/${z.id}?vvod=1">${ekr(s.vvestiDostup)}</a></p>`
               : '';
 
+  /* ЗАПРОС КОДА — ВТОРАЯ КНОПКА ПОД ТЕМ ЖЕ ЗАГОЛОВКОМ, и не главная.
+     Владелец попросил оставить её там, где она была, но снять с неё
+     обязательность: код при входе спрашивают не все нейросети. Она
+     тихая, под ней сказано словами, когда она нужна, а форма ввода
+     доступа — сразу следующей карточкой.
+
+     Условие `status !== 'zhdem_kod'` не косметика: `zakazy.zaprositKod`
+     принимает только `v_rabote` и `kod_poluchen`, и кнопка в состоянии
+     «ждём код» отвечала бы «сейчас нельзя» — то есть была бы кнопкой,
+     которая не работает. */
+  const uPomoshnika = zakazy.U_POMOSHNIKA.includes(z.status);
+  const kodNeobyaz =
+    z.vid_akkaunta === 'svoy' && uPomoshnika && z.status !== 'zhdem_kod'
+      ? `${knopka('kod', s.zaprositKod, 'tihaya')}<p class="tiho">${ekr(s.kodNeobyazatelen)}</p>`
+      : '';
+
+  /* ФОРМА ВВОДА ДОСТУПА ОТКРЫТА СРАЗУ, КАК ТОЛЬКО ЗАКАЗ ВЗЯТ.
+     Раньше шаг `dostup` у заказа со своим аккаунтом не наступал, пока
+     код не запросили и не дождались, — формы не было вовсе, и путь
+     к выдаче шёл через код. Теперь `sleduyushchiyShag` отдаёт `dostup`
+     сразу, и форма стоит на карточке с первой минуты.
+
+     Исключение одно: состояние «ждём код». Там форму раскрывает
+     ссылка `?vvod=1`, и это не придирка — пустая форма выключает
+     самообновление страницы (перезагрузка стёрла бы набранное),
+     а именно в этом состоянии помощник ЖДЁТ и обновление ему нужнее
+     всего. Щелчок меняет одно на другое. */
   const vvod =
-    shag === 'dostup' || (p.estDostup && z.status !== 'vydan')
+    shag === 'dostup' || pokaz.vvod || (p.estDostup && z.status !== 'vydan')
       ? `<form method="post" action="/admin/zakaz/${z.id}/dostup">${pole(o)}
 <label>${ekr(s.login)}</label><input type="text" name="login" required>
 <label>${ekr(s.parolDostupa)}</label><input type="text" name="parol" required>
@@ -547,7 +577,7 @@ ${zakazy.PRICHINY_VYBORA.filter((pr) => {
 <button class="opasnaya">${ekr(s.otmenit)}</button></form>
 ${svoyAkk && !z.pismo_v ? `<p class="tiho">${ekr(s.nuzhnoPismo)}</p>` : ''}</div>`;
 
-  const vernut = ['v_rabote', 'zhdem_kod', 'kod_poluchen'].includes(z.status)
+  const vernut = uPomoshnika
     ? knopka('vernut', s.vernutVOchered, 'tihaya')
     : '';
 
@@ -561,7 +591,7 @@ ${svoyAkk && !z.pismo_v ? `<p class="tiho">${ekr(s.nuzhnoPismo)}</p>` : ''}</div
 <h1>${ekr(s.zakaz)} № ${z.id}</h1>
 ${pokaz.oshibka ? `<div class="oshibka">${ekr(pokaz.oshibka)}</div>` : ''}
 ${pokaz.horosho ? `<div class="horosho">${ekr(pokaz.horosho)}</div>` : ''}
-${glavnaya ? `<div class="shag"><h2>${ekr(s.sleduyushchiyShag)}</h2>${glavnaya}</div>` : ''}
+${glavnaya || kodNeobyaz ? `<div class="shag"><h2>${ekr(s.sleduyushchiyShag)}</h2>${glavnaya}${kodNeobyaz}</div>` : ''}
 <div class="karta"><dl class="fakty">${fakty}</dl></div>
 ${svoyBlok}
 ${vvod ? `<div class="karta"><h2>${ekr(s.vvestiDostup)}</h2>${vvod}</div>` : ''}
@@ -619,22 +649,6 @@ ${otmena}
  * потому что тернарник всегда возвращает строку. `switch` без
  * `default` заставляет разобрать каждый случай.
  */
-export function prichinaSlovami(p: zakazy.PrichinaOtmeny, s: Slova): string {
-  switch (p) {
-    case 'net_koda':
-      return s.otmenaNetKoda;
-    case 'nevernyy_parol':
-      return s.otmenaParol;
-    case 'nevernye_dannye':
-      return s.otmenaDannye;
-    case 'net_deneg':
-      return s.otmenaNetDeneg;
-    case 'ruchnaya':
-      // Выбрать её больше нельзя, но в старых заказах она лежит.
-      return s.otmenaRuchnaya;
-  }
-}
-
 // ── покупатели ───────────────────────────────────────────────────────
 
 export function pokupateli(o: Obstanovka, db: Baza, poisk: lyudi.Poisk = {}): string {

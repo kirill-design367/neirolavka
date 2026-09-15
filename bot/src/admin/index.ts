@@ -338,7 +338,15 @@ export function sozdatPanel(l: Lavka): Panel {
       if (zak) {
         const z = zakazy.po(db, Number(zak[1]));
         if (!z) return otdat(res, 404, ocheredStranica());
-        return otdat(res, 200, str.zakaz(o, db, z, klyuch, poyas, pokaz, obnovlyat));
+        /* `?vvod=1` раскрывает форму ввода доступа у заказа, который
+           ждёт код: там она по умолчанию свёрнута ради самообновления
+           страницы. Правило «что делать дальше» от этого не меняется —
+           решает по-прежнему `sleduyushchiyShag`. */
+        return otdat(
+          res,
+          200,
+          str.zakaz(o, db, z, klyuch, poyas, { ...pokaz, vvod: poisk.get('vvod') === '1' }, obnovlyat),
+        );
       }
       if (put === `${KOREN}/pokupateli`) {
         if (!vladelec) return otdat(res, 403, ocheredStranica());

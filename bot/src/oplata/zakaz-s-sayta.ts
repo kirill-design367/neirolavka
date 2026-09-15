@@ -36,6 +36,7 @@ import { kodPromo } from '../lib/promokod.js';
 import { vystavitSchet } from './schet.js';
 import { zhurnal } from '../lib/zhurnal.js';
 import * as uved from '../bot/uvedomleniya.js';
+import * as k from '../bot/texty-komandy.js';
 
 /** Что прислал сайт. Всё — строками: разбираем и чистим здесь. */
 export type ZaprosSSayta = {
@@ -185,9 +186,7 @@ export async function zakazSSayta(l: Lavka, z: ZaprosSSayta): Promise<OtvetSayta
     void uved
       .komande(
         l,
-        `Заказ № ${zakaz.id} оформлен НА САЙТЕ: ${zakaz.nazvanie}.\n` +
-          `К оплате ${rubli(zakazy.kOplate(zakaz))}. Покупателя пока нет — он появится, ` +
-          'когда откроет ссылку в бот.',
+        k.ZAKAZ_S_SAYTA(zakaz.id, zakaz.nazvanie, zakazy.kOplate(zakaz)),
       )
       .catch(() => undefined);
   }
