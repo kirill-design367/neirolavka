@@ -201,6 +201,27 @@ const CATALOG: Catalog = {
       ]
     },
     {
+      "id": "suno",
+      "name": "Suno AI",
+      "tagline": "Генератор музыки",
+      "note": "Треки по описанию, со словами и без",
+      "priceRub": null,
+      "plans": [
+        {
+          "id": "suno-pro",
+          "short": "Pro",
+          "title": "Suno AI, Pro",
+          "priceRub": 1399
+        },
+        {
+          "id": "suno-premier",
+          "short": "Premier",
+          "title": "Suno AI, Premier",
+          "priceRub": 3299
+        }
+      ]
+    },
+    {
       "id": "gemini",
       "name": "Gemini AI",
       "tagline": "Ассистент Google",
