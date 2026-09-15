@@ -250,11 +250,30 @@ const CATALOG: Catalog = {
     },
     {
       "id": "claude",
-      "name": "Claude Pro",
+      "name": "Claude",
       "tagline": "Полноценный ИИ-ассистент",
       "note": "Sonnet и Opus, проекты, загрузка файлов",
       "priceRub": 1,
-      "plans": []
+      "plans": [
+        {
+          "id": "claude-pro",
+          "short": "Pro",
+          "title": "Claude Pro, Pro",
+          "priceRub": 1
+        },
+        {
+          "id": "claude-max5x",
+          "short": "Max 5x",
+          "title": "Claude Pro, Max 5x",
+          "priceRub": 10299
+        },
+        {
+          "id": "claude-max20x",
+          "short": "Max 20x",
+          "title": "Claude Pro, Max 20x",
+          "priceRub": 19899
+        }
+      ]
     },
     {
       "id": "seedance",
