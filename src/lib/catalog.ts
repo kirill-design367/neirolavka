@@ -280,7 +280,7 @@ const CATALOG: Catalog = {
           "id": "claude-pro",
           "short": "Pro",
           "title": "Claude Pro, Pro",
-          "priceRub": 1
+          "priceRub": 2289
         },
         {
           "id": "claude-max5x",
