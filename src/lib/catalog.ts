@@ -319,13 +319,19 @@ const CATALOG: Catalog = {
           "id": "seedance-light",
           "short": "Light",
           "title": "Dreamina Seedance, Light",
-          "priceRub": 2999
+          "priceRub": 1889
         },
         {
           "id": "seedance-production",
           "short": "Production",
           "title": "Dreamina Seedance, Production",
-          "priceRub": 5899
+          "priceRub": 4289
+        },
+        {
+          "id": "seedance-max",
+          "short": "Max",
+          "title": "Runway Seedance 2.5, Max",
+          "priceRub": 10889
         }
       ]
     }
