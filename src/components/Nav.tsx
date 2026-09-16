@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { useSchetchik } from '@/lib/schetchik';
 
 const LINKS = [
   { href: '#magazin', label: 'Магазин' },
@@ -14,6 +15,12 @@ export function Nav({ subscribers }: { subscribers: number }) {
   // Счётчик стоит числом и никуда не добегает. Разбег от заниженного
   // значения изображал рост прямо сейчас: вместе с маячком это была
   // не подпись, а подгонялка. Факт остаётся, спектакль вокруг — нет.
+  //
+  // А вот САМО число живое: засев из сборки плюс выданные заказы,
+  // которые сайт спрашивает у бота одним запросом. Не ответил —
+  // остаётся засев, и человек не видит ни пустоты, ни нуля.
+  // Подробности и оба отвергнутых способа счёта — в lib/schetchik.ts.
+  const vsego = useSchetchik(subscribers);
 
   // Капсула проявляется по ходу прокрутки, а не по порогу.
   // Пишем одну переменную на самой шапке: пересчёт стиля задевает
@@ -46,7 +53,7 @@ export function Nav({ subscribers }: { subscribers: number }) {
         <p className="nav__counter">
           <span className="nav__counter-text">
             Уже{' '}
-            <span className="tnum nav__counter-number">{formatCount(subscribers)}</span>{' '}
+            <span className="tnum nav__counter-number">{formatCount(vsego)}</span>{' '}
             <span className="nav__counter-tail">пользователей оформили подписки</span>
             <span className="nav__counter-short">подписок оформлено</span>
           </span>

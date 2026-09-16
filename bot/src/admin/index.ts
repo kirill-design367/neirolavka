@@ -367,7 +367,7 @@ export function sozdatPanel(l: Lavka): Panel {
       }
       if (put === `${KOREN}/katalog`) {
         if (!vladelec) return otdat(res, 403, ocheredStranica());
-        return otdat(res, 200, str.katalog(o, db));
+        return otdat(res, 200, str.katalog(o, db, pokaz));
       }
       if (put === `${KOREN}/otzyvy`) {
         /* ПРАВА ПРОВЕРЯЮТСЯ И ЗДЕСЬ, И НА ДЕЙСТВИИ. Отзыв на витрине
@@ -862,7 +862,26 @@ function deystvieKataloga(db: Lavka['db'], put: string, f: URLSearchParams): Ito
 
   const ur = put.match(/^\/admin\/katalog\/uroven\/([A-Za-z0-9-]+)$/);
   if (ur) {
-    bdKatalog.pravitUroven(db, ur[1] as string, { cenaKop: cenaIzFormy(f) });
+    /* ПЕРЕИМЕНОВАНИЕ ИДЁТ ТЕМ ЖЕ ДЕЙСТВИЕМ, ЧТО И ЦЕНА, и это одна
+       форма на строку: две кнопки «Сохранить» рядом означали бы, что
+       половину правки можно забыть отправить.
+
+       Идентификатор в путь приходит и в путь же остаётся — новый
+       из подписи НЕ выводится. На него ссылаются заказы; подробности
+       в `db/katalog.ts`. */
+    const id = ur[1] as string;
+    const short = (f.get('short') ?? '').trim();
+    const title = (f.get('title') ?? '').trim();
+    // Пустое название — отказ, а не тихая запись пустоты: уровень
+    // без подписи не нарисует ни кнопки в боте, ни строки на витрине.
+    if ((f.has('short') && !short) || (f.has('title') && !title)) {
+      return { oshibka: 'nazvaniePusto' };
+    }
+    bdKatalog.pravitUroven(db, id, {
+      ...(f.has('short') ? { short } : {}),
+      ...(f.has('title') ? { title } : {}),
+      ...(f.has('cena') ? { cenaKop: cenaIzFormy(f) } : {}),
+    });
     return { ok: 'sohraneno' };
   }
 

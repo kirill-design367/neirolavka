@@ -53,6 +53,10 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .shag{background:var(--p);border:1px solid var(--l);border-left:3px solid var(--a);padding:12px 14px;margin-bottom:14px}
 .shag h2{margin:0 0 8px}
 form.ryad{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin:0}
+/* Строка уровня подписки. Уровней у продукта до трёх, и строки
+   стоят одна под другой: без просвета они читаются одной кашей,
+   а какое поле к какому уровню относится — на глаз не понять. */
+form.uroven{padding:8px 0;border-top:1px solid var(--l)}
 label{display:block;font-size:12px;color:var(--m);margin-bottom:3px}
 input[type=text],input[type=password],input[type=number],input[type=date],textarea,select{font:inherit;padding:7px 9px;border:1px solid var(--l);background:var(--p);color:var(--t);border-radius:3px;min-width:0}
 textarea{min-height:60px;width:100%}

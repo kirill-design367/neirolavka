@@ -246,7 +246,11 @@ export function OrderPanel() {
   // Робокасса такой счёт не примет.
   const mozhnoPlatit = ready && priceKnown;
   const totalRef = useCountUp(kOplate, useCallback(formatRub, []));
-  const restRef = useExpand<HTMLDivElement>(Boolean(selection));
+  /* Закрытое состояние уезжает в РАЗМЕТКУ вторым значением хука:
+     в статической сборке блок иначе рисуется раскрытым и схлопывается
+     эффектом уже после первой отрисовки — сдвиг 111 px на первом
+     экране. Подробности в `useExpand`. */
+  const rest = useExpand<HTMLDivElement>(Boolean(selection));
 
   // Строки «Доступ до <дата>» здесь больше нет, и это не потеря.
   // Она считалась из срока тарифа, а тарифом теперь называется
@@ -295,7 +299,7 @@ export function OrderPanel() {
           </div>
 
           {/* Способ оплаты разворачивается, когда товар выбран. */}
-          <div className="order__rest" ref={restRef} inert={!selection}>
+          <div className="order__rest" ref={rest.ref} style={rest.style} inert={!selection}>
             <div>
               <div className="order__block" data-expand-item>
                 <p className="order__label" id="sposob-oplaty">

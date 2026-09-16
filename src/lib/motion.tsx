@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import type { CSSProperties } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import Lenis from 'lenis';
@@ -380,10 +381,37 @@ export function useCountUp<T extends HTMLElement = HTMLSpanElement>(
  * Анимируется height от 0 до фактической высоты содержимого, затем высота
  * снимается в auto — иначе блок перестал бы реагировать на изменение
  * содержимого и на смену ширины окна.
+ *
+ * ЗАКРЫТОЕ СОСТОЯНИЕ УЕЗЖАЕТ В РАЗМЕТКУ, А НЕ СТАВИТСЯ ЭФФЕКТОМ,
+ * и это про сдвиг раскладки. Сборка статическая: в готовом html
+ * блок стоял РАСКРЫТЫМ во всю свою высоту, браузер его так и рисовал,
+ * а первый layout-эффект после гидратации схлопывал его в ноль.
+ * Между отрисовкой и эффектом проходит четверть секунды, и всё, что
+ * ниже, прыгало вверх на 111 px: сдвиг 0.0061 на первом экране при
+ * объявленной планке CLS 0.
+ *
+ * Поэтому хук отдаёт ВТОРЫМ значением стиль для разметки. Он
+ * считается ОДИН раз, из начального `open`, и дальше не меняется
+ * никогда: React сравнивает стиль по значениям, одинаковый объект
+ * он не переписывает, и GSAP остаётся единственным хозяином высоты.
+ * Верни мы стиль, меняющийся вместе с `open`, — React стирал бы
+ * поставленную анимацией высоту на каждой перерисовке.
+ *
+ * Почему сдвига не видела проверка: `verify-live` читал CLS через
+ * `performance.getEntriesByType('layout-shift')`, а этих записей
+ * там не бывает вовсе — они приходят только в PerformanceObserver.
+ * То есть проверка печатала 0.0000 всегда. Исправлено вместе с этим.
  */
 export function useExpand<T extends HTMLElement>(open: boolean) {
   const ref = useRef<T | null>(null);
   const first = useRef(true);
+  /* Только начальное состояние. Зависимостей нет намеренно —
+     см. объяснение выше. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const style = useMemo<CSSProperties | undefined>(
+    () => (open ? undefined : { height: 0, opacity: 0, overflow: 'hidden' }),
+    [],
+  );
 
   useIsomorphicLayoutEffect(() => {
     const node = ref.current;
@@ -448,5 +476,5 @@ export function useExpand<T extends HTMLElement>(open: boolean) {
     };
   }, [open]);
 
-  return ref;
+  return { ref, style };
 }

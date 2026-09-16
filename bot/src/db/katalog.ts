@@ -183,6 +183,37 @@ export function pravitProdukt(db: Baza, id: string, p: PravkaProdukta): void {
   );
 }
 
+/**
+ * Свободный идентификатор уровня.
+ *
+ * Понадобился вместе с ПЕРЕИМЕНОВАНИЕМ. Идентификатор выводится
+ * из подписи, но при переименовании НЕ МЕНЯЕТСЯ — на него ссылаются
+ * заказы. Значит подпись и идентификатор разъезжаются на первом же
+ * переименовании: владелец переименовал «Pro» в «Premier», завёл
+ * новый «Pro» — и выведенный `produkt-pro` оказался занят тем самым
+ * переименованным уровнем. Вставка упала бы на первичном ключе,
+ * а панель ответила бы пятисотым.
+ *
+ * Отсюда же второй случай, существовавший и до переименования:
+ * у подписи «Про» после чистки не остаётся ни одного знака, и
+ * идентификатор выходил `produkt-`. Второй такой уровень — снова
+ * столкновение.
+ */
+function svobodnyyIdUrovnya(db: Baza, produktId: string, short: string): string {
+  // Тот же вид идентификатора, что у засева: «продукт-уровень».
+  // Кириллица чистку не переживает, поэтому у пустого остатка есть
+  // запасное слово — пустой хвост читался бы обрывком.
+  const chistoe = short.toLowerCase().replace(/[^a-z0-9]+/g, '') || 'uroven';
+  const osnova = `${produktId}-${chistoe}`;
+  const zanyat = (id: string) => db.prepare('SELECT 1 FROM urovni WHERE id = ?').get(id) !== undefined;
+  if (!zanyat(osnova)) return osnova;
+  for (let n = 2; n < 1000; n += 1) {
+    const id = `${osnova}-${n}`;
+    if (!zanyat(id)) return id;
+  }
+  throw new Error(`не нашлось свободного идентификатора уровня для ${produktId}`);
+}
+
 export function sozdatUroven(db: Baza, produktId: string, short: string): void {
   const p = db.prepare('SELECT * FROM produkty WHERE id = ?').get(produktId) as StrokaProdukta | undefined;
   if (!p) return;
@@ -191,9 +222,7 @@ export function sozdatUroven(db: Baza, produktId: string, short: string): void {
       n: number;
     }
   ).n;
-  // Тот же вид идентификатора, что у засева: «продукт-уровень».
-  // На нём держится разбор кнопок покупки — см. `vybor` в lib/katalog.
-  const id = `${produktId}-${short.toLowerCase().replace(/[^a-z0-9]+/g, '')}`;
+  const id = svobodnyyIdUrovnya(db, produktId, short);
   db.prepare(
     `INSERT INTO urovni (id, produkt_id, short, title, cena_kop, poryadok, skryt, izmenen)
      VALUES (?, ?, ?, ?, NULL, ?, 0, ?)`,
@@ -202,6 +231,21 @@ export function sozdatUroven(db: Baza, produktId: string, short: string): void {
 
 export type PravkaUrovnya = { short?: string; title?: string; cenaKop?: number | null; skryt?: boolean };
 
+/**
+ * Правка уровня — И ПЕРЕИМЕНОВАНИЕ ТОЖЕ.
+ *
+ * ИДЕНТИФИКАТОР НЕ ТРОГАЕТСЯ НИ ПРИ КАКИХ ОБСТОЯТЕЛЬСТВАХ, и это
+ * главное, что надо знать про эту функцию. На `urovni.id` ссылается
+ * `zakazy.plan_id` у каждого купленного заказа; поменяй его вслед
+ * за подписью — и прошлые заказы станут ссылаться в пустоту: карточка
+ * заказа перестанет находить уровень, а «Мои заказы» покупателя
+ * покажут покупку, которой будто бы нет в лавке.
+ *
+ * Историю переименование при этом не трогает и без всяких оговорок:
+ * название уезжает в заказ СНИМКОМ (`zakazy.nazvanie`) в момент
+ * покупки. Человек видит в «Моих заказах» то, что покупал, а не то,
+ * как этот уровень называется сегодня.
+ */
 export function pravitUroven(db: Baza, id: string, p: PravkaUrovnya): void {
   const bylo = db.prepare('SELECT * FROM urovni WHERE id = ?').get(id) as StrokaUrovnya | undefined;
   if (!bylo) return;

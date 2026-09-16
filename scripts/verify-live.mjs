@@ -3,6 +3,24 @@
  * нет ли ошибок в консоли, применилась ли тема до первой отрисовки,
  * какой получился сдвиг вёрстки.
  *
+ * CLS СНИМАЕТСЯ НАБЛЮДАТЕЛЕМ, И ЭТО НЕ СТИЛЬ. Здесь стояло
+ * `performance.getEntriesByType('layout-shift')` — и этот список
+ * ПУСТ ВСЕГДА: записи о сдвигах в общий журнал производительности
+ * не кладутся, они приходят только в PerformanceObserver. То есть
+ * проверка печатала `CLS: 0.0000` при любой вёрстке и не могла
+ * покраснеть ни от чего: сумма по пустому списку — ноль. Ровно та
+ * же поломка, что была у `check-outer-glow` без нижней границы, —
+ * проверка, засчитывающая ту беду, ради которой написана.
+ *
+ * Поймал это новый `check-schetchik`, который меряет CLS своим
+ * наблюдателем: на той же сборке у него выходило 0.0061, а здесь
+ * 0.0000. Сдвиг был настоящий — блок способов оплаты схлопывался
+ * layout-эффектом после первой отрисовки.
+ *
+ * Наблюдатель ставится ДО перехода (`addInitScript`) и с
+ * `buffered: true`: сдвиг случается на первых сотнях миллисекунд,
+ * то есть раньше, чем мы успели бы подписаться со стороны пробы.
+ *
  * Запуск: node scripts/verify-live.mjs http://localhost:4173/neirolavka/
  */
 import { chromium } from 'playwright';
@@ -14,6 +32,12 @@ let bad = 0;
 for (const path of ['']) {
   const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU' });
   const page = await ctx.newPage();
+  await page.addInitScript(() => {
+    window.__cls = 0;
+    new PerformanceObserver((l) => {
+      for (const z of l.getEntries()) if (!z.hadRecentInput) window.__cls += z.value;
+    }).observe({ type: 'layout-shift', buffered: true });
+  });
 
   const failed = [];
   const console_ = [];
@@ -36,7 +60,7 @@ for (const path of ['']) {
     bg: getComputedStyle(document.body).backgroundColor,
     display: getComputedStyle(document.querySelector('h1, .fonts__title')).fontFamily,
     fontsLoaded: [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family),
-    cls: performance.getEntriesByType('layout-shift').reduce((s, e) => s + (e.hadRecentInput ? 0 : e.value), 0),
+    cls: window.__cls ?? 0,
   }));
 
   console.log(`\n── ${url}`);

@@ -144,6 +144,10 @@ export type Slova = {
   identifikator: string;
   korotko: string;
   polnoeNazvanie: string;
+  /** Пустое название уровня: сохранять нечего. */
+  nazvaniePusto: string;
+  /** Переименование уровня не трогает прошлые заказы. */
+  pereimenovaniePoyasnenie: string;
   ochistitCenu: string;
   netZakaza: string;
   nelzyaSeychas: string;
@@ -407,6 +411,10 @@ const RU: Slova = {
   identifikator: 'Идентификатор',
   korotko: 'Коротко',
   polnoeNazvanie: 'Полное название',
+  nazvaniePusto: 'Название уровня не может быть пустым',
+  pereimenovaniePoyasnenie:
+    'Переименование не трогает прошлые заказы: в каждом название записано на момент покупки. '
+    + 'На витрину новое название попадёт после выкладки.',
   ochistitCenu: 'Убрать цену',
   netZakaza: 'Такого заказа нет',
   nelzyaSeychas: 'Сейчас это сделать нельзя',
@@ -674,6 +682,10 @@ const EN: Slova = {
   identifikator: 'Identifier',
   korotko: 'Short',
   polnoeNazvanie: 'Full name',
+  nazvaniePusto: 'A tier name cannot be empty',
+  pereimenovaniePoyasnenie:
+    'Renaming does not touch past orders: each one keeps the name it was bought under. '
+    + 'The new name reaches the website after a publish.',
   ochistitCenu: 'Clear price',
   netZakaza: 'No such order',
   nelzyaSeychas: 'This cannot be done right now',

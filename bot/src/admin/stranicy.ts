@@ -741,7 +741,7 @@ export function pokupatel(o: Obstanovka, db: Baza, tgId: number, poyas: string):
 
 // ── каталог ──────────────────────────────────────────────────────────
 
-export function katalog(o: Obstanovka, db: Baza): string {
+export function katalog(o: Obstanovka, db: Baza, pokaz: Pokaz = {}): string {
   const s = o.s;
   const cenaPole = (imya: string, kop: number | null) =>
     `<input type="number" name="${imya}" min="0" step="0.01" value="${kop === null ? '' : (kop / 100).toString()}" placeholder="${ekr(s.utochnyaetsya)}" style="width:120px">`;
@@ -750,12 +750,25 @@ export function katalog(o: Obstanovka, db: Baza): string {
     .produkty(db, true)
     .map((p) => {
       const skryt = bdKatalog.produkty(db, false).every((v) => v.id !== p.id);
+      /* УРОВЕНЬ ПРАВИТСЯ ЦЕЛИКОМ ОДНОЙ ФОРМОЙ: подпись, полное
+         название и цена. Прежде подпись и название стояли мёртвым
+         текстом, а править можно было только цену — и продукт,
+         переименованный владельцем, оставлял свои уровни с прежним
+         именем в чеке («Claude» на витрине, «Claude Pro, Pro»
+         в заказе).
+
+         Одна форма на строку, а не три: две кнопки «Сохранить» рядом
+         означали бы, что половину правки можно забыть отправить.
+         И это НЕ таблица: форму нельзя разорвать по ячейкам —
+         разметка с `<form>` поверх `<tr>` разбирается браузерами
+         кто во что горазд. */
       const urovni = p.plans
         .map(
-          (u) => `<tr><td>${ekr(u.short)}</td><td>${ekr(u.title)}</td>
-<td><form method="post" action="/admin/katalog/uroven/${ekr(u.id)}" class="ryad">${pole(o)}
-${cenaPole('cena', u.priceRub === null ? null : Math.round(u.priceRub * 100))}
-<button class="tihaya">${ekr(s.sohranit)}</button></form></td></tr>`,
+          (u) => `<form method="post" action="/admin/katalog/uroven/${ekr(u.id)}" class="ryad uroven">${pole(o)}
+<div><label>${ekr(s.korotko)}</label><input type="text" name="short" required value="${ekr(u.short)}" style="width:110px"></div>
+<div><label>${ekr(s.polnoeNazvanie)}</label><input type="text" name="title" required value="${ekr(u.title)}" style="width:220px"></div>
+<div><label>${ekr(s.cena)}, ₽</label>${cenaPole('cena', u.priceRub === null ? null : Math.round(u.priceRub * 100))}</div>
+<button class="tihaya">${ekr(s.sohranit)}</button></form>`,
         )
         .join('');
       return `<div class="karta">
@@ -767,7 +780,7 @@ ${cenaPole('cena', u.priceRub === null ? null : Math.round(u.priceRub * 100))}
 ${p.plans.length === 0 ? `<label>${ekr(s.cena)}</label>${cenaPole('cena', p.priceRub === null ? null : Math.round(p.priceRub * 100))}` : ''}
 <p><button>${ekr(s.sohranit)}</button>
 <button name="skryt" value="${skryt ? '0' : '1'}" class="tihaya">${ekr(skryt ? s.pokazat : s.skryt)}</button></p></form>
-${p.plans.length ? `<table><thead><tr><th>${ekr(s.korotko)}</th><th>${ekr(s.polnoeNazvanie)}</th><th>${ekr(s.cena)}, ₽</th></tr></thead><tbody>${urovni}</tbody></table>` : ''}
+${p.plans.length ? `<h3>${ekr(s.urovni)}</h3>${urovni}<p class="tiho">${ekr(s.pereimenovaniePoyasnenie)}</p>` : ''}
 <form method="post" action="/admin/katalog/uroven-novyy/${ekr(p.id)}" class="ryad" style="margin-top:10px">${pole(o)}
 <div><label>${ekr(s.korotko)}</label><input type="text" name="short" required placeholder="Pro"></div>
 <button class="tihaya">${ekr(s.dobavitUroven)}</button></form>
@@ -785,7 +798,14 @@ ${p.plans.length ? `<table><thead><tr><th>${ekr(s.korotko)}</th><th>${ekr(s.poln
 <a href="/admin/vykladka">${ekr(s.vylozhitNaSayt)} →</a></div>`
     : `<div class="karta"><span class="tiho">${ekr(s.cenySovpadayut)}</span></div>`;
 
+  /* СКАЗАТЬ, ЧТО ПРАВКА СОХРАНИЛАСЬ, — не украшение. Страница
+     каталога одна из немногих, где ответ на действие не показывался
+     вовсе: панель отвечала переходом с `?ok=…` в адресе, а страница
+     его не читала. Сохранение молчало — и отказ («название пустое»)
+     промолчал бы точно так же, то есть выглядел бы как сохранение. */
   const telo = `<h1>${ekr(s.katalog)}</h1>
+${pokaz.oshibka ? `<div class="oshibka">${ekr(pokaz.oshibka)}</div>` : ''}
+${pokaz.horosho ? `<div class="horosho">${ekr(pokaz.horosho)}</div>` : ''}
 ${podskazka}
 ${produkty}
 <div class="karta"><h2>${ekr(s.dobavitProdukt)}</h2>
