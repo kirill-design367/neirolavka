@@ -244,7 +244,7 @@ const CATALOG: Catalog = {
           "id": "gemini-ultra",
           "short": "Ultra",
           "title": "Gemini AI, Ultra",
-          "priceRub": 8499
+          "priceRub": 8599
         }
       ]
     },
@@ -305,6 +305,27 @@ const CATALOG: Catalog = {
           "short": "Max 20x",
           "title": "Claude Pro, Max 20x",
           "priceRub": 26489
+        }
+      ]
+    },
+    {
+      "id": "seedance",
+      "name": "Runway Seedance 2.5",
+      "tagline": "Видео по тексту и по картинке",
+      "note": "Генерация роликов, продление сцен, свои референсы",
+      "priceRub": null,
+      "plans": [
+        {
+          "id": "seedance-light",
+          "short": "Light",
+          "title": "Dreamina Seedance, Light",
+          "priceRub": 2999
+        },
+        {
+          "id": "seedance-production",
+          "short": "Production",
+          "title": "Dreamina Seedance, Production",
+          "priceRub": 5899
         }
       ]
     }
