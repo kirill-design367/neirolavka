@@ -2,7 +2,8 @@
 
 import { useEffect, useRef } from 'react';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { useSchetchik } from '@/lib/schetchik';
+import { useCountUp } from '@/lib/motion';
+import { NACHALO_RAZBEGA, useSchetchik } from '@/lib/schetchik';
 
 const LINKS = [
   { href: '#magazin', label: 'Магазин' },
@@ -12,15 +13,25 @@ const LINKS = [
 const formatCount = (n: number) => n.toLocaleString('ru-RU');
 
 export function Nav({ subscribers }: { subscribers: number }) {
-  // Счётчик стоит числом и никуда не добегает. Разбег от заниженного
-  // значения изображал рост прямо сейчас: вместе с маячком это была
-  // не подпись, а подгонялка. Факт остаётся, спектакль вокруг — нет.
-  //
-  // А вот САМО число живое: засев из сборки плюс выданные заказы,
-  // которые сайт спрашивает у бота одним запросом. Не ответил —
-  // остаётся засев, и человек не видит ни пустоты, ни нуля.
-  // Подробности и оба отвергнутых способа счёта — в lib/schetchik.ts.
+  // Число живое: засев из сборки плюс выданные заказы, которые сайт
+  // спрашивает у бота одним запросом. Не ответил — остаётся засев,
+  // и человек не видит ни пустоты, ни нуля. Подробности и оба
+  // отвергнутых способа счёта — в lib/schetchik.ts.
   const vsego = useSchetchik(subscribers);
+
+  // РАЗБЕГ ПРИ ЗАГРУЗКЕ — решение владельца, отменяющее прежний
+  // запрет. Прежде число стояло засевом и ПЕРЕСКАКИВАЛО на настоящее,
+  // когда отвечал бот: владелец прочитал этот скачок как подмену.
+  // Теперь оно растёт снизу и приходит туда же — а если бот молчит,
+  // приходит на засев, и это выглядит обычной работой.
+  //
+  // Маячка рядом по-прежнему нет, и это не отменено: пульсирующая
+  // точка изображает происходящее ПРЯМО СЕЙЧАС, а разбег — это способ
+  // показать одно число, а не рассказ о чужих покупках в эту минуту.
+  //
+  // Узел разбега ПУСТ в разметке: в него пишет GSAP. Реактовских детей
+  // ему давать нельзя — `useCountUp` пишет `textContent` и снесёт их.
+  const begRef = useCountUp<HTMLSpanElement>(vsego, formatCount, NACHALO_RAZBEGA);
 
   // Капсула проявляется по ходу прокрутки, а не по порогу.
   // Пишем одну переменную на самой шапке: пересчёт стиля задевает
@@ -53,7 +64,22 @@ export function Nav({ subscribers }: { subscribers: number }) {
         <p className="nav__counter">
           <span className="nav__counter-text">
             Уже{' '}
-            <span className="tnum nav__counter-number">{formatCount(vsego)}</span>{' '}
+            <span className="tnum nav__counter-number">
+              {/* РАСПОРКА: то же число, но самыми широкими цифрами.
+                  Она одна лежит в потоке и держит ширину коробки —
+                  оба настоящих числа рисуются поверх неё. Почему
+                  нельзя мерить коробку самими числами, написано
+                  в nav.css. */}
+              <span className="nav__counter-mera" aria-hidden="true">
+                {formatCount(vsego).replace(/\d/g, '0')}
+              </span>
+              {/* Бегущее число. Пока пусто — виден сосед. */}
+              <span className="nav__counter-run" ref={begRef} />
+              {/* Настоящее число: оно в разметке, значит есть и без
+                  скриптов, и при выключенном движении, и в дереве
+                  доступности. */}
+              <span className="nav__counter-true">{formatCount(vsego)}</span>
+            </span>{' '}
             <span className="nav__counter-tail">пользователей оформили подписки</span>
             <span className="nav__counter-short">подписок оформлено</span>
           </span>

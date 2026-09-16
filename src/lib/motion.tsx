@@ -332,9 +332,21 @@ export function useStepTrack<T extends HTMLElement>() {
 export function useCountUp<T extends HTMLElement = HTMLSpanElement>(
   value: number,
   format: (n: number) => string,
+  /**
+   * Откуда бежать ПРИ ПЕРВОМ показе. Не задано — разбега на первом
+   * показе нет вовсе, и это умолчание намеренное: в чеке счётчик
+   * догоняет ИЗМЕНЕНИЕ суммы, а цена, разбегающаяся при загрузке
+   * страницы, — приём давления, запрещённый разделом «Доверие
+   * в оформлении».
+   *
+   * Счётчику в шапке разбег при загрузке владелец назначил отдельно:
+   * там он не украшение, а лечение — без него число перескакивало
+   * с засева на настоящее и читалось подменой.
+   */
+  ot?: number,
 ) {
   const ref = useRef<T | null>(null);
-  const shown = useRef(value);
+  const shown = useRef(ot ?? value);
 
   useIsomorphicLayoutEffect(() => {
     const node = ref.current;
@@ -352,6 +364,14 @@ export function useCountUp<T extends HTMLElement = HTMLSpanElement>(
       duration: 0.55,
       ease: 'power2.out',
       onUpdate: () => {
+        /* ГДЕ ИДЁМ — ЗАПОМИНАЕТСЯ КАЖДЫЙ КАДР, и это не мелочь.
+           Пока `shown.current` писался только в конце, смена цели
+           НА БЕГУ начинала новый разбег от прошлого ЗАВЕРШЁННОГО
+           значения — то есть число прыгало назад и бежало заново.
+           У счётчика в шапке это происходит всегда: разбег стартует
+           на загрузке, а настоящее число приезжает от бота посреди
+           него. */
+        shown.current = proxy.n;
         // По дороге счётчик идёт ЦЕЛЫМИ: дрожащие копейки на бегу
         // читаются мусором, а не суммой.
         node.textContent = format(Math.round(proxy.n));

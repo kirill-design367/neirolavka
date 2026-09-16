@@ -15,7 +15,14 @@
  *      строка) — засев остаётся; «Уже 2 417,5 пользователей»
  *      и «Уже NaN» на витрине хуже неподвижного числа;
  *   4. обновление числа не двигает раскладку: CLS у сайта 0,
- *      и поздний ответ бота не имеет права его испортить.
+ *      и поздний ответ бота не имеет права его испортить;
+ *   5. число РАЗБЕГАЕТСЯ снизу, а не встаёт готовым и не
+ *      перескакивает с засева на настоящее — ради этого весь заход.
+ *      Разбег проверяется РЯДОМ КАДРОВ, а не одним снимком: одиночный
+ *      снимок «в шапке правильное число» одинаково зелен и с разбегом,
+ *      и без него;
+ *   6. при `prefers-reduced-motion` разбега нет вовсе, и число стоит
+ *      настоящее с первого кадра.
  *
  * ОТВЕТ БОТА ПОДСТАВНОЙ — проба про САЙТ, ровно как в check-promo.
  * Правильность самого числа держат проверки бота
@@ -69,12 +76,13 @@ const browser = await chromium.launch({ executablePath: CHROME });
  * `otvet === 'molchanie'` — запрос обрывается; это и есть случай
  * «пути нет» и «бот лежит».
  */
-async function shapka(otvet, { mobilnyy = false } = {}) {
+async function shapka(otvet, { mobilnyy = false, pokoy = false } = {}) {
   const ctx = await browser.newContext({
     viewport: mobilnyy ? { width: 390, height: 844 } : { width: 1512, height: 900 },
     locale: 'ru-RU',
     isMobile: mobilnyy,
     hasTouch: mobilnyy,
+    ...(pokoy ? { reducedMotion: 'reduce' } : {}),
   });
   let sprosili = 0;
   await ctx.route('**/api/schetchik*', async (route) => {
@@ -95,6 +103,45 @@ async function shapka(otvet, { mobilnyy = false } = {}) {
     new PerformanceObserver((l) => {
       for (const z of l.getEntries()) if (!z.hadRecentInput) window.__cls += z.value;
     }).observe({ type: 'layout-shift', buffered: true });
+
+    /* РЯД КАДРОВ, а не один снимок. Разбег живёт полсекунды, и
+       увидеть его можно только тем, что число в кадрах РАЗНОЕ.
+       Заодно каждый кадр записывается ШИРИНА коробки числа: если
+       она дышит, вместе с ней ездит вся строка шапки.
+
+       ЧИТАТЬ `innerText` У КОРОБКИ НЕЛЬЗЯ: `visibility: hidden`
+       прячет узел от глаза, но НЕ от innerText — тот отдавал
+       «24172417», два числа подряд, и проба принимала это за третье
+       значение разбега. Видимое собирается по правилу самой
+       вёрстки: есть текст в узле разбега — видно его, пусто —
+       видно разметочное.
+
+       ШИРИНА берётся `offsetWidth`, а не по `getBoundingClientRect`:
+       второй меряет НАРИСОВАННОЕ, то есть вместе с появлением блоков
+       (проявление плюс лёгкий масштаб). На нём подпись «ездила»
+       на 1.1 px при совершенно неподвижной раскладке — это была
+       анимация появления, а не дыхание коробки. */
+    window.__ryad = [];
+    const tik = () => {
+      const u = document.querySelector('.nav__counter-number');
+      const beg = document.querySelector('.nav__counter-run');
+      const nast = document.querySelector('.nav__counter-true');
+      if (u && beg && nast) {
+        const tekst = beg.textContent ?? '';
+        window.__ryad.push({
+          t: Math.round(performance.now()),
+          v: (tekst !== '' ? tekst : nast.textContent ?? '').trim(),
+          bezhit: tekst !== '',
+          // Спрятано ли настоящее число, пока бежит подменное.
+          // Без этой записи проба не отличила бы «одно число
+          // на экране» от «два числа рядом».
+          spryatano: getComputedStyle(nast).visibility === 'hidden',
+          shirina: u.offsetWidth,
+        });
+      }
+      if (performance.now() < 2600) requestAnimationFrame(tik);
+    };
+    requestAnimationFrame(tik);
   });
   await page.goto(ADRES, { waitUntil: 'networkidle' });
   /* Ответ приходит после первой отрисовки: ждём, пока страница
@@ -104,8 +151,9 @@ async function shapka(otvet, { mobilnyy = false } = {}) {
   const uzel = page.locator('.nav__counter-number');
   const vidno = (await uzel.count()) ? (await uzel.first().innerText()).trim() : null;
   const cls = await page.evaluate(() => window.__cls ?? 0);
+  const ryad = await page.evaluate(() => window.__ryad ?? []);
   await ctx.close();
-  return { vidno, chislo: vidno === null ? null : chislo(vidno), cls, sprosili };
+  return { vidno, chislo: vidno === null ? null : chislo(vidno), cls, sprosili, ryad };
 }
 
 console.log('\n── бот молчит: остаётся засев ──');
@@ -146,6 +194,104 @@ for (const [imya, otvet] of [
   const s = await shapka(otvet);
   if (s.chislo === ZASEV) ok(`${imya} → ${s.vidno}`);
   else no(`${imya} → в шапке ${s.vidno}, а должен быть засев ${ZASEV}`);
+}
+
+/** Ряд кадров → числа, в порядке появления, без повторов подряд. */
+const hod = (ryad) => {
+  const out = [];
+  for (const k of ryad) {
+    const n = chislo(k.v);
+    if (!Number.isFinite(n)) continue;
+    if (out.length === 0 || out[out.length - 1] !== n) out.push(n);
+  }
+  return out;
+};
+
+console.log('\n── РАЗБЕГ: число растёт снизу, а не перескакивает ──');
+{
+  const cel = ZASEV + 96;
+  const s = await shapka({ telo: { vydano: 96 } });
+
+  /* ДО ПЕРВОГО КАДРА РАЗБЕГА В ШАПКЕ ОБЯЗАН СТОЯТЬ ЗАСЕВ.
+     Это и есть ответ на «ноль не должен попасть на экран»:
+     узел разбега пуст, видно разметочное число. */
+  const doBega = s.ryad.filter((k) => !k.bezhit);
+  const chuzhoe = doBega.filter((k) => chislo(k.v) !== ZASEV);
+  if (doBega.length === 0 || chuzhoe.length === 0) ok(`до разбега в шапке засев (${doBega.length} кадров)`);
+  else no(`до разбега показано не то: ${chuzhoe.slice(0, 3).map((k) => k.v).join(', ')}`);
+
+  const beg = s.ryad.filter((k) => k.bezhit);
+  const ryad = hod(beg);
+  if (ryad.length >= 8) ok(`разных чисел за разбег: ${ryad.length} (кадров ${beg.length})`);
+  else no(`разных чисел всего ${ryad.length} из ${beg.length} кадров — это не разбег, а скачок`);
+
+  /* НАЧАЛО ОБЯЗАНО БЫТЬ МАЛЕНЬКИМ. Иначе «разбег» вышел бы
+     от 2 400 к 2 513 — движение есть, а смысла нет: место,
+     с которого стартовали, читается настоящим числом. */
+  const pervoe = ryad[0];
+  if (pervoe !== undefined && pervoe < cel * 0.3) ok(`первый кадр разбега ${pervoe} — это ${Math.round((pervoe / cel) * 100)} % цели`);
+  else no(`первый кадр разбега ${pervoe} слишком близко к цели ${cel}: так он читается настоящим числом`);
+
+  // Ни одного шага назад и ни одного перелёта: число только растёт
+  // и приходит ровно в цель. Шаг назад здесь означал бы, что смена
+  // цели на бегу начала разбег заново, а не продолжила с места.
+  const nazad = ryad.filter((n, i) => i > 0 && n < ryad[i - 1]).length;
+  if (nazad === 0) ok('ни одного шага назад');
+  else no(`число шло назад ${nazad} раз: ${ryad.join(' → ')}`);
+
+  const vyshe = ryad.filter((n) => n > cel).length;
+  if (vyshe === 0) ok('перелётов за цель нет');
+  else no(`число перелетало цель ${vyshe} раз`);
+
+  const poslednee = ryad[ryad.length - 1];
+  if (poslednee === cel) ok(`пришло ровно в ${poslednee}`);
+  else no(`пришло в ${poslednee}, а цель ${cel}`);
+
+  // Два числа на экране разом — ровно та поломка, ради которой
+  // настоящее прячется: коробку оно держит, а глазу не мешает.
+  const oba = beg.filter((k) => !k.spryatano).length;
+  if (oba === 0) ok('пока бежит подменное, настоящее спрятано во всех кадрах');
+  else no(`в ${oba} кадрах настоящее число не спрятано — на экране их два`);
+
+  /* КОРОБКА НЕ ДЫШИТ. Главная проба после самого разбега: пока
+     число растёт от двух знаков к четырём, ширина обязана стоять. */
+  const shiriny = [...new Set(s.ryad.map((k) => k.shirina))];
+  if (shiriny.length === 1) ok(`ширина коробки ${shiriny[0]} px все ${s.ryad.length} кадров`);
+  else no(`ширина коробки менялась: ${shiriny.join(', ')} px`);
+
+  if (s.cls < 0.001) ok(`CLS ${s.cls.toFixed(4)}`);
+  else no(`CLS ${s.cls.toFixed(4)} — разбег сдвинул раскладку`);
+}
+
+console.log('\n── бот молчит: разбег приходит на засев ──');
+{
+  const s = await shapka('molchanie');
+  const ryad = hod(s.ryad.filter((k) => k.bezhit));
+  if (ryad.length >= 8) ok(`разбег идёт и без ответа бота: ${ryad.length} разных чисел`);
+  else no(`разбега нет: ${ryad.length} разных чисел — при молчащем боте число обязано вести себя как обычно`);
+  const poslednee = ryad[ryad.length - 1];
+  if (poslednee === ZASEV) ok(`пришло на засев ${poslednee}`);
+  else no(`пришло в ${poslednee}, а засев ${ZASEV}`);
+  const shiriny = [...new Set(s.ryad.map((k) => k.shirina))];
+  if (shiriny.length === 1) ok(`ширина коробки ${shiriny[0]} px`);
+  else no(`ширина коробки менялась: ${shiriny.join(', ')} px`);
+}
+
+console.log('\n── выключенное движение: разбега нет вовсе ──');
+{
+  const cel = ZASEV + 96;
+  const s = await shapka({ telo: { vydano: 96 } }, { pokoy: true });
+  const ryad = hod(s.ryad);
+  /* Промежуточных чисел быть не должно НИ ОДНОГО: при выключенном
+     движении в шапке стоит сперва засев, потом настоящее — смена
+     мгновенная, и это честный ответ, а не разбег в один кадр. */
+  const lishnie = ryad.filter((n) => n !== ZASEV && n !== cel);
+  if (lishnie.length === 0) ok(`показано только ${ryad.join(' → ')}`);
+  else no(`при выключенном движении мелькали промежуточные числа: ${lishnie.slice(0, 6).join(', ')}`);
+  if (s.chislo === cel) ok(`пришло в настоящее: ${s.vidno}`);
+  else no(`в шапке ${s.vidno}, ждали ${cel}`);
+  if (s.cls < 0.001) ok(`CLS ${s.cls.toFixed(4)}`);
+  else no(`CLS ${s.cls.toFixed(4)}`);
 }
 
 console.log('\n── телефон ──');
