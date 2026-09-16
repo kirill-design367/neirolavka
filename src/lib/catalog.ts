@@ -266,6 +266,18 @@ const CATALOG: Catalog = {
           "short": "Plus",
           "title": "ChatGPT, Plus",
           "priceRub": 2279
+        },
+        {
+          "id": "chatgpt-pro5x",
+          "short": "Pro 5x",
+          "title": "ChatGPT, Pro 5x",
+          "priceRub": 9989
+        },
+        {
+          "id": "chatgpt-pro20x",
+          "short": "Pro 20x",
+          "title": "ChatGPT, Pro 20x",
+          "priceRub": 19889
         }
       ]
     },
@@ -286,34 +298,13 @@ const CATALOG: Catalog = {
           "id": "claude-max5x",
           "short": "Max 5x",
           "title": "Claude Pro, Max 5x",
-          "priceRub": 10299
+          "priceRub": 11989
         },
         {
           "id": "claude-max20x",
           "short": "Max 20x",
           "title": "Claude Pro, Max 20x",
-          "priceRub": 19899
-        }
-      ]
-    },
-    {
-      "id": "seedance",
-      "name": "Dreamina Seedance",
-      "tagline": "Видео по тексту и по картинке",
-      "note": "Генерация роликов, продление сцен, свои референсы",
-      "priceRub": null,
-      "plans": [
-        {
-          "id": "seedance-light",
-          "short": "Light",
-          "title": "Dreamina Seedance, Light",
-          "priceRub": 2999
-        },
-        {
-          "id": "seedance-production",
-          "short": "Production",
-          "title": "Dreamina Seedance, Production",
-          "priceRub": 5899
+          "priceRub": 26489
         }
       ]
     }
