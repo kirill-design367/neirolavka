@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { akt, golos } from '@/lib/fonts';
 import { Bubbles } from '@/components/Bubbles';
 import { THEME_BAR, themeInitScript } from '@/lib/theme';
+import { metrikaInitScript, metrikaNoscript } from '@/lib/metrika';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -41,7 +42,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
     >
       <head>
-        {/* Тема проставляется до первой отрисовки — вспышки не бывает. */}
+        {/* Яндекс Метрика стоит ПЕРВОЙ в голове документа, и это не вкус.
+            Просмотр должен засчитаться даже у человека, закрывшего
+            вкладку через полсекунды: очередь `ym.a` и вызов `init`
+            обязаны появиться раньше всего остального. Разбор страницы
+            это не задерживает — синхронное тело только заводит функцию
+            и вставляет тег с `async`, сам скрипт едет мимо разбора.
+            Номер счётчика — в src/lib/metrika.ts, в одном экземпляре. */}
+        <script dangerouslySetInnerHTML={{ __html: metrikaInitScript }} />
+
+        {/* Тема проставляется до первой отрисовки — вспышки не бывает.
+            Метрика перед ней ничего не стоит: скрипт темы по-прежнему
+            синхронный и по-прежнему выполняется раньше первого кадра. */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body>
@@ -52,6 +64,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             под сам фон. Попадание по пузырю ищется по координатам —
             см. src/lib/bubbles-gl.ts. */}
         <Bubbles />
+
+        {/* Пиксель Метрики для тех, у кого выключен JavaScript. Он в теле,
+            а не в голове: внутри <noscript> в <head> по правилам HTML
+            разрешены только link, style и meta. Холст пузырей остаётся
+            первым ребёнком body — пиксель стоит за ним и вне потока
+            (position: absolute, за левым краем), так что порядок
+            наложения он не трогает. */}
+        <noscript dangerouslySetInnerHTML={{ __html: metrikaNoscript }} />
+
         {children}
       </body>
     </html>

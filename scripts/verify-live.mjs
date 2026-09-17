@@ -23,7 +23,41 @@
  *
  * Запуск: node scripts/verify-live.mjs http://localhost:4173/neirolavka/
  */
+import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
+
+/**
+ * СЧЁТЧИК МЕТРИКИ НА ВРЕМЯ ЗАМЕРА ГАСИТСЯ, И ЭТО НЕ ПОСЛАБЛЕНИЕ.
+ *
+ * Эта проба отвечает за НАШУ страницу: её запросы, её консоль, её сдвиг
+ * вёрстки. Чужой узел портил замер сразу с двух сторон, и обе — про
+ * машину, с которой меряют, а не про сайт:
+ *
+ *   • из контейнера разработки шлюз до mc.yandex.ru не пускает вовсе,
+ *     и неудачный запрос засчитывался сбоем — красный на совершенно
+ *     исправной сборке;
+ *   • там, где узел ДОСТУПЕН, вебвизор держит соединение открытым,
+ *     и `networkidle` не наступает никогда: переход упирался в таймаут
+ *     30 секунд и проба падала исключением, не сказав ни слова.
+ *
+ * Поэтому запросы к узлу Метрики обрываются маршрутом. Вердикт от этого
+ * становится ЧИЩЕ, а не мягче: он снова про наши файлы, и он один и тот
+ * же на любой машине — и там, где Яндекс виден, и там, где нет.
+ * Сколько запросов заглушено, проба печатает: молчание читалось бы как
+ * «счётчика нет».
+ *
+ * За сам счётчик отвечает check-metrika: встал ли, ушло ли попадание,
+ * не двигает ли вёрстку. На боевом адресе он гоняется строгим разбором
+ * (SET_DO_YANDEX=1), то есть обязан УВИДЕТЬ отправку, а не обойти её.
+ *
+ * Имя узла читается из src/lib/metrika.ts, а не вписано сюда строкой.
+ */
+const UZEL_METRIKI = (readFileSync('src/lib/metrika.ts', 'utf8')
+  .match(/export const METRIKA_HOST\s*=\s*'([^']+)'/) || [])[1];
+if (!UZEL_METRIKI) {
+  console.log('ПЛОХО: в src/lib/metrika.ts не нашёлся METRIKA_HOST — проба устарела');
+  process.exit(1);
+}
 
 const URL = process.argv[2];
 const browser = await chromium.launch({ executablePath: (process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome') });
@@ -39,6 +73,24 @@ for (const path of ['']) {
     }).observe({ type: 'layout-shift', buffered: true });
   });
 
+  // Гасим счётчик ДО перехода: иначе он либо не отвечает и портит
+  // список сбоев, либо отвечает и держит соединение вебвизором.
+  let zaglusheno = 0;
+  // Условие — функция, а не образец: образец `**://*.yandex.ru/**`
+  // легко разъезжается с настоящим адресом, а промах здесь читается
+  // как «счётчика нет», то есть врёт в ту же сторону, что и поломка.
+  // Отвечаем ПУСТОТОЙ, а не обрывом. Обрыв пишет в консоль
+  // «Failed to load resource: net::ERR_FAILED» без адреса — по такой
+  // строке свой обрыв не отличить от чужой поломки, и проба краснела
+  // бы на собственной уборке.
+  await page.route(
+    (u) => u.hostname === UZEL_METRIKI,
+    (route) => {
+      zaglusheno++;
+      return route.fulfill({ status: 200, contentType: 'application/javascript', body: '' });
+    },
+  );
+
   const failed = [];
   const console_ = [];
   page.on('response', (r) => { if (r.status() >= 400) failed.push(`${r.status()} ${r.url()}`); });
@@ -46,9 +98,13 @@ for (const path of ['']) {
   // закрытие вкладки, а не сервер.
   page.on('requestfailed', (r) => {
     if (r.failure()?.errorText === 'net::ERR_ABORTED') return;
+    if (r.url().includes(UZEL_METRIKI)) return; // оборвали сами
     failed.push(`СБОЙ ${r.url()} — ${r.failure()?.errorText}`);
   });
-  page.on('console', (m) => { if (m.type() === 'error') console_.push(m.text()); });
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    console_.push(m.text());
+  });
   page.on('pageerror', (e) => console_.push(String(e)));
 
   const url = URL + path;
@@ -69,6 +125,9 @@ for (const path of ['']) {
   console.log(`   загруженные гарнитуры: ${info.fontsLoaded.join(', ') || 'нет'}`);
   console.log(`   CLS: ${info.cls.toFixed(4)}`);
   console.log(`   неудачных запросов: ${failed.length}${failed.length ? '\n     ' + failed.join('\n     ') : ''}`);
+  // Молчать здесь нельзя: ноль оборванных запросов значит, что счётчика
+  // на странице нет вовсе, а это уже вопрос к check-metrika.
+  console.log(`   счётчик Метрики заглушен на время замера: ${zaglusheno} запрос(ов)`);
   console.log(`   ошибок в консоли: ${console_.length}${console_.length ? '\n     ' + console_.join('\n     ') : ''}`);
   if (failed.length || console_.length || info.cls > 0.001) bad++;
   await ctx.close();
