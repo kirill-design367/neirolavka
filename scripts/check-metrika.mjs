@@ -155,14 +155,26 @@ for (const [imya, put] of [['главная', ''], ['оферта', 'oferta/']])
   const zaprosy = [];
   const otvety = [];
   const oshibki = [];
-  page.on('request', (r) => { if (r.url().includes(UZEL)) zaprosy.push(r.url()); });
-  page.on('response', (r) => { if (r.url().includes(UZEL)) otvety.push([r.status(), r.url()]); });
+  // Собираем ВСЁ, что уходит к Яндексу, а не только к объявленному узлу.
+  // Попадание может уехать на соседнее имя (у Метрики их несколько),
+  // и проба, смотрящая в одно, сказала бы «не ушло» о том, что ушло.
+  const kYandeksu = (u) => { try { return new URL(u).hostname.includes('yandex.'); } catch { return false; } };
+  page.on('request', (r) => { if (kYandeksu(r.url())) zaprosy.push(r.url()); });
+  page.on('response', (r) => { if (kYandeksu(r.url())) otvety.push([r.status(), r.url()]); });
   page.on('console', (m) => { if (m.type() === 'error') oshibki.push(m.text()); });
   page.on('pageerror', (e) => oshibki.push(String(e)));
 
   // networkidle здесь не годится: вебвизор держит соединение открытым.
   await page.goto(url, { waitUntil: 'load' });
-  await page.waitForTimeout(4000);
+
+  // Ждём ПОПАДАНИЕ, а не фиксированную паузу. Фиксированная — это гонка:
+  // на быстрой машине она лишняя, на медленной её не хватает, и вердикт
+  // начинает зависеть от бегунка. Потолок при этом настоящий: не ушло
+  // за восемь секунд — значит не ушло.
+  const zhdem = Date.now() + 8000;
+  while (Date.now() < zhdem && !zaprosy.some((u) => u.includes(`/watch/${ID}`))) {
+    await page.waitForTimeout(250);
+  }
 
   const v = await page.evaluate(() => {
     const golova = [...document.head.querySelectorAll('script[src]')].map((s) => s.src);
@@ -197,6 +209,14 @@ for (const [imya, put] of [['главная', ''], ['оферта', 'oferta/']])
 
   const tagOtvet = otvety.find(([, u]) => u.includes('/metrika/tag.js'));
   const popadanie = zaprosy.filter((u) => u.includes(`/watch/${ID}`));
+
+  // ПЕЧАТАЕМ ВСЁ, ЧТО УШЛО НА УЗЕЛ. Проверка, говорящая «попадание
+  // не ушло» и не показывающая, что ушло вместо него, называет беду,
+  // но не даёт её разобрать — а разбирать её приходится по чужому
+  // счётчику, который мы не писали. Адреса режутся: в них уходит
+  // разрешение экрана и прочая мелочь, и целиком они нечитаемы.
+  const vidy = [...new Set(zaprosy.map((u) => u.replace(/\?.*$/, '')))];
+  console.log(`  что ушло к Яндексу: ${vidy.length ? vidy.join(', ') : 'ничего'}`);
 
   if (tagOtvet && tagOtvet[0] === 200) {
     uzelViden = true;
