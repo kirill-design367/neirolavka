@@ -1021,6 +1021,20 @@ ${istochniki(o, db, okno, adresSayta, botUrl)}`;
  * смотрит витрину; прямо в бот — для мест, где витрина по дороге
  * лишняя. Метка доезжает одинаково: сайт перекладывает её в параметр
  * `start`, а прямая ссылка несёт его сразу.
+ *
+ * ТАБЛИЦА ИСТОЧНИКОВ — ЭТО СТАТИСТИКА, А ЗАВЕДЕНИЕ ССЫЛОК — ДЕЙСТВИЕ,
+ * и с сентября 2026 они разошлись по правам. Владелец открыл помощнику
+ * статистику целиком, а остальные ограничения просил не трогать —
+ * значит `POST /admin/metka` и `POST /admin/metka/<код>/ubrat`
+ * по-прежнему отвечают помощнику отказом. Показывать ему форму
+ * и кнопку «Убрать» при закрытом действии нельзя: кнопка, которая
+ * отвечает «нет прав», — это та же ссылка на 403, за которую
+ * сентябрьский аудит снял у помощника переход на покупателя.
+ *
+ * Отсюда разрез: «Откуда пришли» видят оба, «Размеченные ссылки»
+ * и «Добавить метку» — только владелец. Понадобится помощнику
+ * заводить каналы — это отдельное решение владельца, и тогда
+ * открывать надо ДЕЙСТВИЕ, а показ подтянется сам.
  */
 function istochniki(
   o: Obstanovka,
@@ -1058,19 +1072,26 @@ function istochniki(
     )
     .join('');
 
-  return `<h2>${ekr(s.otkudaPrishli)}</h2>
-<table><thead><tr><th>${ekr(s.istochnik)}</th><th class="num">${ekr(s.lyudey)}</th>
-<th class="num">${ekr(s.zakazov)}</th><th class="num">${ekr(s.vydano)}</th></tr></thead>
-<tbody>${stroki || `<tr><td colspan="4" class="tiho">${ekr(s.poka_pusto)}</td></tr>`}</tbody></table>
-<p class="tiho">${ekr(s.istochnikiPoyasnenie)}</p>
-<h2>${ekr(s.razmechennyeSsylki)}</h2>
+  // Управление каналами — владельцу. Действие закрыто (см. заголовок
+  // функции), и показ обязан совпадать с ним.
+  const upravlenie =
+    o.rol === 'vladelec'
+      ? `<h2>${ekr(s.razmechennyeSsylki)}</h2>
 ${spisok ? `<table><tbody>${spisok}</tbody></table>` : `<p class="tiho">${ekr(s.metokNet)}</p>`}
 <div class="karta"><h2>${ekr(s.dobavitMetku)}</h2>
 <form method="post" action="/admin/metka" class="ryad">${pole(o)}
 <div><label>${ekr(s.imya)}</label><input type="text" name="nazvanie" required placeholder="Посты во ВКонтакте"></div>
 <div><label>${ekr(s.kodMetkiPole)}</label><input type="text" name="kod" required placeholder="vk-posty"></div>
 <button>${ekr(s.dobavitMetku)}</button></form>
-<p class="tiho" style="margin:10px 0 0">${ekr(s.kodPoyasnenie)}</p></div>`;
+<p class="tiho" style="margin:10px 0 0">${ekr(s.kodPoyasnenie)}</p></div>`
+      : '';
+
+  return `<h2>${ekr(s.otkudaPrishli)}</h2>
+<table><thead><tr><th>${ekr(s.istochnik)}</th><th class="num">${ekr(s.lyudey)}</th>
+<th class="num">${ekr(s.zakazov)}</th><th class="num">${ekr(s.vydano)}</th></tr></thead>
+<tbody>${stroki || `<tr><td colspan="4" class="tiho">${ekr(s.poka_pusto)}</td></tr>`}</tbody></table>
+<p class="tiho">${ekr(s.istochnikiPoyasnenie)}</p>
+${upravlenie}`;
 }
 
 // ── выкладка на сайт ─────────────────────────────────────────────────

@@ -184,16 +184,41 @@ test('без входа панели не видно, а вход открыва
   }
 });
 
-test('помощник видит заказы и не видит людей, каталог и статистику', async () => {
+/**
+ * ЗАКРЫТЫЕ РАЗДЕЛЫ ПЕРЕЧИСЛЕНЫ ЦЕЛИКОМ, а не выборкой.
+ *
+ * Прежняя редакция проверяла четыре адреса из шести: «Отзывы»,
+ * «Промокоды» и «Выкладка» не были покрыты вовсе, то есть открыть
+ * их помощнику можно было молча и зелёным прогоном. Список
+ * обязан совпадать с проверками `!vladelec` в `admin/index.ts`,
+ * и сверять их надо парой.
+ */
+const ZAKRYTO_POMOSHNIKU = [
+  '/admin/pokupateli',
+  '/admin/katalog',
+  '/admin/otzyvy',
+  '/admin/promokody',
+  '/admin/vykladka',
+  `/admin/pokupatel/${POKUPATEL}`,
+];
+
+test('помощник видит заказы и статистику, но не людей, каталог, отзывы, промокоды и выкладку', async () => {
   const s = await stend();
   try {
     komanda.dobavit(s.l.db, POMOSHNIK, 'pomoshnik', 'Помощник', VLADELEC);
     const k = await voyti(s, 'pomoshnik', POMOSHNIK);
     const ochered = await k.get('/admin/ochered');
     assert.equal(ochered.kod, 200, 'помощника не пустили в очередь');
-    assert.ok(!ochered.telo.includes('/admin/katalog'), 'помощнику показали ссылку на каталог');
 
-    for (const put of ['/admin/pokupateli', '/admin/katalog', '/admin/statistika', `/admin/pokupatel/${POKUPATEL}`]) {
+    // Меню показывает ровно то, куда пустят: ссылка на 403 — это
+    // та же поломка, что и открытая страница, только тише.
+    assert.ok(ochered.telo.includes('/admin/statistika'), 'помощнику не показали ссылку на статистику');
+    for (const put of ZAKRYTO_POMOSHNIKU) {
+      if (put.includes('/pokupatel/')) continue; // на эту ссылки в меню и нет
+      assert.ok(!ochered.telo.includes(`href="${put}"`), `помощнику показали ссылку на ${put}`);
+    }
+
+    for (const put of ZAKRYTO_POMOSHNIKU) {
       assert.equal((await k.get(put)).kod, 403, `помощника пустили в ${put}`);
     }
     // И действие с деньгами ему тоже недоступно — не только страница.
@@ -203,6 +228,77 @@ test('помощник видит заказы и не видит людей, к
       rubli: '1000',
     });
     assert.equal(koshelek.balans(s.l.db, POKUPATEL), 0, 'помощник пополнил чужой баланс');
+  } finally {
+    await s.zakryt();
+  }
+});
+
+/**
+ * СТАТИСТИКА ОТКРЫТА ПОМОЩНИКУ ЦЕЛИКОМ — решение владельца.
+ *
+ * «Целиком» проверяется ЧИСЛОМ, а не заголовком: строка «Выручка
+ * по выданным за период» стоит на странице и при закрытом разделе —
+ * важно, что помощник видит саму сумму. Поэтому заказ доводится
+ * до выдачи, и в теле ищется её размер.
+ *
+ * Вторая половина проверки — что открытие НЕ утащило за собой
+ * действия. На той же странице живут «Размеченные ссылки»: сами
+ * `POST /admin/metka` и `.../ubrat` остались за владельцем, значит
+ * и форма с кнопкой у помощника показываться не должны — иначе это
+ * кнопка, отвечающая «нет прав».
+ */
+test('статистика помощнику: выручка видна, а заведение меток — нет', async () => {
+  const s = await stend();
+  try {
+    komanda.dobavit(s.l.db, POMOSHNIK, 'pomoshnik', 'Помощник', VLADELEC);
+
+    // Владелец доводит заказ до выдачи — только тогда есть выручка.
+    const hozyain = await voyti(s);
+    const zashchita = await hozyain.zashchita();
+    const z = zakazNa(s, 733, 'proba-stat', 700_000);
+    await hozyain.post(`/admin/zakaz/${z.id}/oplata`, { zashchita });
+    await hozyain.post(`/admin/zakaz/${z.id}/vzyat`, { zashchita });
+    await hozyain.post(`/admin/zakaz/${z.id}/dostup`, { zashchita, login: 'a@b.c', parol: 'parol-999' });
+    await hozyain.post(`/admin/zakaz/${z.id}/otpravit`, { zashchita });
+    assert.equal(zakazy.po(s.l.db, z.id)!.status, 'vydan', 'заказ не дошёл до выдачи');
+    // И заводит канал — чтобы у помощника было что не увидеть.
+    await hozyain.post('/admin/metka', { zashchita, nazvanie: 'Посты во ВКонтакте', kod: 'vk-posty' });
+    assert.equal(metki.vse(s.l.db).length, 1, 'метка не завелась у владельца');
+
+    const k = await voyti(s, 'pomoshnik', POMOSHNIK);
+
+    // Прямым запросом — не только по ссылке из меню.
+    const stat = await k.get('/admin/statistika');
+    assert.equal(stat.kod, 200, 'помощника не пустили в статистику');
+
+    // Разделитель разрядов у ru-RU — неразрывный пробел, поэтому
+    // сравниваем по приведённой строке, а не по набранной руками.
+    const bez = (x: string) => x.replace(/[\s\u00a0\u202f]/g, '');
+    assert.ok(stat.telo.includes('Выручка по выданным за период'), 'нет строки выручки');
+    assert.ok(bez(stat.telo).includes('7000₽'), 'ПОМОЩНИК НЕ ВИДИТ САМУ ВЫРУЧКУ — раздел открыт не целиком');
+    assert.ok(stat.telo.includes('Заказов оформлено'), 'нет числа оформленных заказов');
+    assert.ok(stat.telo.includes('Откуда пришли'), 'нет таблицы источников');
+
+    // Период тоже работает — это часть того же раздела.
+    const zaPeriod = await k.get('/admin/statistika?za=vse');
+    assert.equal(zaPeriod.kod, 200, 'помощнику не открылся период');
+    assert.ok(bez(zaPeriod.telo).includes('7000₽'), 'за «всё время» выручки нет');
+
+    // А управление каналами осталось владельцу — и показом, и действием.
+    assert.ok(!stat.telo.includes('Добавить метку'), 'помощнику показали форму заведения метки');
+    assert.ok(!stat.telo.includes('action="/admin/metka"'), 'помощнику показали форму POST /admin/metka');
+    assert.ok(!stat.telo.includes('/admin/metka/vk-posty/ubrat'), 'помощнику показали кнопку «Убрать»');
+
+    const zashchitaP = await k.zashchita();
+    await k.post('/admin/metka', { zashchita: zashchitaP, nazvanie: 'Своя', kod: 'svoya' });
+    assert.equal(metki.vse(s.l.db).length, 1, 'ПОМОЩНИК ЗАВЁЛ МЕТКУ прямым запросом');
+    await k.post('/admin/metka/vk-posty/ubrat', { zashchita: zashchitaP });
+    assert.equal(metki.vse(s.l.db).length, 1, 'ПОМОЩНИК УБРАЛ ЧУЖУЮ МЕТКУ прямым запросом');
+
+    // У владельца управление на месте — иначе «спрятали у всех».
+    const uHozyaina = await hozyain.get('/admin/statistika');
+    assert.ok(uHozyaina.telo.includes('Добавить метку'), 'у владельца пропала форма заведения метки');
+    assert.ok(uHozyaina.telo.includes('/admin/metka/vk-posty/ubrat'), 'у владельца пропала кнопка «Убрать»');
   } finally {
     await s.zakryt();
   }

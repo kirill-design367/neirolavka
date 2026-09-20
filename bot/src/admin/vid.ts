@@ -125,6 +125,14 @@ function perekluchatel(o: Obstanovka): string {
 }
 
 export function stranica(o: Obstanovka, zagolovok: string, telo: string, obnovlyat = 0): string {
+  /* Меню показывает РОВНО то, куда человека пустят. Ссылка, ведущая
+     на 403, — это не мелочь оформления: сентябрьский аудит снял
+     у помощника ссылку на покупателя ровно за это. Поэтому список
+     разделов и проверки прав в `admin/index.ts` обязаны совпадать,
+     и менять их надо парой.
+
+     Статистика с сентября 2026 стоит у ОБОИХ: владелец открыл её
+     помощнику целиком, вместе с выручкой. */
   const razdely = o.login
     ? [
         `<a href="/admin/ochered">${ekr(o.s.ochered)}</a>`,
@@ -134,10 +142,10 @@ export function stranica(o: Obstanovka, zagolovok: string, telo: string, obnovly
               `<a href="/admin/katalog">${ekr(o.s.katalog)}</a>`,
               `<a href="/admin/otzyvy">${ekr(o.s.otzyvy)}</a>`,
               `<a href="/admin/promokody">${ekr(o.s.promokody)}</a>`,
-              `<a href="/admin/statistika">${ekr(o.s.statistika)}</a>`,
-              `<a href="/admin/vykladka">${ekr(o.s.vykladka)}</a>`,
             ]
           : []),
+        `<a href="/admin/statistika">${ekr(o.s.statistika)}</a>`,
+        ...(o.rol === 'vladelec' ? [`<a href="/admin/vykladka">${ekr(o.s.vykladka)}</a>`] : []),
       ].join('')
     : '';
   const kto = o.login
