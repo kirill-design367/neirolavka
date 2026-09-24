@@ -31,7 +31,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-5);
+  /* Зазор на телефоне меньше: в полосу 360 px помещаются счётчик,
+     пункт «Инструкция» и переключатель, и 24 px между ними — это
+     ровно та ширина, которой счётчику не хватает на одну строку.
+     Замер записан в CLAUDE.md: при 12 px счётчик на 360 уходил
+     в две строки, при 8 px помещается в одну. */
+  gap: var(--sp-2);
   min-height: 3rem;
   border-radius: 999px;
   translate: 0 calc(var(--nav-p, 0) * -2px);
@@ -138,15 +143,34 @@
   display: inline;
 }
 
+/* РЯД ПУНКТОВ ВИДЕН И НА ТЕЛЕФОНЕ, но не весь.
+
+   Прежде он прятался целиком до 1024 px, и это было верно, пока
+   в нём стояли одни якоря: «Магазин» и «Отзывы» — места на той же
+   странице, до них человек долистает и без шапки. Инструкция —
+   отдельная страница, и спрятанный пункт означал бы, что с телефона
+   туда из шапки не попасть вовсе.
+
+   Поэтому прячутся ПУНКТЫ, а не ряд: на узком экране остаётся один,
+   помеченный `--vsegda`. Три рядом со счётчиком и переключателем
+   в полосу 390 px не помещаются — замер по отрисованной странице
+   записан в CLAUDE.md. */
 .nav__links {
-  display: none;
-  gap: var(--sp-5);
+  display: flex;
+  flex: none;
+  gap: var(--sp-3);
 }
 
 .nav__link {
+  display: none;
   font-size: var(--t-label);
   color: var(--c-muted);
+  white-space: nowrap;
   transition: color 0.18s var(--ease-out);
+}
+
+.nav__link--vsegda {
+  display: inline;
 }
 
 .nav__link:hover {
@@ -250,8 +274,16 @@
     min-height: 3.25rem;
   }
 
+  .nav__inner {
+    gap: var(--sp-5);
+  }
+
   .nav__links {
-    display: flex;
+    gap: var(--sp-5);
+  }
+
+  .nav__link {
+    display: inline;
   }
 
   .nav__counter-tail {

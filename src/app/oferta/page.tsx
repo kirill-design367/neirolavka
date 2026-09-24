@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { NAZVANIE, PODZAGOLOVOK, RAZDELY } from '@/lib/oferta';
 import type { Element } from '@/lib/oferta';
 import { getProdavec } from '@/lib/prodavec';
-import { ThemeToggle } from '@/components/ThemeToggle';
+import { ShapkaStranicy } from '@/components/ShapkaStranicy';
+import '../styles/shapka.css';
 import '../styles/legal.css';
 
 export const metadata: Metadata = {
@@ -160,15 +160,7 @@ export default function Oferta() {
 
   return (
     <>
-      <header className="legal__shapka">
-        <div className="page legal__shapka-in">
-          <Link className="legal__nazad" href="/">
-            {/* Стрелка — не текст, её читать незачем. */}
-            <span aria-hidden="true">←</span> Нейролавка
-          </Link>
-          <ThemeToggle />
-        </div>
-      </header>
+      <ShapkaStranicy />
 
       <main className="legal">
         <div className="page">

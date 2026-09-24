@@ -1,0 +1,150 @@
+/* Страница инструкции: три снимка экрана на листе бумаги.
+   Ни одной новой ступени кегля и ни одного цвета мимо токенов. */
+
+.instr {
+  padding-block: var(--sp-5) var(--sp-8);
+}
+
+/* ЛИСТ БУМАГИ, и это не украшение — тот же довод, что у оферты.
+   Пузыри лежат под всем содержимым сайта, а запретные прямоугольники
+   в bubbles-gl.ts стерегут только текст на голом фоне. Непрозрачная
+   подложка закрывает пузырь сама, ровно как карточки и чек
+   на главной, — и заодно делает инструкцию отдельным предметом,
+   а не продолжением страницы.
+
+   Ширина взята не от меры строки, как у оферты (68ch), а от
+   КАРТИНКИ: текста тут почти нет, а снимок должен читаться. 40rem
+   даёт снимку около 544 px на десктопе — на такой ширине видно,
+   что написано внутри телефона на снимке. */
+.instr__list {
+  background: var(--c-paper);
+  border-radius: var(--r-xl);
+  padding: var(--sp-6) var(--sp-4);
+  max-width: 40rem;
+  margin-inline: auto;
+  box-shadow:
+    0 1px 2px var(--c-shadow-1),
+    0 12px 32px -20px var(--c-shadow-2);
+}
+
+.instr__title {
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--c-text);
+}
+
+.instr__lead {
+  margin-top: var(--sp-2);
+  font-size: var(--t-body);
+  color: var(--c-muted);
+  max-width: 44ch;
+}
+
+.instr__shagi {
+  list-style: none;
+  margin: var(--sp-6) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-6);
+}
+
+/* ── Один шаг ───────────────────────────────────────────────────
+
+   Номер стоит НАД снимком, а не рядом с ним: справа от квадратной
+   картинки места нет вовсе, а слева колонка под цифру съела бы
+   у снимка два сантиметра ширины на телефоне. */
+.shot {
+  display: grid;
+  gap: var(--sp-3);
+  justify-items: start;
+}
+
+/* Тот же тихий кружок, что у цифр в блоке «Как это работает»
+   в покое: фон утопленной поверхности, приглушённый текст. Это
+   указатель места в ряду, а не ярлык-зазывала. */
+.shot__n {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--c-paper-2);
+  color: var(--c-muted);
+  font-size: var(--t-label);
+  font-weight: 600;
+}
+
+/* ── Рамка снимка ───────────────────────────────────────────────
+
+   Снимок сделан в СВЕТЛОЙ теме сайта, и в тёмной он стал бы ярким
+   квадратом на сумеречной земле. Решается это двумя вещами сразу,
+   и обе нужны.
+
+   Первая — снимок объявлен ПРЕДМЕТОМ, а не куском страницы:
+   скруглённая рамка, мягкая тень, волосяная кромка по контуру.
+   В тёмной теме кромка тёмная, и светлое поле снимка получает
+   чёткую границу — это лист бумаги на прилавке, а не дыра в странице.
+
+   Вторая — вуаль `--c-shot-veil` поверх картинки. Это цветовой
+   токен: прозрачный днём, сумеречный вечером, и он едет вместе
+   со сменой темы, потому что стоит в списке перехода. Фильтр
+   `brightness` на его месте менялся бы скачком — он не цвет.
+   Замер по отрисованной странице записан в CLAUDE.md. */
+.shot__ramka {
+  position: relative;
+  width: 100%;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  /* Кромка внутренней тенью, а не border: border добавил бы
+     2 px к ширине и вытолкнул бы снимок за лист на телефоне. */
+  box-shadow:
+    inset 0 0 0 1px var(--c-line),
+    0 1px 2px var(--c-shadow-1),
+    0 10px 28px -18px var(--c-shadow-2);
+}
+
+.shot__img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.shot__ramka::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--c-shot-veil);
+}
+
+/* ── Хвост ─────────────────────────────────────────────────────
+
+   Дочитал инструкцию — дорога обратно на витрину. Ссылка красится
+   акцентом по общему правилу темы: акцент достаётся действию,
+   а это действие. */
+.instr__hvost {
+  margin-top: var(--sp-6);
+  font-size: var(--t-body);
+}
+
+.instr__nazad-vitrina {
+  color: var(--c-accent-text);
+  font-weight: 600;
+  text-underline-offset: 0.2em;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  transition: color 0.18s var(--ease-out);
+}
+
+.instr__nazad-vitrina:hover,
+.instr__nazad-vitrina:focus-visible {
+  color: var(--c-brand);
+}
+
+@media (min-width: 768px) {
+  .instr__list {
+    padding: var(--sp-7) var(--sp-6);
+  }
+}

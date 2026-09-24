@@ -5,9 +5,19 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { useCountUp } from '@/lib/motion';
 import { NACHALO_RAZBEGA, useSchetchik } from '@/lib/schetchik';
 
+/* Якоря главной плюс одна НАСТОЯЩАЯ страница.
+ *
+ * `vsegda` — это «видно и на телефоне». Разница не в важности,
+ * а в достижимости: до «Магазина» и «Отзывов» человек всё равно
+ * долистает, они на этой же странице, а до инструкции из шапки
+ * больше никак — вторая дорога к ней одна, плашка в блоке
+ * «Как это работает». Поэтому на узком экране остаётся ровно она,
+ * а два якоря прячутся: три пункта рядом со счётчиком и
+ * переключателем в полосу 390 px не помещаются. */
 const LINKS = [
   { href: '#magazin', label: 'Магазин' },
   { href: '#otzyvy', label: 'Отзывы' },
+  { href: '/instrukciya/', label: 'Инструкция', vsegda: true },
 ];
 
 const formatCount = (n: number) => n.toLocaleString('ru-RU');
@@ -81,13 +91,23 @@ export function Nav({ subscribers }: { subscribers: number }) {
               <span className="nav__counter-true">{formatCount(vsego)}</span>
             </span>{' '}
             <span className="nav__counter-tail">пользователей оформили подписки</span>
-            <span className="nav__counter-short">подписок оформлено</span>
+            {/* САМАЯ КОРОТКАЯ подпись — для телефона. Была «подписок
+                оформлено»; с появлением пункта «Инструкция» в ряду
+                она перестала помещаться в строку и уводила счётчик
+                на две (замер: 22.4 → 44.8 px на 390, капсула 48 → 67.2
+                на 360). Смысл не потерян: «Уже 2 513 подписок» —
+                то же утверждение, что и полное, и то же число. */}
+            <span className="nav__counter-short">подписок</span>
           </span>
         </p>
 
         <nav className="nav__links" aria-label="Разделы страницы">
           {LINKS.map((link) => (
-            <a key={link.href} href={link.href} className="nav__link">
+            <a
+              key={link.href}
+              href={link.href}
+              className={link.vsegda ? 'nav__link nav__link--vsegda' : 'nav__link'}
+            >
               {link.label}
             </a>
           ))}

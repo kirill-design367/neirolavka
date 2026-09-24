@@ -21,7 +21,7 @@ const URL = process.argv[2] ?? 'http://127.0.0.1:4173/oferta/';
 const CHROME = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const PROBA = ['.doc__title', '.doc__zagolovok', '.doc__punkt-text', '.doc__nomer',
   '.doc__abzac', '.doc__termin dt', '.doc__termin dd', '.doc__rekvizit dt',
-  '.doc__rekvizit dd', '.doc__soder-list a', '.doc__ssylka', '.legal__nazad'];
+  '.doc__rekvizit dd', '.doc__soder-list a', '.doc__ssylka', '.shapka__nazad'];
 
 let bad = 0;
 const ok = (t) => console.log(`  ok    ${t}`);

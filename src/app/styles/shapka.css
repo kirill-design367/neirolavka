@@ -1,0 +1,43 @@
+/* Шапка ВТОРОСТЕПЕННОЙ страницы: одна дорога — назад в лавку.
+
+   Общий файл, а не копия в каждой странице. Такая шапка стоит уже
+   на двух страницах — оферта и инструкция, — и переписанная дважды
+   она разъехалась бы при первой же правке темы: молча, потому что
+   второстепенные страницы никто не перечитывает рядом. Тот же довод,
+   по которому реквизиты продавца живут одним файлом, а не строками
+   в разметке.
+
+   Классы РАНЬШЕ назывались `.legal__shapka*` и лежали в legal.css.
+   Имя переехало вместе с рулями: на странице инструкции «legal»
+   было бы неправдой, а проверка `check-oferta-vid` смотрит на этот
+   селектор поимённо — она поправлена тем же заходом. */
+.shapka {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--c-bg);
+  padding-block: var(--sp-4);
+}
+
+.shapka__in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.shapka__nazad {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--c-text);
+  transition: color 0.18s var(--ease-out);
+}
+
+.shapka__nazad:hover,
+.shapka__nazad:focus-visible {
+  color: var(--c-brand);
+}
