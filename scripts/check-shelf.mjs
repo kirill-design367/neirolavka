@@ -44,6 +44,96 @@ const tap = async (page, loc) => {
   await loc.click({ force: true });
 };
 
+/* Чужой счётчик глушится на время замера — тем же приёмом и по той же
+ * причине, что в `verify-live`. Проверка отвечает за НАШУ витрину;
+ * из контейнера разработки узел Яндекса недоступен вовсе, и его
+ * неудачный запрос засчитывался ошибкой консоли — шесть красных строк
+ * на совершенно исправной сборке.
+ *
+ * Ответ ПУСТОЙ, а не обрыв: обрыв пишет в консоль «Failed to load
+ * resource: net::ERR_FAILED» без адреса, и свой обрыв становится
+ * неотличим от чужой поломки. Условие — функция по имени узла,
+ * а не образец: промах образца читался бы как «счётчика нет».
+ * Сам счётчик проверяет `check-metrika`, и там он не глушится. */
+const bezSchetchika = (ctx) =>
+  ctx.route((u) => /(^|\.)yandex\.[a-z]+$/.test(u.hostname), (r) => r.fulfill({ status: 200, body: '' }));
+
+/* ─── СВОЙ КАТАЛОГ ВМЕСТО ЧУЖОГО ПРАЙСА ────────────────────────────
+ *
+ * Проба, которой нужен продукт с особым свойством, НЕ ИЩЕТ его
+ * в прайсе владельца. Прайс принадлежит ему, он вправе завести
+ * или снять что угодно — и уже дважды это роняло проверки, которые
+ * держались за его содержимое: сначала у бота (`PRODUKT_BEZ_UROVNEY`
+ * искался в файле каталога и исчез, уронив двенадцать файлов разом),
+ * потом здесь (проба «продукт без уровней» краснела на совершенно
+ * исправном сайте, потому что таких продуктов в лавке не осталось).
+ *
+ * У бота это вылечено тем, что стенд ЗАВОДИТ продукт сам. Здесь —
+ * тем же: проба подставляет странице свой каталог. Единственное
+ * место, куда она может дотянуться до того, как страница его
+ * прочитает, — сеть, поэтому подменяется кусок сборки.
+ *
+ * Три вещи, которые легко сделать неправильно:
+ *
+ *   1. Конец массива ищется СЧЁТОМ СКОБОК, а не регуляркой: внутри
+ *      продуктов лежат вложенные массивы уровней, и ленивое `]`
+ *      закрыло бы первый попавшийся.
+ *   2. Заголовки кодирования и длины СНИМАЮТСЯ. Тело уже раскодировано
+ *      `route.fetch()`, и оставленный `content-encoding: gzip` заставил
+ *      бы браузер разбирать распакованный текст как сжатый: кусок
+ *      не загрузился бы, сцена молча осталась бы плоской, а проба
+ *      мерила бы не то.
+ *   3. Разметка на сервере отрисована НАСТОЯЩИМ каталогом. React
+ *      пересобирает корень заново, и ждать надо СОБЫТИЕ — появление
+ *      нужного числа карточек, — а не срок.
+ *
+ * Не нашёлся кусок с каталогом — это ОТКАЗ, а не пропуск: проба,
+ * которая молча померила чужой прайс, хуже упавшей.
+ */
+const podstavitKatalog = async (ctx, produkty) => {
+  const schet = { podmen: 0 };
+  await ctx.route(/\/_next\/static\/chunks\/.*\.js(\?.*)?$/, async (route) => {
+    const r = await route.fetch();
+    let t = await r.text();
+    const i0 = t.indexOf('products:[');
+    if (i0 >= 0) {
+      let dep = 0;
+      let k = i0 + 'products:'.length;
+      for (; k < t.length; k++) {
+        if (t[k] === '[') dep++;
+        else if (t[k] === ']' && --dep === 0) break;
+      }
+      t = `${t.slice(0, i0)}products:${JSON.stringify(produkty)}${t.slice(k + 1)}`;
+      schet.podmen++;
+    }
+    const h = { ...r.headers() };
+    delete h['content-encoding'];
+    delete h['content-length'];
+    await route.fulfill({ status: r.status(), headers: h, body: t });
+  });
+  return schet;
+};
+
+/** Дождаться, пока страница перерисуется подставленным каталогом. */
+const zhdatKartochki = async (page, skolko) =>
+  page
+    .waitForFunction((k) => document.querySelectorAll('.pcard').length === k, skolko,
+                     { timeout: 15000 })
+    .then(() => true)
+    .catch(() => false);
+
+/** Продукт пробы: уровни задаются списком, всё остальное — заглушки. */
+const proba = (n, urovni) => ({
+  id: `proba-${n}`,
+  name: `Проба ${n}`,
+  tagline: 'Подставлено проверкой',
+  note: 'Этого продукта нет в прайсе владельца',
+  priceRub: urovni.length ? null : 990,
+  plans: urovni.map((u, j) => ({
+    id: `proba-${n}-${j + 1}`, short: u, title: `Проба ${n}, ${u}`, priceRub: 100 * (j + 1),
+  })),
+});
+
 /** Разбудить отложенную загрузку: сцена ждёт первого действия человека. */
 // Сцена поднимается по ПЕРВОМУ действию человека, и тяжёлый кусок
 // с Three.js едет по сети. Фиксированная пауза здесь — гонка: на
@@ -54,6 +144,9 @@ const tap = async (page, loc) => {
 // если сцена не поднимется вовсе, ожидание упрётся в потолок и вердикт
 // будет тот же самый, только на 8 секунд позже.
 const POTOLOK_SCENY_MS = 8000;
+
+/** Насколько карточку может закрыть передний сосед. См. пояснение у замера. */
+const PREDEL_ZAKRYTIYA = 0.93;
 const wake = async (page) => {
   await page.mouse.move(60, 200);
   await page.mouse.move(64, 204);
@@ -87,6 +180,7 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
     const ctx = await browser.newContext({
       viewport: { width: w, height: h }, locale: 'ru-RU', isMobile: phone, hasTouch: phone,
     });
+    await bezSchetchika(ctx);
     await ctx.addInitScript((t) => localStorage.setItem('neirolavka-theme', t), theme);
     const page = await ctx.newPage();
     const errors = [];
@@ -151,8 +245,20 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
       });
       return worstOne;
     });
+    // ПОРОГ ОДИН И ТОТ ЖЕ, что у пробы «дуга при 3…8 продуктах» ниже,
+    // и это не косметика. Здесь стояло 0.97, и оно пропускало ровно
+    // ту поломку, ради которой написано: при шести продуктах четвёртую
+    // карточку закрывало на 95–96 %, владелец это увидел, а проверка
+    // молчала. Разница между «закрыта на 95 %» и «закрыта целиком»
+    // для человека, который хочет нажать, никакая.
+    //
+    // 0.93 — не подобранное «сегодня зелено», а следствие обещания
+    // раскладки: каждый ряд обязан выступить из-за предыдущего
+    // на 18 px экрана, и на самой мелкой карточке дуги это 11–14 %
+    // её площади. Замер по отрисованной странице: 84–88 % при
+    // шести продуктах.
     const worst = Math.max(...covered);
-    if (worst > 0.97) no(`карточка ${covered.indexOf(worst) + 1} закрыта соседом на ${(worst * 100).toFixed(0)} % — её не видно и не нажать`);
+    if (worst > PREDEL_ZAKRYTIYA) no(`карточка ${covered.indexOf(worst) + 1} закрыта соседом на ${(worst * 100).toFixed(0)} % — её не видно и не нажать`);
     else ok(`каждая карточка видна: наибольшее закрытие передним соседом ${(worst * 100).toFixed(0)} % площади`);
 
     // 2. Текст остаётся текстом.
@@ -257,6 +363,7 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
 // (микропарение, а не качели) и карточки идут НЕ В ФАЗУ.
 {
   const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU' });
+  await bezSchetchika(ctx);
   const page = await ctx.newPage();
   await page.goto(URL, { waitUntil: 'networkidle' });
   await wake(page);
@@ -311,6 +418,7 @@ for (const [w, h, phone] of [[1512, 900, false], [1920, 1080, false], [390, 844,
 {
   // При выключенном движении парения быть не должно вовсе.
   const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU', reducedMotion: 'reduce' });
+  await bezSchetchika(ctx);
   const page = await ctx.newPage();
   await page.goto(URL, { waitUntil: 'networkidle' });
   await wake(page);
@@ -344,6 +452,7 @@ for (const [w, h, phone] of [[1512, 900, false], [390, 844, true]]) {
   const ctx = await browser.newContext({
     viewport: { width: w, height: h }, locale: 'ru-RU', isMobile: phone, hasTouch: phone,
   });
+  await bezSchetchika(ctx);
   const page = await ctx.newPage();
   await page.goto(URL, { waitUntil: 'networkidle' });
   await wake(page);
@@ -448,6 +557,7 @@ for (const [label, opts, init] of [
   ['выключенное движение', { reducedMotion: 'reduce' }, null],
 ]) {
   const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU', ...opts });
+  await bezSchetchika(ctx);
   if (init) await ctx.addInitScript(init);
   const page = await ctx.newPage();
   await page.goto(URL, { waitUntil: 'networkidle' });
@@ -487,27 +597,183 @@ for (const [label, opts, init] of [
     else no(`выбор уровня не работает («${imya}»): ${JSON.stringify(order.slice(0, 120))}`);
   }
 
-  // 2. Продукт БЕЗ УРОВНЕЙ покупается САМОЙ КАРТОЧКОЙ.
-  //
-  // Это новое свойство каталога и главное, что здесь стоит стеречь:
-  // у Claude Pro и Seedance уровней нет вовсе, и если чек ждёт
-  // выбора уровня, такой продукт нельзя купить в принципе.
-  if (nomera.bezUrovney < 0) {
-    no('в каталоге нет ни одного продукта без уровней — проба устарела');
+  // ПРОБЫ «ПРОДУКТ БЕЗ УРОВНЕЙ» ЗДЕСЬ БОЛЬШЕ НЕТ, и это не потеря.
+  // Она искала такой продукт в прайсе владельца, а прайс принадлежит
+  // ему: он снял последний продукт без уровней, и проба покраснела
+  // на исправном сайте. Обе ветки покупки проверяются ниже, на СВОЁМ
+  // каталоге, — там они не зависят от того, что сегодня в лавке.
+  await ctx.close();
+}
+
+// ─── Обе ветки покупки на СВОЁМ каталоге ──────────────────────────
+//
+// Ветка «продукт без уровней покупается самой карточкой» жива в коде
+// и должна проверяться всегда, а не только в те месяцы, когда такой
+// продукт есть в прайсе. Поэтому проба заводит его сама — тем же
+// приёмом, каким стенд бота заводит `zavestiProduktBezUrovney`.
+//
+// WebGL выключен намеренно: ветка живёт в разметке и в чеке, сцена
+// к ней отношения не имеет, а без неё проба короче и устойчивее.
+{
+  console.log('\n── обе ветки покупки на своём каталоге ──');
+  const KATALOG = [proba(1, []), proba(2, ['Standard', 'Pro'])];
+  const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU' });
+  await bezSchetchika(ctx);
+  await ctx.addInitScript(() => {
+    HTMLCanvasElement.prototype.getContext = function () { return null; };
+  });
+  const schet = await podstavitKatalog(ctx, KATALOG);
+  const page = await ctx.newPage();
+  await page.goto(URL, { waitUntil: 'domcontentloaded' });
+  const doehalo = await zhdatKartochki(page, KATALOG.length);
+
+  if (schet.podmen !== 1) {
+    no(`свой каталог подставить не удалось (подмен ${schet.podmen}) — проба ничего не проверила`);
+  } else if (!doehalo) {
+    no('страница не перерисовалась своим каталогом — проба ничего не проверила');
   } else {
-    await tap(page, page.locator('.pcard').nth(nomera.bezUrovney).locator('.pcard__face'));
-    await page.waitForTimeout(600);
-    const order = await chek();
-    const imya = nomera.imena[nomera.bezUrovney];
-    const vnutri = await page.evaluate(() =>
-      document.querySelectorAll('.pcard--active .tariff').length);
-    if (order.includes(imya) && vnutri === 0) {
-      ok(`продукт без уровней покупается самой карточкой: «${imya}» в чеке, кнопок уровня 0`);
+    const chek = () => page.evaluate(() => {
+      const t = (sel) => document.querySelector(sel)?.innerText ?? '';
+      return `${t('.order__paper')} ${t('.bar')}`.replace(/\s+/g, ' ').trim();
+    });
+    const nomera = await page.evaluate(() => {
+      const c = [...document.querySelectorAll('.pcard')];
+      return {
+        bez: c.findIndex((el) => !el.querySelector('.tariff')),
+        s: c.findIndex((el) => el.querySelector('.tariff')),
+        imena: c.map((el) => el.querySelector('.pcard__name').textContent.trim()),
+      };
+    });
+    if (nomera.bez < 0 || nomera.s < 0) {
+      no(`подставленный каталог доехал не целиком: ${JSON.stringify(nomera.imena)}`);
     } else {
-      no(`продукт без уровней не попал в чек («${imya}», кнопок уровня ${vnutri}): ${JSON.stringify(order.slice(0, 120))}`);
+      // 1. БЕЗ уровней — покупается самой карточкой.
+      await tap(page, page.locator('.pcard').nth(nomera.bez).locator('.pcard__face'));
+      await page.waitForTimeout(600);
+      const order1 = await chek();
+      const vnutri = await page.evaluate(() =>
+        document.querySelectorAll('.pcard--active .tariff').length);
+      if (order1.includes(nomera.imena[nomera.bez]) && vnutri === 0) {
+        ok(`продукт без уровней покупается самой карточкой: «${nomera.imena[nomera.bez]}» в чеке, кнопок уровня 0`);
+      } else {
+        no(`продукт без уровней не попал в чек («${nomera.imena[nomera.bez]}», кнопок уровня ${vnutri}): ${JSON.stringify(order1.slice(0, 120))}`);
+      }
+      // 2. С уровнями — карточка, потом уровень.
+      await tap(page, page.locator('.pcard').nth(nomera.s).locator('.pcard__face'));
+      await page.waitForTimeout(500);
+      await tap(page, page.locator('.pcard--active .tariff').first());
+      await page.waitForTimeout(500);
+      const order2 = await chek();
+      if (order2.includes(nomera.imena[nomera.s])) {
+        ok(`продукт с уровнями покупается уровнем: ${order2.slice(0, 80)}`);
+      } else {
+        no(`выбор уровня не работает («${nomera.imena[nomera.s]}»): ${JSON.stringify(order2.slice(0, 120))}`);
+      }
     }
   }
   await ctx.close();
+}
+
+// ─── Дуга при ЛЮБОМ числе продуктов ───────────────────────────────
+//
+// Раскладка дуги ломалась ДВАЖДЫ, и оба раза поломку приносила
+// не правка кода, а выкладка прайса из панели: при пяти продуктах
+// карточка уезжала в чужой ряд, при шести её закрывала соседка
+// на 96 %. Проверять это на том числе, которое сегодня в каталоге,
+// — значит узнавать о поломке от владельца.
+//
+// Здесь проба перебирает числа сама. Мерятся три вещи:
+//   1. ни одна карточка не закрыта передними так, что её не найти;
+//   2. ни одна не вылезает за блок — там панель заказа;
+//   3. НИ ОДНА ПАРА НЕ СТОИТ В ОДНОЙ ТОЧКЕ. Это отдельная проба,
+//      и без неё первая СЛЕПА ровно на той поломке, ради которой
+//      всё и чинилось: перекрытие считается только теми, у кого
+//      z-index больше, а у двух карточек в одной точке он равен —
+//      значит ни одна не «передняя», и перекрытие выходит нулевым
+//      там, где оно стопроцентное.
+//
+//      Совпадение z-index само по себе поломкой НЕ является: дуга
+//      симметрична, и левый ряд с правым стоят на одной глубине
+//      по построению. Поломка — совпадение КОРОБКИ.
+//   4. РАЗНЫХ ГЛУБИН СТОЛЬКО ЖЕ, СКОЛЬКО РЯДОВ. Сцена пишет
+//      `z-index = 1000 + z`, и два РАЗНЫХ ряда с одной глубиной —
+//      это сломанный порядок наложения: кто из них нарисуется
+//      поверх, решает порядок в разметке, а не дуга. Видно это
+//      только глазами, и только если дальняя карточка окажется
+//      поверх ближней; ни перекрытие, ни совпадение коробок
+//      такого не ловят — коробки-то разные.
+//      Рядов при n карточках ровно `floor(n / 2) + 1`: середина
+//      плюс по одному ряду на каждое расстояние по кольцу.
+{
+  console.log('\n── дуга при 3…8 продуктах ──');
+  for (let n = 3; n <= 8; n++) {
+    const KATALOG = Array.from({ length: n }, (_, i) => proba(i + 1, ['A', 'B']));
+    const ctx = await browser.newContext({ viewport: { width: 1512, height: 900 }, locale: 'ru-RU' });
+    await bezSchetchika(ctx);
+    const schet = await podstavitKatalog(ctx, KATALOG);
+    const page = await ctx.newPage();
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    const doehalo = await zhdatKartochki(page, n);
+    // Сцену будим уже ПОСЛЕ перерисовки: на разметке, которую сейчас
+    // снесут, подниматься ей незачем.
+    let est3d = false;
+    for (let t = 0; t < 4 && !est3d; t++) {
+      await page.mouse.move(60 + t, 200 + t);
+      await page.mouse.move(64 + t, 204 + t);
+      await page.evaluate(() => document.querySelector('.shop')?.scrollIntoView({ block: 'center' }));
+      est3d = await page
+        .waitForFunction(() => document.querySelector('.shelf3d')?.hasAttribute('data-3d'),
+                         null, { timeout: 6000 })
+        .then(() => true).catch(() => false);
+    }
+    await page.waitForTimeout(900);
+
+    if (schet.podmen !== 1 || !doehalo) {
+      no(`n=${n}: свой каталог не доехал (подмен ${schet.podmen}, карточек столько же: ${doehalo})`);
+    } else if (!est3d) {
+      no(`n=${n}: сцена не поднялась — мерить нечего`);
+    } else {
+      const g = await geometry(page);
+      const cov = g.cards.map((a) => {
+        let m = 0;
+        g.cards.forEach((b) => {
+          if (a === b || b.z <= a.z) return;
+          const dx = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+          const dy = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+          m = Math.max(m, (dx * dy) / (a.w * a.h));
+        });
+        return m;
+      });
+      const hud = Math.max(...cov);
+      const vylet = Math.min(...g.cards.map((c) => Math.min(c.left - g.box.left, g.box.right - c.right)));
+      // Одно место на двоих: коробки совпадают с точностью до парения
+      // (карточки микропарят на два-три пикселя, и точного совпадения
+      // не бывает даже у наложенных друг на друга).
+      let paraVTochke = '';
+      for (let a = 0; a < g.cards.length && !paraVTochke; a++) {
+        for (let b = a + 1; b < g.cards.length; b++) {
+          const x = g.cards[a], y = g.cards[b];
+          const ryadom = Math.abs(x.left - y.left) < 6 && Math.abs(x.top - y.top) < 6
+            && Math.abs(x.w - y.w) < 6 && Math.abs(x.h - y.h) < 6;
+          if (ryadom) { paraVTochke = `${a + 1} и ${b + 1}`; break; }
+        }
+      }
+      const bedy = [];
+      if (g.cards.length !== n) bedy.push(`карточек ${g.cards.length}`);
+      if (hud > PREDEL_ZAKRYTIYA) bedy.push(`карточка ${cov.indexOf(hud) + 1} закрыта на ${(hud * 100).toFixed(0)} %`);
+      if (vylet < -2) bedy.push(`вылет за блок ${vylet.toFixed(0)} px`);
+      if (paraVTochke) bedy.push(`карточки ${paraVTochke} стоят в одной точке`);
+      const glubin = new Set(g.cards.map((c) => c.z)).size;
+      const ryadov = Math.floor(n / 2) + 1;
+      if (glubin !== ryadov) {
+        bedy.push(`разных глубин ${glubin}, а рядов ${ryadov} — порядок наложения решает разметка, а не дуга`);
+      }
+      const chisla = `наибольшее закрытие ${(hud * 100).toFixed(0)} %, запас до кромки блока ${vylet.toFixed(0)} px`;
+      if (bedy.length) no(`n=${n}: ${bedy.join('; ')} (${chisla})`);
+      else ok(`n=${n}: ${chisla}, рядов ${Math.floor(n / 2) + 1} и столько же глубин`);
+    }
+    await ctx.close();
+  }
 }
 
 await browser.close();
