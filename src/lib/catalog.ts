@@ -259,25 +259,25 @@ const CATALOG: Catalog = {
           "id": "chatgpt-go",
           "short": "Go",
           "title": "ChatGPT, Go",
-          "priceRub": 599
+          "priceRub": 529
         },
         {
           "id": "chatgpt-plus",
           "short": "Plus",
           "title": "ChatGPT, Plus",
-          "priceRub": 2279
+          "priceRub": 1999
         },
         {
           "id": "chatgpt-pro5x",
           "short": "Pro 5x",
           "title": "ChatGPT, Pro 5x",
-          "priceRub": 9989
+          "priceRub": 9699
         },
         {
           "id": "chatgpt-pro20x",
           "short": "Pro 20x",
           "title": "ChatGPT, Pro 20x",
-          "priceRub": 19889
+          "priceRub": 18989
         }
       ]
     },
@@ -292,19 +292,19 @@ const CATALOG: Catalog = {
           "id": "claude-pro",
           "short": "Pro",
           "title": "Claude Pro, Pro",
-          "priceRub": 2289
+          "priceRub": 2099
         },
         {
           "id": "claude-max5x",
           "short": "Max 5x",
           "title": "Claude Pro, Max 5x",
-          "priceRub": 11989
+          "priceRub": 11399
         },
         {
           "id": "claude-max20x",
           "short": "Max 20x",
           "title": "Claude Pro, Max 20x",
-          "priceRub": 26489
+          "priceRub": 24499
         }
       ]
     },
