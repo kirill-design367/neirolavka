@@ -190,13 +190,13 @@ const CATALOG: Catalog = {
           "id": "kling-pro",
           "short": "Pro",
           "title": "Kling AI, Pro",
-          "priceRub": 3889
+          "priceRub": 4499
         },
         {
           "id": "kling-premier",
           "short": "Premier",
           "title": "Kling AI, Premier",
-          "priceRub": 8999
+          "priceRub": 9899
         }
       ]
     },
@@ -217,7 +217,7 @@ const CATALOG: Catalog = {
           "id": "suno-premier",
           "short": "Premier",
           "title": "Suno AI, Premier",
-          "priceRub": 3299
+          "priceRub": 3899
         }
       ]
     },
@@ -232,19 +232,19 @@ const CATALOG: Catalog = {
           "id": "gemini-plus",
           "short": "Plus",
           "title": "Gemini AI, Plus",
-          "priceRub": 779
+          "priceRub": 899
         },
         {
           "id": "gemini-pro",
           "short": "Pro",
           "title": "Gemini AI, Pro",
-          "priceRub": 2299
+          "priceRub": 3249
         },
         {
           "id": "gemini-ultra",
           "short": "Ultra",
           "title": "Gemini AI, Ultra",
-          "priceRub": 8599
+          "priceRub": 10199
         }
       ]
     },
@@ -259,25 +259,25 @@ const CATALOG: Catalog = {
           "id": "chatgpt-go",
           "short": "Go",
           "title": "ChatGPT, Go",
-          "priceRub": 529
+          "priceRub": 699
         },
         {
           "id": "chatgpt-plus",
           "short": "Plus",
           "title": "ChatGPT, Plus",
-          "priceRub": 1999
+          "priceRub": 2299
         },
         {
           "id": "chatgpt-pro5x",
           "short": "Pro 5x",
           "title": "ChatGPT, Pro 5x",
-          "priceRub": 9699
+          "priceRub": 12899
         },
         {
           "id": "chatgpt-pro20x",
           "short": "Pro 20x",
           "title": "ChatGPT, Pro 20x",
-          "priceRub": 18989
+          "priceRub": 22499
         }
       ]
     },
@@ -292,19 +292,19 @@ const CATALOG: Catalog = {
           "id": "claude-pro",
           "short": "Pro",
           "title": "Claude Pro, Pro",
-          "priceRub": 2099
+          "priceRub": 2299
         },
         {
           "id": "claude-max5x",
           "short": "Max 5x",
           "title": "Claude Pro, Max 5x",
-          "priceRub": 11399
+          "priceRub": 12899
         },
         {
           "id": "claude-max20x",
           "short": "Max 20x",
           "title": "Claude Pro, Max 20x",
-          "priceRub": 24499
+          "priceRub": 27799
         }
       ]
     },
@@ -319,19 +319,34 @@ const CATALOG: Catalog = {
           "id": "seedance-light",
           "short": "Standart",
           "title": "Runway Seedance 2.5, Standart",
-          "priceRub": 1889
+          "priceRub": 2289
         },
         {
           "id": "seedance-production",
           "short": "Pro",
           "title": "Runway Seedance 2.5, Pro",
-          "priceRub": 4289
+          "priceRub": 4889
         },
         {
           "id": "seedance-max",
           "short": "Max",
           "title": "Runway Seedance 2.5, Max",
-          "priceRub": 10889
+          "priceRub": 12229
+        }
+      ]
+    },
+    {
+      "id": "capcut",
+      "name": "Cap Cut",
+      "tagline": "Видеоредактор",
+      "note": "Расширенная версия с доступом к профессиональным инструментам",
+      "priceRub": null,
+      "plans": [
+        {
+          "id": "capcut-pro",
+          "short": "Pro",
+          "title": "Cap Cut, Pro",
+          "priceRub": 2099
         }
       ]
     }
