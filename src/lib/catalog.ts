@@ -337,16 +337,22 @@ const CATALOG: Catalog = {
     },
     {
       "id": "capcut",
-      "name": "Cap Cut",
+      "name": "Cap Cut Pro",
       "tagline": "Видеоредактор",
       "note": "Расширенная версия с доступом к профессиональным инструментам",
       "priceRub": null,
       "plans": [
         {
           "id": "capcut-pro",
-          "short": "Pro",
-          "title": "Cap Cut, Pro",
+          "short": "1 Месяц",
+          "title": "Cap Cut Pro, 1 Месяц",
           "priceRub": 2099
+        },
+        {
+          "id": "capcut-12",
+          "short": "12 Месяцев",
+          "title": "Cap Cut Pro, 12 Месяцев",
+          "priceRub": 13899
         }
       ]
     }
